@@ -1,0 +1,266 @@
+"""A few utilities."""
+
+import os
+import sys
+import time
+import logging
+import traceback
+
+import numpy as np
+from numpy.linalg import LinAlgError
+from mpytools import CurrentMPIComm
+
+
+@CurrentMPIComm.enable
+def exception_handler(exc_type, exc_value, exc_traceback, mpicomm=None):
+    """Print exception with a logger."""
+    # Do not print traceback if the exception has been handled and logged
+    _logger_name = 'Exception'
+    log = logging.getLogger(_logger_name)
+    line = '=' * 100
+    # log.critical(line[len(_logger_name) + 5:] + '\n' + ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)) + line)
+    log.critical('\n' + line + '\n' + ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)) + line)
+    if exc_type is KeyboardInterrupt:
+        log.critical('Interrupted by the user.')
+    else:
+        log.critical('An error occured.')
+    if mpicomm.size > 1:
+        mpicomm.Abort()
+
+
+def mkdir(dirname):
+    """Try to create ``dirnm`` and catch :class:`OSError`."""
+    try:
+        os.makedirs(dirname)  # MPI...
+    except OSError:
+        return
+
+
+def setup_logging(level=logging.INFO, stream=sys.stdout, filename=None, filemode='w', **kwargs):
+    """
+    Set up logging.
+
+    Parameters
+    ----------
+    level : string, int, default=logging.INFO
+        Logging level.
+
+    stream : _io.TextIOWrapper, default=sys.stdout
+        Where to stream.
+
+    filename : string, default=None
+        If not ``None`` stream to file name.
+
+    filemode : string, default='w'
+        Mode to open file, only used if filename is not ``None``.
+
+    kwargs : dict
+        Other arguments for :func:`logging.basicConfig`.
+    """
+    # Cannot provide stream and filename kwargs at the same time to logging.basicConfig, so handle different cases
+    # Thanks to https://stackoverflow.com/questions/30861524/logging-basicconfig-not-creating-log-file-when-i-run-in-pycharm
+    if isinstance(level, str):
+        level = {'info': logging.INFO, 'debug': logging.DEBUG, 'warning': logging.WARNING}[level.lower()]
+    for handler in logging.root.handlers:
+        logging.root.removeHandler(handler)
+
+    t0 = time.time()
+
+    class MyFormatter(logging.Formatter):
+
+        @CurrentMPIComm.enable
+        def format(self, record, mpicomm=None):
+            ranksize = '[{:{dig}d}/{:d}]'.format(mpicomm.rank, mpicomm.size, dig=len(str(mpicomm.size)))
+            self._style._fmt = '[%09.2f] ' % (time.time() - t0) + ranksize + ' %(asctime)s %(name)-25s %(levelname)-8s %(message)s'
+            return super(MyFormatter, self).format(record)
+
+    fmt = MyFormatter(datefmt='%m-%d %H:%M ')
+    if filename is not None:
+        mkdir(os.path.dirname(filename))
+        handler = logging.FileHandler(filename, mode=filemode)
+    else:
+        handler = logging.StreamHandler(stream=stream)
+    handler.setFormatter(fmt)
+    logging.basicConfig(level=level, handlers=[handler], **kwargs)
+    sys.excepthook = exception_handler
+
+
+class BaseMetaClass(type):
+
+    """Metaclass to add logging attributes to :class:`BaseClass` derived classes."""
+
+    def __new__(meta, name, bases, class_dict):
+        cls = super().__new__(meta, name, bases, class_dict)
+        cls.set_logger()
+        return cls
+
+    def set_logger(cls):
+        """
+        Add attributes for logging:
+
+        - logger
+        - methods log_debug, log_info, log_warning, log_error, log_critical
+        """
+        cls.logger = logging.getLogger(cls.__name__)
+
+        def make_logger(level):
+
+            @classmethod
+            @CurrentMPIComm.enable
+            def logger(cls, *args, rank=None, mpicomm=None, **kwargs):
+                if rank is None or mpicomm.rank == rank:
+                    getattr(cls.logger, level)(*args, **kwargs)
+
+            return logger
+
+        for level in ['debug', 'info', 'warning', 'error', 'critical']:
+            setattr(cls, 'log_{}'.format(level), make_logger(level))
+
+
+class BaseClass(object, metaclass=BaseMetaClass):
+    """
+    Base class that implements :meth:`copy`.
+    To be used throughout this package.
+    """
+    def __copy__(self):
+        new = self.__class__.__new__(self.__class__)
+        new.__dict__.update(self.__dict__)
+        return new
+
+    def copy(self, **kwargs):
+        new = self.__copy__()
+        new.__dict__.update(kwargs)
+        return new
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
+    @classmethod
+    def from_state(cls, state):
+        new = cls.__new__(cls)
+        new.__setstate__(state)
+        return new
+
+    def save(self, filename):
+        self.log_info('Saving {}.'.format(filename))
+        mkdir(os.path.dirname(filename))
+        np.save(filename, self.__getstate__(), allow_pickle=True)
+
+    @classmethod
+    def load(cls, filename):
+        cls.log_info('Loading {}.'.format(filename))
+        state = np.load(filename, allow_pickle=True)[()]
+        new = cls.from_state(state)
+        return new
+
+
+def is_sequence(item):
+    """Whether input item is a tuple or list."""
+    return isinstance(item, (list, tuple))
+
+
+def _check_inv(mat, invmat, rtol=1e-04, atol=1e-05):
+    """
+    Check input array ``mat`` and ``invmat`` are matrix inverse.
+    Raise :class:`LinAlgError` if input product of input arrays ``mat`` and ``invmat`` is not close to identity
+    within relative difference ``rtol`` and absolute difference ``atol``.
+    """
+    tmp = mat.dot(invmat)
+    ref = np.diag(np.ones(tmp.shape[0]))
+    if not np.allclose(tmp, ref, rtol=rtol, atol=atol):
+        raise LinAlgError('Numerically inacurrate inverse matrix, max absolute diff {:.6f}.'.format(np.max(np.abs(tmp - ref))))
+
+
+def inv(mat, inv=np.linalg.inv, check=True):
+    """
+    Return inverse of input 2D or 0D (scalar) array ``mat``.
+
+    Parameters
+    ----------
+    mat : 2D array, scalar
+        Input matrix to invert.
+
+    inv : callable, default=np.linalg.inv
+        Function that takes in 2D array and returns its inverse.
+
+    check : bool, default=True
+        If inversion inaccurate, raise a :class:`LinAlgError` (see :func:`_check_inv`).
+
+    Returns
+    -------
+    toret : 2D array, scalar
+        Inverse of ``mat``.
+    """
+    mat = np.asarray(mat)
+    if mat.ndim == 0:
+        return 1. / mat
+    if check:
+        toret = inv(mat)
+    else:
+        try:
+            toret = inv(mat)
+        except LinAlgError:
+            pass
+    if check:
+        _check_inv(mat, toret)
+    return toret
+
+
+def blockinv(blocks, inv=np.linalg.inv, check=True):
+    """
+    Return inverse of input ``blocks`` matrix.
+
+    Parameters
+    ----------
+    blocks : list of list of arrays
+        Input matrix to invert, in the form of blocks, e.g. ``[[A,B],[C,D]]``.
+
+    inv : callable, default=np.linalg.inv
+        Function that takes in 2D array and returns its inverse.
+
+    check : bool, default=True
+        If inversion inaccurate, raise a :class:`LinAlgError` (see :func:`_check_inv`).
+
+    Returns
+    -------
+    toret : 2D array
+        Inverse of ``blocks`` matrix.
+    """
+    def _inv(mat):
+        if check:
+            toret = inv(mat)
+        else:
+            try:
+                toret = inv(mat)
+            except LinAlgError:
+                pass
+        return toret
+
+    A = blocks[0][0]
+    if (len(blocks), len(blocks[0])) == (1, 1):
+        return _inv(A)
+    B = np.bmat(blocks[0][1:]).A
+    C = np.bmat([b[0].T for b in blocks[1:]]).A.T
+    invD = blockinv([b[1:] for b in blocks[1:]], inv=inv)
+
+    def dot(*args):
+        return np.linalg.multi_dot(args)
+
+    invShur = _inv(A - dot(B, invD, C))
+    toret = np.bmat([[invShur, -dot(invShur, B, invD)], [-dot(invD, C, invShur), invD + dot(invD, C, invShur, B, invD)]]).A
+    if check:
+        mat = np.bmat(blocks).A
+        _check_inv(mat, toret)
+    return toret
+
+
+def txt_to_latex(txt):
+    """Transform standard text into latex by replacing '_xxx' with '_{xxx}' and '^xxx' with '^{xxx}'."""
+    latex = ''
+    txt = list(txt)
+    for c in txt:
+        latex += c
+        if c in ['_', '^']:
+            latex += '{'
+            txt += '}'
+    return latex
