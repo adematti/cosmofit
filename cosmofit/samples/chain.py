@@ -1,4 +1,4 @@
-"""Definition of :class:`Samples`, to hold products of likelihood sampling."""
+"""Definition of :class:`Chain`, to hold products of likelihood sampling."""
 
 import os
 import re
@@ -12,59 +12,7 @@ from cosmofit.parameter import ParameterCollection, Parameter, ParameterArray
 from .utils import nsigmas_to_quantiles_1d_sym, metrics_to_latex
 
 
-def is_sequence(item):
-    """Whether input item is a tuple or list."""
-    return isinstance(item, (list, tuple, ParameterCollection))
-
-
-def select_columns(columns, include=None, exclude=None):
-    """
-    Select input column names.
-
-    Parameters
-    ----------
-    include : list, string, default=None
-        Single or list of *regex* or Unix-style patterns to select column names to include.
-        Defaults to all columns.
-
-    exclude : list, string, default=None
-        Single or list of *regex* or Unix-style patterns to select column names to exclude.
-        Defaults to no columns.
-
-    Returns
-    -------
-    columns : list
-        Column names, after optional selections.
-    """
-    def toregex(name):
-        return name.replace('.', r'\.').replace('*', '(.*)')
-
-    if not is_sequence(columns):
-        columns = [columns]
-
-    toret = columns
-
-    if include is not None:
-        if not is_sequence(include):
-            include = [include]
-        toret = []
-        for column in columns:
-            if any(re.match(toregex(inc), column) for inc in include):
-                toret.append(column)
-        columns = toret
-
-    if exclude is not None:
-        if not is_sequence(exclude):
-            exclude = [exclude]
-        toret = []
-        for column in columns:
-            if not any(re.match(toregex(exc), column) for exc in exclude):
-                toret.append(column)
-
-    return toret
-
-
-class Samples(ParameterCollection):
+class Chain(ParameterCollection):
 
     """Class that holds samples drawn from likelihood."""
 
@@ -72,7 +20,7 @@ class Samples(ParameterCollection):
     _attrs = []
 
     def __init__(self, data=None, logposterior='logposterior', aweight='aweight', fweight='fweight', weight='weight'):
-        super(Samples, self).__init__(data=data)
+        super(Chain, self).__init__(data=data)
         self._logposterior = logposterior
         self._aweight = aweight
         self._fweight = fweight
@@ -128,7 +76,7 @@ class Samples(ParameterCollection):
 
         Returns
         -------
-        samples : Samples
+        samples : Chain
         """
         if 0 < burnin < 1:
             burnin = burnin * len(self)
@@ -171,7 +119,7 @@ class Samples(ParameterCollection):
 
     def __repr__(self):
         """Return string representation, including shape and columns."""
-        return 'Samples(shape={:d}, parameters={})'.format(self.shape, self.parameters())
+        return 'Chain(shape={:d}, parameters={})'.format(self.shape, self.parameters())
 
     @classmethod
     def read_cosmomc(cls, base_filename, ichains=None):
@@ -193,7 +141,7 @@ class Samples(ParameterCollection):
 
         Returns
         -------
-        samples : Samples
+        samples : Chain
         """
         self = cls()
 
@@ -313,15 +261,15 @@ class Samples(ParameterCollection):
 
         Returns
         -------
-        samples : getdist.MCSamples
+        samples : getdist.MCChain
         """
-        from getdist import MCSamples
+        from getdist import MCChain
         toret = None
         if parameters is None: parameters = self.parameters()
         labels = [param.latex for param in parameters]
         samples = self.to_array(parameters=parameters, struct=False).reshape(-1, self.size)
         names = [str(param) for param in parameters]
-        toret = MCSamples(samples=samples.T, weights=self.weight, loglikes=-self.logposterior, names=names, labels=labels)
+        toret = MCChain(samples=samples.T, weights=self.weight, loglikes=-self.logposterior, names=names, labels=labels)
         return toret
 
     def var(self, parameter, ddof=1):
