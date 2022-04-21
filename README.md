@@ -1,5 +1,7 @@
 # cosmofit
 
+WARNING: this is ongoing work!
+
 **cosmofit** is a package for cosmological inference.
 
 Example notebooks presenting most use cases are provided in directory nb/.

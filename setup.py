@@ -18,4 +18,4 @@ setup(name=package_basename,
       url='http://github.com/adematti/cosmofit',
       install_requires=['numpy', 'scipy'],
       extras_require={'extras': ['cosmoprimo']},
-      packages=['cosmofit'])
+      packages=[package_basename])
