@@ -9,18 +9,19 @@ import numpy as np
 from cosmofit import utils
 from cosmofit.parameter import ParameterCollection, Parameter, ParameterArray
 
+from .profile import ParameterValues
 from .utils import nsigmas_to_quantiles_1d_sym, metrics_to_latex
 
 
-class Chain(ParameterCollection):
+class Chain(ParameterValues):
 
     """Class that holds samples drawn from likelihood."""
 
     _type = ParameterArray
     _attrs = []
 
-    def __init__(self, data=None, logposterior='logposterior', aweight='aweight', fweight='fweight', weight='weight'):
-        super(Chain, self).__init__(data=data)
+    def __init__(self, data=None, parameters=None, logposterior='logposterior', aweight='aweight', fweight='fweight', weight='weight'):
+        super(Chain, self).__init__(data=data, parameters=parameters)
         self._logposterior = logposterior
         self._aweight = aweight
         self._fweight = fweight

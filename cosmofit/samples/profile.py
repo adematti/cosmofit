@@ -18,6 +18,15 @@ class ParameterValues(ParameterCollection):
     _attrs = []
     _metrics = []
 
+    def __init__(self, data=None, parameters=None):
+        if parameters is not None:
+            if len(parameters) != len(data):
+                raise ValueError('Provide as many parameters as arrays')
+            for param, value in zip(parameters, data):
+                self[param] = value
+        else:
+            super(ParameterValues, self).__init__(data=data)
+
     @staticmethod
     def _get_name(param):
         return getattr(param, 'name', str(param))
@@ -379,4 +388,16 @@ class ProfilingResult(BaseClass):
             self.log_info('Saving to {}.'.format(filename))
             with open(filename, 'w') as file:
                 file.write(tab)
-            return tab
+        return tab
+
+    @classmethod
+    def bcast(cls, value, mpicomm=None, mpiroot=0):
+        import mpytools as mpy
+        state = None
+        if value is not None:
+            state = value.__getstate__()
+            state['data'] = [None] * len(state['data'])
+        state = mpicomm.bcast(state, root=mpiroot)
+        for ival, val in enumerate(state['data']):
+            state['data'][ival] = mpy.bcast(val, mpicomm=mpicomm, mpiroot=mpiroot)
+        return cls.from_state(state)
