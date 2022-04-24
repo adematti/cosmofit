@@ -140,6 +140,18 @@ class ParameterValues(ParameterCollection):
             return toret
         return np.array([self[name] for name in names])
 
+    @classmethod
+    def bcast(cls, value, mpicomm=None, mpiroot=0):
+        import mpytools as mpy
+        state = None
+        if value is not None:
+            state = value.__getstate__()
+            state['data'] = [None] * len(state['data'])
+        state = mpicomm.bcast(state, root=mpiroot)
+        for ival, val in enumerate(state['data']):
+            state['data'][ival] = mpy.bcast(val, mpicomm=mpicomm, mpiroot=mpiroot)
+        return cls.from_state(state)
+
 
 class ParameterBestFit(ParameterValues):
 
@@ -206,14 +218,18 @@ class ParameterCovariance(BaseClass):
         """Return string representation of parameter covariance, including parameters."""
         return '{}({})'.format(self.__class__.__name__, self.parameters)
 
+    @classmethod
+    def bcast(cls, value, mpicomm=None, mpiroot=0):
+        return mpicomm.bcast(value, root=mpiroot)
 
-class ProfilingResult(BaseClass):
+
+class Profiles(BaseClass):
     r"""
     Class holding results of likelihood profiling.
 
     Attributes
     ----------
-    init : ParamDict
+    start : ParamDict
         Initial parameter values.
 
     bestfit : ParamDict
@@ -228,7 +244,7 @@ class ProfilingResult(BaseClass):
     covariance : ParameterCovariance
         Parameter covariance at best fit.
     """
-    _attrs = {'init': ParameterValues, 'bestfit': ParameterBestFit, 'parabolic_errors': ParameterBestFit, 'deltachi2_errors': ParameterBestFit, 'covariance': ParameterCovariance}
+    _attrs = {'start': ParameterValues, 'bestfit': ParameterBestFit, 'parabolic_errors': ParameterBestFit, 'deltachi2_errors': ParameterBestFit, 'covariance': ParameterCovariance}
 
     def __init__(self, attrs=None, **kwargs):
         """
@@ -246,7 +262,7 @@ class ProfilingResult(BaseClass):
         self.set(**kwargs)
 
     def parameters(self, **kwargs):
-        return self.init.parameters(**kwargs)
+        return self.start.parameters(**kwargs)
 
     def set(self, parameters=None, **kwargs):
         for name, cls in self._attrs.items():
@@ -392,12 +408,10 @@ class ProfilingResult(BaseClass):
 
     @classmethod
     def bcast(cls, value, mpicomm=None, mpiroot=0):
-        import mpytools as mpy
         state = None
         if value is not None:
             state = value.__getstate__()
-            state['data'] = [None] * len(state['data'])
+            for name in cls._attrs: state[name] = None
         state = mpicomm.bcast(state, root=mpiroot)
-        for ival, val in enumerate(state['data']):
-            state['data'][ival] = mpy.bcast(val, mpicomm=mpicomm, mpiroot=mpiroot)
+        for name, acls in cls._attrs.items(): state[name] = acls.bcast(state[name], root=mpiroot)
         return cls.from_state(state)

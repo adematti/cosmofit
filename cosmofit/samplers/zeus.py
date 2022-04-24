@@ -22,8 +22,8 @@ class ZeusSampler(BaseSampler):
         logging.root.handlers = handlers
         logging.root.level = level
 
-    def _sample_single_chain(self, start, nsteps=300, thin_by=1):
-        for _ in self.sampler.sample(start=start, iterations=nsteps, progress=False, thin_by=self.thin_by):
+    def _run_one(self, start, niterations=300, thin_by=1):
+        for _ in self.sampler.sample(start=start, iterations=niterations, progress=False, thin_by=self.thin_by):
             pass
         chain = self.sampler.get_chain()
         data = [chain[..., iparam] for iparam, param in enumerate(self.varied)] + [self.sampler.get_log_prob()]

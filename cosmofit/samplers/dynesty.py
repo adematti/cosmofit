@@ -9,6 +9,12 @@ from .base import BaseSampler
 class DynestySampler(BaseSampler):
 
     def __init__(self, *args, mode='static', nlive=500, bound='multi', sample='auto', update_interval=None, dlogz=0.01, **kwargs):
+        self.mode = mode
+        self.nlive = int(nlive)
+        self.bound = bound
+        self.sample = sample
+        self.update_interval = update_interval
+        self.dlogz = float(dlogz)
         super(DynestySampler, self).__init__(*args, **kwargs)
         for param in self.varied:
             if not param.prior.is_proper():
@@ -28,11 +34,11 @@ class DynestySampler(BaseSampler):
             toret[iparam] = param.prior.ppf(value)
         return toret
 
-    def _sample_single_chain(self, start, nsteps=300, thin_by=1):
+    def _run_one(self, start, niterations=300, thin_by=1):
         if self.mode == 'static':
-            self.sampler.run_nested(nlive_init=self.nlive, maxiter=nsteps, dlogz_init=self.dlogz)
+            self.sampler.run_nested(nlive_init=self.nlive, maxiter=niterations, dlogz_init=self.dlogz)
         else:
-            self.sampler.run_nested(nlive_init=self.nlive, maxiter=nsteps, dlogz_init=self.dlogz)
+            self.sampler.run_nested(nlive_init=self.nlive, maxiter=niterations, dlogz_init=self.dlogz)
         results = self.sampler.results
         chain = [results['samples'][..., iparam] for iparam, param in enumerate(self.varied)]
         logprior = sum(param.prior(value) for param, value in zip(self.varied, chain))

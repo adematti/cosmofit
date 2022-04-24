@@ -18,16 +18,16 @@ class BaseSampler(BaseClass):
         self.mpicomm = mpicomm
         self.likelihood = likelihood
         self.varied = self.likelihood.parameters(varied=True)
-        if chains is None: chains = self.mpicomm.size
+        if chains is None: chains = max(self.mpicomm.size - 1, 1)
         if isinstance(chains, numbers.Number):
             self.chains = [None] * int(chains)
         else:
             if not utils.is_sequence(chains):
                 chains = [chains]
             self.chains = [chain if isinstance(chain, Chain) else Chain.load(chain) for chain in chains]
+        self.max_tries = int(max_tries)
         self._set_rng(rng=rng, seed=seed)
         self._set_sampler()
-        self.max_tries = int(max_tries)
         self.diagnostics = {}
 
     def __getstate__(self):
@@ -52,7 +52,7 @@ class BaseSampler(BaseClass):
     @property
     def start(self):
         if getattr(self, '_start') is None:
-            self._set_start()
+            self._start = self._get_start()
         return self._start
 
     @start.setter
@@ -75,7 +75,7 @@ class BaseSampler(BaseClass):
             return np.array(toret).T
 
         itry = 0
-        start = np.full(self.nwalkers * self.nchains, np.nan)
+        start = np.full(self.nwalkers * self.nchains * len(self.varied), np.nan)
         while itry < max_tries:
             mask = np.isnan(start)
             values = get_start(size=mask.sum())
@@ -85,7 +85,7 @@ class BaseSampler(BaseClass):
         if np.isnan(start).any():
             raise ValueError('Could not find finite log posterior after {:d} tries'.format(max_tries))
 
-        self.start = self.mpicomm.bcast(np.array(start), root=0)
+        return self.mpicomm.bcast(np.array(start), root=0)
 
     def __enter__(self):
         return self
@@ -93,7 +93,7 @@ class BaseSampler(BaseClass):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         pass
 
-    def sample(self, nsteps=300, thin_by=1, **kwargs):
+    def run(self, niterations=300, thin_by=1, **kwargs):
         chains = [None] * self.nchains
         nprocs_per_chain = max((self.mpicomm.size - 1) // self.nchains, 1)
         if self.chains[0] is not None: start = [np.array([chain[param][-1] for param in self.varied]).T for chain in self.chains]
@@ -102,7 +102,7 @@ class BaseSampler(BaseClass):
         with TaskManager(nprocs_per_task=nprocs_per_chain, use_all_nprocs=True, mpicomm=self.mpicomm) as tm:
             self.likelihood.mpicomm = tm.mpicomm
             for ichain in tm.iterate(range(self.nchains)):
-                chains[ichain] = self._sample_single_chain(start[ichain], nsteps=nsteps, thin_by=thin_by, **kwargs)
+                chains[ichain] = self._run_one(start[ichain], niterations=niterations, thin_by=thin_by, **kwargs)
         for ichain, chain in enumerate(chains):
             mpiroot_worker = self.mpicomm.rank if chain is not None else None
             for mpiroot_worker in self.mpicomm.allgather(mpiroot_worker):
@@ -206,12 +206,12 @@ class BaseSampler(BaseClass):
 
             iact = iact.max()
             msg = '{}max integrated autocorrelation time is {:.3g}'.format(item, iact)
-            n_iterations = len(split_samples[0])
-            if iact_reliable * iact < n_iterations:
+            niterations = len(split_samples[0])
+            if iact_reliable * iact < niterations:
                 msg = '{} (reliable)'.format(msg)
             if iact_stop is not None:
-                test = iact * iact_stop < n_iterations
-                self.log_info('{} {} {:d}/{:.1f} = {:.3g}'.format(msg, '<' if test else '>', n_iterations, iact_stop, n_iterations / iact_stop))
+                test = iact * iact_stop < niterations
+                self.log_info('{} {} {:d}/{:.1f} = {:.3g}'.format(msg, '<' if test else '>', niterations, iact_stop, niterations / iact_stop))
                 add_diagnostics('iact', test)
                 toret = is_stable('iact')
             else:
