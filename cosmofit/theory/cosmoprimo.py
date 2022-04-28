@@ -3,11 +3,13 @@ import cosmoprimo
 from cosmofit.base import BaseCalculator
 
 
-class Cosmoprimo(BaseCalculator):
+class Cosmoprimo(cosmoprimo.Cosmology, BaseCalculator):
 
-    def __init__(self, engine='class', extra_parameters=None):
+    name = 'cosmoprimo'
+
+    def __init__(self, engine='class', extra_params=None):
         self.engine = engine
-        self.extra_parameters = extra_parameters or {}
+        self.extra_params = extra_params or {}
 
-    def get_output(self, inputs):
-        return {'cosmoprimo': cosmoprimo.Cosmology(**inputs, extra_parameters=self.extra_parameters, engine=self.engine)}
+    def run(self, **params):
+        super(Cosmoprimo, self).__init__(**params, extra_params=self.extra_params, engine=self.engine)
