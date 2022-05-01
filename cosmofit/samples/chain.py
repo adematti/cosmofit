@@ -20,8 +20,8 @@ class Chain(ParameterValues):
     _type = ParameterArray
     _attrs = []
 
-    def __init__(self, data=None, parameters=None, logposterior='logposterior', aweight='aweight', fweight='fweight', weight='weight'):
-        super(Chain, self).__init__(data=data, parameters=parameters)
+    def __init__(self, data=None, params=None, logposterior='logposterior', aweight='aweight', fweight='fweight', weight='weight'):
+        super(Chain, self).__init__(data=data, params=params)
         self._logposterior = logposterior
         self._aweight = aweight
         self._fweight = fweight
@@ -120,7 +120,7 @@ class Chain(ParameterValues):
 
     def __repr__(self):
         """Return string representation, including shape and columns."""
-        return 'Chain(shape={:d}, parameters={})'.format(self.shape, self.parameters())
+        return 'Chain(shape={:d}, params={})'.format(self.shape, self.params())
 
     @classmethod
     def read_cosmomc(cls, base_filename, ichains=None):
@@ -146,16 +146,16 @@ class Chain(ParameterValues):
         """
         self = cls()
 
-        parameters_filename = '{}.paramnames'.format(base_filename)
-        self.log_info('Loading parameters file: {}.'.format(parameters_filename))
-        parameters = ParameterCollection()
-        with open(parameters_filename) as file:
+        params_filename = '{}.paramnames'.format(base_filename)
+        self.log_info('Loading params file: {}.'.format(params_filename))
+        params = ParameterCollection()
+        with open(params_filename) as file:
             for line in file:
                 name, latex = line.split()
                 name = name.strip()
                 if name.endswith('*'): name = name[:-1]
                 latex = latex.strip().replace('\n', '')
-                parameters.set(Parameter(name=name.strip(), latex=latex, fixed=False))
+                params.set(Parameter(name=name.strip(), latex=latex, fixed=False))
 
             ranges_filename = '{}.ranges'.format(base_filename)
             if os.path.exists(ranges_filename):
@@ -170,7 +170,7 @@ class Chain(ParameterValues):
                             if lh == 'N': lh = li
                             else: lh = float(lh)
                             limits.append(lh)
-                        parameters[name.strip()].prior.set_limits(limits=limits)
+                        params[name.strip()].prior.set_limits(limits=limits)
             else:
                 self.log_info('Parameter ranges file {} does not exist.'.format(ranges_filename))
 
@@ -192,12 +192,12 @@ class Chain(ParameterValues):
             samples = np.concatenate(samples, axis=-1)
             self.aweight = samples[0]
             self.logposterior = -samples[1]
-            for param, values in zip(parameters, samples[2:]):
+            for param, values in zip(params, samples[2:]):
                 self.set(ParameterArray(values, param))
 
         return self
 
-    def write_cosmomc(self, base_filename, parameters=None, ichain=None, fmt='%.18e', delimiter=' ', **kwargs):
+    def write_cosmomc(self, base_filename, params=None, ichain=None, fmt='%.18e', delimiter=' ', **kwargs):
         """
         Save samples to disk in *CosmoMC* format.
 
@@ -217,8 +217,8 @@ class Chain(ParameterValues):
         kwargs : dict
             Arguments for :func:`numpy.savetxt`.
         """
-        if parameters is None: parameters = self.names()
-        columns = list([str(param) for param in parameters])
+        if params is None: params = self.names()
+        columns = list([str(param) for param in params])
         metrics_columns = [self._weight, self._logposterior]
         for column in metrics_columns:
             if column in columns: del columns[columns.index(column)]
@@ -231,18 +231,18 @@ class Chain(ParameterValues):
         np.savetxt(chain_filename, data, header='', fmt=fmt, delimiter=delimiter, **kwargs)
 
         output = ''
-        parameters = self.parameters()
-        parameters = [parameters[column] for column in columns]
-        for param in parameters:
+        params = self.params()
+        params = [params[column] for column in columns]
+        for param in params:
             tmp = '{}* {}\n' if getattr(param, 'derived', getattr(param, 'fixed')) else '{} {}\n'
             output += tmp.format(param.name, param.latex if param.latex is not None else param.name)
-        parameters_filename = '{}.paramnames'.format(base_filename)
-        self.log_info('Saving parameter names to {}.'.format(parameters_filename))
-        with open(parameters_filename, 'w') as file:
+        params_filename = '{}.paramnames'.format(base_filename)
+        self.log_info('Saving parameter names to {}.'.format(params_filename))
+        with open(params_filename, 'w') as file:
             file.write(output)
 
         output = ''
-        for param in parameters:
+        for param in params:
             limits = param.prior.limits
             limits = tuple('N' if limit is None or np.abs(limit) == np.inf else limit for limit in limits)
             output += '{} {} {}\n'.format(param.name, limits[0], limits[1])
@@ -251,7 +251,7 @@ class Chain(ParameterValues):
         with open(ranges_filename, 'w') as file:
             file.write(output)
 
-    def to_getdist(self, parameters=None):
+    def to_getdist(self, params=None):
         """
         Return *GetDist* hook to samples.
 
@@ -266,10 +266,10 @@ class Chain(ParameterValues):
         """
         from getdist import MCChain
         toret = None
-        if parameters is None: parameters = self.parameters()
-        labels = [param.latex for param in parameters]
-        samples = self.to_array(parameters=parameters, struct=False).reshape(-1, self.size)
-        names = [str(param) for param in parameters]
+        if params is None: params = self.params()
+        labels = [param.latex for param in params]
+        samples = self.to_array(params=params, struct=False).reshape(-1, self.size)
+        names = [str(param) for param in params]
         toret = MCChain(samples=samples.T, weights=self.weight, loglikes=-self.logposterior, names=names, labels=labels)
         return toret
 
@@ -334,7 +334,7 @@ class Chain(ParameterValues):
         """
         return utils.interval(self[parameter].ravel(), self.weight.ravel(), **kwargs)
 
-    def cov(self, parameters=None, ddof=1):
+    def cov(self, params=None, ddof=1):
         """
         Estimate weighted parameter covariance.
 
@@ -353,9 +353,9 @@ class Chain(ParameterValues):
             If single parameter provided as ``columns``, returns variance for that parameter (scalar).
             Else returns covariance (2D array).
         """
-        return np.cov([self[param].ravel() for param in parameters], fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof)
+        return np.cov([self[param].ravel() for param in params], fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof)
 
-    def invcov(self, parameters=None, ddof=1):
+    def invcov(self, params=None, ddof=1):
         """
         Estimate weighted parameter inverse covariance.
 
@@ -374,16 +374,16 @@ class Chain(ParameterValues):
             If single parameter provided as ``columns``, returns inverse variance for that parameter (scalar).
             Else returns inverse covariance (2D array).
         """
-        return utils.inv(self.cov(parameters, ddof=ddof))
+        return utils.inv(self.cov(params, ddof=ddof))
 
-    def corrcoef(self, parameters=None, **kwargs):
+    def corrcoef(self, params=None, **kwargs):
         """
         Estimate weighted parameter correlation matrix.
         See :meth:`cov`.
         """
-        return utils.cov_to_corrcoef(self.cov(parameters, **kwargs))
+        return utils.cov_to_corrcoef(self.cov(params, **kwargs))
 
-    def to_stats(self, parameters=None, quantities=None, sigfigs=2, tablefmt='latex_raw', filename=None):
+    def to_stats(self, params=None, quantities=None, sigfigs=2, tablefmt='latex_raw', filename=None):
         """
         Export samples summary quantities.
 
@@ -414,7 +414,7 @@ class Chain(ParameterValues):
         """
         import tabulate
         # if columns is None: columns = self.columns(exclude='metrics.*')
-        if parameters is None: parameters = self.parameters(varied=True)
+        if params is None: params = self.params(varied=True)
         data = []
         if quantities is None: quantities = ['argmax', 'mean', 'median', 'std', 'quantile:1sigma', 'interval:1sigma']
         is_latex = 'latex_raw' in tablefmt
@@ -424,7 +424,7 @@ class Chain(ParameterValues):
             if is_latex: return '${{}}_{{{}}}^{{+{}}}$'.format(low, up)
             return '{}/+{}'.format(low, up)
 
-        for iparam, param in enumerate(parameters):
+        for iparam, param in enumerate(params):
             row = []
             if is_latex: row.append(param.get_label())
             else: row.append(str(param.name))

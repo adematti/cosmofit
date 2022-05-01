@@ -675,7 +675,7 @@ class BaseParameterCollection(BaseClass):
         if item in self:
             self.set(item)
 
-    def parameters(self, **kwargs):
+    def params(self, **kwargs):
         names = [self._get_name(item) for item in self.data]
         name = kwargs.pop('name', None)
         if name is not None:
@@ -690,8 +690,8 @@ class BaseParameterCollection(BaseClass):
 
     def names(self, **kwargs):
         """Return parameter names in collection."""
-        parameters = self.parameters(**kwargs)
-        return [str(param) for param in parameters]
+        params = self.params(**kwargs)
+        return [str(param) for param in params]
 
     def select(self, **kwargs):
         """

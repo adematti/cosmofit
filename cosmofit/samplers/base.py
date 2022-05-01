@@ -40,6 +40,19 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
         self._set_sampler()
         self.diagnostics = {}
 
+    def loglikelihood(self, values):
+        params = {str(param): value for param, value in zip(self.varied, values)}
+        self.likelihood.run(**params)
+        return self.likelihood.loglikelihood
+
+    def logposterior(self, values):
+        params = {str(param): value for param, value in zip(self.varied, values)}
+        logprior = self.likelihood.logprior(**params)
+        if np.isinf(logprior):
+            return logprior
+        self.likelihood.run(**params)
+        return self.likelihood.loglikelihood + logprior
+
     def __getstate__(self):
         state = {}
         for name in ['max_tries', 'diagnostics']:
@@ -90,7 +103,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             mask = np.isnan(start)
             values = get_start(size=mask.sum())
             itry += 1
-            start[mask] = self.likelihood.logposterior(values)
+            start[mask] = self.logposterior(values)
 
         if np.isnan(start).any():
             raise ValueError('Could not find finite log posterior after {:d} tries'.format(max_tries))

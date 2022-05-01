@@ -15,10 +15,10 @@ class ZeusSampler(BaseSampler):
         self.nwalkers = int(nwalkers)
         self.light_mode = bool(light_mode)
 
-    def init_sampler(self):
+    def _set_sampler(self):
         handlers = logging.root.handlers.copy()
         level = logging.root.level
-        self.sampler = zeus.EnsembleSampler(self.nwalkers, len(self.varied), self.likelihood.logposterior, verbose=False, light_mode=self.light_mode)
+        self.sampler = zeus.EnsembleSampler(self.nwalkers, len(self.varied), self.logposterior, verbose=False, light_mode=self.light_mode, vectorize=False)
         logging.root.handlers = handlers
         logging.root.level = level
 
@@ -28,4 +28,4 @@ class ZeusSampler(BaseSampler):
         chain = self.sampler.get_chain()
         data = [chain[..., iparam] for iparam, param in enumerate(self.varied)] + [self.sampler.get_log_prob()]
         self.sampler.reset()
-        return Chain(data=data, parameters=self.varied + ['logposterior'])
+        return Chain(data=data, params=self.varied + ['logposterior'])

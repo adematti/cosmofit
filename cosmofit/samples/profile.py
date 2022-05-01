@@ -18,11 +18,11 @@ class ParameterValues(ParameterCollection):
     _attrs = []
     _metrics = []
 
-    def __init__(self, data=None, parameters=None):
-        if parameters is not None:
-            if len(parameters) != len(data):
+    def __init__(self, data=None, params=None):
+        if params is not None:
+            if len(params) != len(data):
                 raise ValueError('Provide as many parameters as arrays')
-            for param, value in zip(parameters, data):
+            for param, value in zip(params, data):
                 self[param] = value
         else:
             super(ParameterValues, self).__init__(data=data)
@@ -46,11 +46,11 @@ class ParameterValues(ParameterCollection):
         """Equivalent for :meth:`__len__`."""
         return np.prod(self.shape, dtype='intp')
 
-    def parameters(self, include_metrics=False, **kwargs):
-        parameters = super(ParameterValues, self).parameters(**kwargs)
+    def params(self, include_metrics=False, **kwargs):
+        params = super(ParameterValues, self).params(**kwargs)
         if not include_metrics:
-            parameters = [param for param in parameters if str(param) not in self._metrics]
-        return parameters
+            params = [param for param in params if str(param) not in self._metrics]
+        return params
 
     @classmethod
     def concatenate(cls, *others):
@@ -112,9 +112,9 @@ class ParameterValues(ParameterCollection):
 
     def __repr__(self):
         """Return string representation, including shape and columns."""
-        return 'ParameterValues(shape={:d}, parameters={})'.format(self.shape, self.parameters())
+        return 'ParameterValues(shape={:d}, params={})'.format(self.shape, self.params())
 
-    def to_array(self, parameters=None, struct=True):
+    def to_array(self, params=None, struct=True):
         """
         Return samples as numpy array.
 
@@ -131,9 +131,9 @@ class ParameterValues(ParameterCollection):
         -------
         array : array
         """
-        if parameters is None:
-            parameters = self.parameters()
-        names = [self._get_name(name) for name in parameters]
+        if params is None:
+            params = self.params()
+        names = [self._get_name(name) for name in params]
         if struct:
             toret = np.empty(len(self), dtype=[(name, self[name].dtype, self.shape[1:]) for name in names])
             for name in names: toret[name] = self[name]
@@ -174,7 +174,7 @@ class ParameterCovariance(BaseClass):
 
     """Class that represents a parameter covariance."""
 
-    def __init__(self, covariance, parameters):
+    def __init__(self, covariance, params):
         """
         Initialize :class:`ParameterCovariance`.
 
@@ -183,40 +183,40 @@ class ParameterCovariance(BaseClass):
         covariance : array
             2D array representing covariance.
 
-        parameters : list, ParameterCollection
+        params : list, ParameterCollection
             Parameters corresponding to input ``covariance``.
         """
         self._cov = np.asarray(covariance)
-        self.parameters = ParameterCollection(parameters)
+        self.params = ParameterCollection(params)
 
-    def cov(self, parameters=None):
-        """Return covariance matrix for input parameters ``parameters``."""
-        if parameters is None:
-            parameters = self.parameters
-        idx = np.array([self.parameters.index(param) for param in parameters])
+    def cov(self, params=None):
+        """Return covariance matrix for input parameters ``params``."""
+        if params is None:
+            params = self.params
+        idx = np.array([self.params.index(param) for param in params])
         toret = self._cov[np.ix_(idx, idx)]
         return toret
 
-    def invcov(self, parameters=None):
-        """Return inverse covariance matrix for input parameters ``parameters``."""
-        return utils.inv(self.cov(parameters))
+    def invcov(self, params=None):
+        """Return inverse covariance matrix for input parameters ``params``."""
+        return utils.inv(self.cov(params))
 
-    def corrcoef(self, parameters=None):
-        """Return correlation matrix for input parameters ``parameters``."""
-        return utils.cov_to_corrcoef(self.cov(parmeters=parameters))
+    def corrcoef(self, params=None):
+        """Return correlation matrix for input parameters ``params``."""
+        return utils.cov_to_corrcoef(self.cov(parmeters=params))
 
     def __getstate__(self):
         """Return this class state dictionary."""
-        return {'cov': self._cov, 'parameters': self.parameters.__getstate__()}
+        return {'cov': self._cov, 'params': self.params.__getstate__()}
 
     def __setstate__(self, state):
         """Set this class state dictionary."""
         self._cov = state['cov']
-        self.parameters = ParameterCollection.from_state(state['parameters'])
+        self.params = ParameterCollection.from_state(state['params'])
 
     def __repr__(self):
         """Return string representation of parameter covariance, including parameters."""
-        return '{}({})'.format(self.__class__.__name__, self.parameters)
+        return '{}({})'.format(self.__class__.__name__, self.params)
 
     @classmethod
     def bcast(cls, value, mpicomm=None, mpiroot=0):
@@ -252,25 +252,22 @@ class Profiles(BaseClass):
 
         Parameters
         ----------
-        parameters : list, ParameterCollection
-            Parameters used in likelihood profiling.
-
         attrs : dict, default=None
             Other attributes.
         """
         self.attrs = attrs or {}
         self.set(**kwargs)
 
-    def parameters(self, **kwargs):
-        return self.start.parameters(**kwargs)
+    def params(self, **kwargs):
+        return self.start.params(**kwargs)
 
-    def set(self, parameters=None, **kwargs):
+    def set(self, params=None, **kwargs):
         for name, cls in self._attrs.items():
             if name in kwargs:
                 item = kwargs[name]
                 if name == 'covariance':
                     if not isinstance(item, cls):
-                        item = cls(item, parameters=self.parameters() if parameters is None else parameters)
+                        item = cls(item, params=self.params() if params is None else params)
                 else:
                     item = cls(item)
                 setattr(self, name, item)
@@ -334,13 +331,13 @@ class Profiles(BaseClass):
             if name in state:
                 setattr(self, name, cls.from_state(state[name]))
 
-    def to_stats(self, parameters=None, quantities=None, sigfigs=2, tablefmt='latex_raw', filename=None):
+    def to_stats(self, params=None, quantities=None, sigfigs=2, tablefmt='latex_raw', filename=None):
         """
         Export profiling quantities.
 
         Parameters
         ----------
-        parameters : list, ParameterCollection
+        params : list, ParameterCollection
             Parameters to export quantities for.
             Defaults to all parameters.
 
@@ -364,7 +361,7 @@ class Profiles(BaseClass):
             Summary table.
         """
         import tabulate
-        if parameters is None: parameters = self.parameters
+        if params is None: params = self.params
         data = []
         if quantities is None: quantities = [quantity for quantity in ['bestfit', 'parabolic_errors', 'deltachi2_errors'] if self.has(quantity)]
         is_latex = 'latex_raw' in tablefmt
@@ -375,7 +372,7 @@ class Profiles(BaseClass):
             if is_latex: return '${{}}_{{{}}}^{{+{}}}$'.format(low, up)
             return '{}/+{}'.format(low, up)
 
-        for iparam, param in enumerate(parameters):
+        for iparam, param in enumerate(params):
             row = []
             if is_latex: row.append(param.get_label())
             else: row.append(str(param.name))

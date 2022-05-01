@@ -22,7 +22,7 @@ class BaseTheoryPowerSpectrumMultipoles(BaseCalculator):
         return state
 
 
-class TrapzTheoryPowerSpectrumMultipoles(BasePowerSpectrumMultipoles):
+class TrapzTheoryPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, mu=200, **kwargs):
         super(TrapzTheoryPowerSpectrumMultipoles, self).__init__(*args, **kwargs)

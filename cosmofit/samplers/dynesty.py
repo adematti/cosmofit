@@ -24,9 +24,9 @@ class DynestySampler(BaseSampler):
         ndim = len(self.varied)
 
         if self.mode == 'static':
-            self.sampler = dynesty.NestedSampler(self.likelihood.loglkl, self.prior_transform, ndim, nlive=self.nlive, bound=self.bound, sample=self.sample, update_interval=self.update_interval)
+            self.sampler = dynesty.NestedSampler(self.loglikelihood, self.prior_transform, ndim, nlive=self.nlive, bound=self.bound, sample=self.sample, update_interval=self.update_interval)
         else:
-            self.sampler = dynesty.DynamicNestedSampler(self.likelihood.loglkl, self.prior_transform, ndim, bound=self.bound, sample=self.sample, update_interval=self.update_interval)
+            self.sampler = dynesty.DynamicNestedSampler(self.loglikelihood, self.prior_transform, ndim, bound=self.bound, sample=self.sample, update_interval=self.update_interval)
 
     def prior_transform(self, values):
         toret = np.empty_like(values)
@@ -46,4 +46,4 @@ class DynestySampler(BaseSampler):
         chain.append(results['logl'] + logprior)
         chain.append(results['logwt'])
         chain.append(np.exp(results.logwt - results.logz[-1]))
-        return Chain(chain, parameters=self.varied + ['logprior', 'logposterior', 'logweight', 'fweight'])
+        return Chain(chain, params=self.varied + ['logprior', 'logposterior', 'logweight', 'fweight'])

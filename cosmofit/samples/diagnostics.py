@@ -11,7 +11,7 @@ log_info = logger.info
 log_warning = logger.warning
 
 
-def gelman_rubin(chains, parameters=None, statistic='mean', method='eigen', return_matrices=False, check=True):
+def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_matrices=False, check=True):
     """
     Estimate Gelman-Rubin statistics, which compares covariance of chain means to (mean of) intra-chain covariances.
 
@@ -42,8 +42,8 @@ def gelman_rubin(chains, parameters=None, statistic='mean', method='eigen', retu
     ---------
     http://www.stat.columbia.edu/~gelman/research/published/brooksgelman2.pdf
     """
-    if parameters is None: parameters = chains[0].parameters(varied=True)
-    isscalar = not utils.is_sequence(parameters)
+    if params is None: params = chains[0].params(varied=True)
+    isscalar = not utils.is_sequence(params)
 
     if not utils.is_sequence(chains):
         raise ValueError('Provide a list of at least 2 chains to estimate Gelman-Rubin')
@@ -53,11 +53,11 @@ def gelman_rubin(chains, parameters=None, statistic='mean', method='eigen', retu
 
     if statistic == 'mean':
 
-        def statistic(chain, parameters):
-            return chain.mean(parameters)
+        def statistic(chain, params):
+            return chain.mean(params)
 
-    means = np.asarray([statistic(chain, parameters) for chain in chains])
-    covs = np.asarray([chain.cov(parameters) for chain in chains])
+    means = np.asarray([statistic(chain, params) for chain in chains])
+    covs = np.asarray([chain.cov(params) for chain in chains])
     nsteps = np.asarray([chain.weight.sum() for chain in chains])
     # W = "within"
     Wn1 = np.average(covs, weights=nsteps, axis=0)
@@ -82,14 +82,14 @@ def gelman_rubin(chains, parameters=None, statistic='mean', method='eigen', retu
     return toret
 
 
-def autocorrelation(chains, parameters=None):
+def autocorrelation(chains, params=None):
     """
     Return weighted autocorrelation.
     Adapted from https://github.com/dfm/emcee/blob/main/src/emcee/autocorr.py
 
     Parameters
     ----------
-    parameters : string, Parameter
+    params : string, Parameter
         Parameters to compute autocorrelation for.
         Defaults to all parameters.
 
@@ -100,20 +100,20 @@ def autocorrelation(chains, parameters=None):
     if not utils.is_sequence(chains):
         chains = [chains]
 
-    if parameters is None: parameters = chains[0].parameters(varied=True)
-    if utils.is_sequence(parameters):
-        return np.array([autocorrelation(chains[0], parameter) for parameter in parameters])
+    if params is None: params = chains[0].params(varied=True)
+    if utils.is_sequence(params):
+        return np.array([autocorrelation(chains[0], param) for param in params])
 
     toret = 0
     for chain in chains:
-        value = chain[parameters]
+        value = chain[params]
         weight = chain.weight
         x = (value - np.average(value, weights=weight)) * weight
         toret += _autocorrelation_1d(x)
     return toret / len(chains)
 
 
-def integrated_autocorrelation_time(chains, parameters=None, min_corr=None, c=5, reliable=50, check=False):
+def integrated_autocorrelation_time(chains, params=None, min_corr=None, c=5, reliable=50, check=False):
     """
     Return integrated autocorrelation time.
     Adapted from https://github.com/dfm/emcee/blob/main/src/emcee/autocorr.py
@@ -147,10 +147,10 @@ def integrated_autocorrelation_time(chains, parameters=None, min_corr=None, c=5,
     if not utils.is_sequence(chains):
         chains = [chains]
 
-    if parameters is None: parameters = chains[0].parameters(varied=True)
+    if params is None: params = chains[0].params(varied=True)
 
-    if utils.is_sequence(parameters):
-        return np.array([integrated_autocorrelation_time(chains, parameter, min_corr=min_corr, c=c, reliable=reliable, check=check) for parameter in parameters])
+    if utils.is_sequence(params):
+        return np.array([integrated_autocorrelation_time(chains, param, min_corr=min_corr, c=c, reliable=reliable, check=check) for param in params])
 
     # Automated windowing procedure following Sokal (1989)
     def auto_window(taus, c):
@@ -163,7 +163,7 @@ def integrated_autocorrelation_time(chains, parameters=None, min_corr=None, c=5,
     for chain in chains:
         if chain.size != size:
             raise ValueError('Input chains must have same length')
-    corr = autocorrelation(chains, parameters)
+    corr = autocorrelation(chains, params)
     toret = None
     if min_corr is not None:
         ix = np.argmin(corr > min_corr * corr[0])
@@ -175,7 +175,7 @@ def integrated_autocorrelation_time(chains, parameters=None, min_corr=None, c=5,
     else:
         raise ValueError('A criterion must be provided to stop integration of correlation time')
     if check and reliable * toret > size:
-        msg = 'The chain is shorter than {:d} times the integrated autocorrelation time for {}. Use this estimate with caution and run a longer chain!\n'.format(reliable, parameters)
+        msg = 'The chain is shorter than {:d} times the integrated autocorrelation time for {}. Use this estimate with caution and run a longer chain!\n'.format(reliable, params)
         msg += 'N/{:d} = {:.0f};\ntau: {}'.format(reliable, size / reliable, toret)
         log_warning(msg)
     return toret
@@ -211,18 +211,18 @@ def _autocorrelation_1d(x):
     return acf
 
 
-def geweke(chains, parameters=None, first=0.25, last=0.75):
+def geweke(chains, params=None, first=0.25, last=0.75):
 
     if not utils.is_sequence(chains):
         chains = [chains]
 
-    if parameters is None: parameters = chains[0].parameters(varied=True)
-    if utils.is_sequence(parameters):
-        return np.array([geweke(chains[0], parameter, first=first, last=last) for parameter in parameters])
+    if params is None: params = chains[0].params(varied=True)
+    if utils.is_sequence(params):
+        return np.array([geweke(chains[0], parameter, first=first, last=last) for parameter in params])
 
     toret = []
     for chain in chains:
-        value, aweight, fweight = chain[parameters].ravel(), chain.aweight.ravel(), chain.fweight.ravel()
+        value, aweight, fweight = chain[params].ravel(), chain.aweight.ravel(), chain.fweight.ravel()
         ifirst, ilast = int(first * value.size + 0.5), int(last * value.size + 0.5)
         value_first, value_last = value[:ifirst], value[ilast:]
         aweight_first, aweight_last = aweight[:ifirst], aweight[ilast:]
