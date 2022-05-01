@@ -5,6 +5,7 @@ import sys
 import time
 import logging
 import traceback
+import warnings
 
 import numpy as np
 from numpy.linalg import LinAlgError
@@ -159,7 +160,7 @@ def is_sequence(item):
     return isinstance(item, (list, tuple))
 
 
-def _check_inv(mat, invmat, rtol=1e-04, atol=1e-05):
+def _check_valid_inv(mat, invmat, rtol=1e-04, atol=1e-05, check_valid='raise'):
     """
     Check input array ``mat`` and ``invmat`` are matrix inverse.
     Raise :class:`LinAlgError` if input product of input arrays ``mat`` and ``invmat`` is not close to identity
@@ -168,10 +169,16 @@ def _check_inv(mat, invmat, rtol=1e-04, atol=1e-05):
     tmp = mat.dot(invmat)
     ref = np.diag(np.ones(tmp.shape[0]))
     if not np.allclose(tmp, ref, rtol=rtol, atol=atol):
-        raise LinAlgError('Numerically inacurrate inverse matrix, max absolute diff {:.6f}.'.format(np.max(np.abs(tmp - ref))))
+        msg = 'Numerically inacurrate inverse matrix, max absolute diff {:.6f}.'.format(np.max(np.abs(tmp - ref)))
+        if check_valid == 'raise':
+            raise LinAlgError(msg)
+        elif check_valid == 'warn':
+            warnings.warn(msg)
+        elif check_valid != 'ignore':
+            raise ValueError('check_valid must be one of ["raise", "warn", "ignore"]')
 
 
-def inv(mat, inv=np.linalg.inv, check=True):
+def inv(mat, inv=np.linalg.inv, check_valid=True):
     """
     Return inverse of input 2D or 0D (scalar) array ``mat``.
 
@@ -183,8 +190,8 @@ def inv(mat, inv=np.linalg.inv, check=True):
     inv : callable, default=np.linalg.inv
         Function that takes in 2D array and returns its inverse.
 
-    check : bool, default=True
-        If inversion inaccurate, raise a :class:`LinAlgError` (see :func:`_check_inv`).
+    check_valid : bool, default=True
+        If inversion inaccurate, raise a :class:`LinAlgError` (see :func:`_check_valid_inv`).
 
     Returns
     -------
@@ -194,19 +201,21 @@ def inv(mat, inv=np.linalg.inv, check=True):
     mat = np.asarray(mat)
     if mat.ndim == 0:
         return 1. / mat
-    if check:
+    try:
         toret = inv(mat)
-    else:
-        try:
-            toret = inv(mat)
-        except LinAlgError:
-            pass
-    if check:
-        _check_inv(mat, toret)
+    except LinAlgError as exc:
+        if check_valid == 'raise':
+            raise exc
+        elif check_valid == 'warn':
+            warnings.warn('Numerically inacurrate inverse matrix')
+        elif check_valid != 'ignore':
+            raise ValueError('check_valid must be one of ["raise", "warn", "ignore"]')
+
+    _check_valid_inv(mat, toret, check_valid=check_valid)
     return toret
 
 
-def blockinv(blocks, inv=np.linalg.inv, check=True):
+def blockinv(blocks, inv=np.linalg.inv, check_valid='raise'):
     """
     Return inverse of input ``blocks`` matrix.
 
@@ -218,8 +227,8 @@ def blockinv(blocks, inv=np.linalg.inv, check=True):
     inv : callable, default=np.linalg.inv
         Function that takes in 2D array and returns its inverse.
 
-    check : bool, default=True
-        If inversion inaccurate, raise a :class:`LinAlgError` (see :func:`_check_inv`).
+    check_valid : bool, default=True
+        If inversion inaccurate, raise a :class:`LinAlgError` (see :func:`_check_valid_inv`).
 
     Returns
     -------
@@ -227,14 +236,7 @@ def blockinv(blocks, inv=np.linalg.inv, check=True):
         Inverse of ``blocks`` matrix.
     """
     def _inv(mat):
-        if check:
-            toret = inv(mat)
-        else:
-            try:
-                toret = inv(mat)
-            except LinAlgError:
-                pass
-        return toret
+        return inv(mat, check_valid=check_valid)
 
     A = blocks[0][0]
     if (len(blocks), len(blocks[0])) == (1, 1):
@@ -248,9 +250,8 @@ def blockinv(blocks, inv=np.linalg.inv, check=True):
 
     invShur = _inv(A - dot(B, invD, C))
     toret = np.bmat([[invShur, -dot(invShur, B, invD)], [-dot(invD, C, invShur), invD + dot(invD, C, invShur, B, invD)]]).A
-    if check:
-        mat = np.bmat(blocks).A
-        _check_inv(mat, toret)
+    mat = np.bmat(blocks).A
+    _check_valid_inv(mat, toret, check_valid=check_valid)
     return toret
 
 

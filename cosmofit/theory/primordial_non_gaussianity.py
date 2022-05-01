@@ -1,14 +1,12 @@
 from scipy import constants
 
-from .bao import BasePowerSpectrumMultipoles
+from .bao import BaseTheoryPowerSpectrumMultipoles
 
 
-class PrimordialNonGaussianityPowerSpectrum(BasePowerSpectrumMultipoles):
-
-    name = 'pngpower'
+class PrimordialNonGaussianityPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
 
     def requires(self):
-        return ['cosmoprimo']
+        return [{'cosmoprimo': 'BasePrimordialCosmology'}]
 
     def run(self, fnl_loc=0., p=1., bias=2., sigmas=0., sn0=0.):
         pk = self.cosmoprimo.get_fourier().pk_interpolator().to_1d(self.k, z=self.zeff)

@@ -9,7 +9,17 @@ from cosmofit.utils import BaseClass, TaskManager
 from cosmofit.chains import diagnostics, Chain
 
 
-class BaseSampler(BaseClass):
+class RegisteredSampler(type(BaseClass)):
+
+    _registry = set()
+
+    def __new__(meta, name, bases, class_dict):
+        cls = super().__new__(meta, name, bases, class_dict)
+        meta._registry.add(cls)
+        return cls
+
+
+class BaseSampler(BaseClass, metaclass=RegisteredSampler):
 
     nwalkers = 1
 
@@ -17,7 +27,7 @@ class BaseSampler(BaseClass):
     def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, chains=None, mpicomm=None):
         self.mpicomm = mpicomm
         self.likelihood = likelihood
-        self.varied = self.likelihood.parameters(varied=True)
+        self.varied = self.likelihood.params(varied=True)
         if chains is None: chains = max(self.mpicomm.size - 1, 1)
         if isinstance(chains, numbers.Number):
             self.chains = [None] * int(chains)
@@ -160,7 +170,7 @@ class BaseSampler(BaseClass):
             else:
                 self.log_info('{}.'.format(msg))
 
-            varied = split_samples[0].parameters(varied=True)
+            varied = split_samples[0].params(varied=True)
 
             diag_gr = diagnostics.gelman_rubin(split_samples, varied, method='diag').max() - 1
             msg = '{}max diag Gelman-Rubin - 1 is {:.3g}'.format(item, diag_gr)
@@ -172,11 +182,11 @@ class BaseSampler(BaseClass):
             else:
                 self.log_info('{}.'.format(msg))
 
-            def cl_lower(samples, parameters):
-                return samples.interval(parameters, nsigmas=nsigmas_cl_diag_gr_stop)[:, 0]
+            def cl_lower(samples, params):
+                return samples.interval(params, nsigmas=nsigmas_cl_diag_gr_stop)[:, 0]
 
-            def cl_upper(samples, parameters):
-                return samples.interval(parameters, nsigmas=nsigmas_cl_diag_gr_stop)[:, 1]
+            def cl_upper(samples, params):
+                return samples.interval(params, nsigmas=nsigmas_cl_diag_gr_stop)[:, 1]
 
             cl_diag_gr = np.max([diagnostics.gelman_rubin(split_samples, varied, statistic=cl_lower, method='diag'),
                                  diagnostics.gelman_rubin(split_samples, varied, statistic=cl_upper, method='diag')]) - 1

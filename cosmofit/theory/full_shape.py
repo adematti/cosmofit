@@ -3,7 +3,7 @@ import numpy as np
 from velocileptors.LPT.lpt_rsd_fftw import LPT_RSD
 
 from cosmofit.base import BaseCalculator
-from .bao import get_cosmo, BasePowerSpectrumMultipoles
+from .bao import get_cosmo, BaseTheoryPowerSpectrumMultipoles
 
 
 class BasePT(BaseCalculator):
@@ -15,9 +15,7 @@ class BasePT(BaseCalculator):
         fiducial = get_cosmo(fiducial)
         self.efunc_fid = fiducial.efunc(self.zeff)
         self.comoving_angular_distance_fid = fiducial.comoving_angular_distance(self.zeff)
-
-    def requires(self):
-        return ['cosmoprimo', ('effectap', {'zeff': self.zeff})]
+        self.requires = {'cosmoprimo': 'BasePrimordialCosmology', 'effectap': ('EffectAP', {'zeff': self.zeff})}
 
     def run(self):
         fo = self.cosmoprimo.get_fourier()
@@ -31,7 +29,7 @@ class BasePT(BaseCalculator):
 
 class LPT(BasePT):
 
-    name = 'lpt'
+    calculator_type = 'pt'
 
     def run(self, **params):
         ki = np.logspace(-3., 1., 200)
@@ -46,22 +44,14 @@ class LPT(BasePT):
         return [pkells[self.ells.index(ell)] for ell in self.ells]
 
 
-class PTPowerSpectrum(BasePowerSpectrumMultipoles):
+class PTPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
 
-    name = 'ptpower'
-
-    def __init__(self, k, zeff=1., ells=(0, 2, 4), fiducial='DESI', engine='LPT'):
+    def __init__(self, k, zeff=1., ells=(0, 2, 4), fiducial='DESI'):
         self.k = np.asarray(k, dtype='f8')
         self.zeff = float(zeff)
         self.ells = tuple(ells)
         self.fiducial = fiducial
-        self.engine = engine
-        allowed_engines = ['LPT']
-        if self.engine not in allowed_engines:
-            raise ValueError('engine must be one of {}'.format(allowed_engines))
-
-    def requires(self):
-        return [(self.engine, {'k': self.k, 'zeff': self.zeff, 'ells': self.ells})]
+        self.requires = {'pt': ('BasePT', {'k': self.k, 'zeff': self.zeff, 'ells': self.ells})}
 
     def run(self, **params):
         params['b1'] = params.pop('bsigma8') / self.pt.sigma8 - 1.

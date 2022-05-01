@@ -7,7 +7,9 @@ import fnmatch
 import numpy as np
 from scipy import stats
 
-from .utils import BaseClass, BaseOrderedCollection, is_sequence
+from . import base
+from .base import Decoder
+from .utils import BaseClass, is_sequence
 
 
 def decode_name(name, default_start=0, default_stop=None, default_step=1):
@@ -334,9 +336,9 @@ class Parameter(BaseClass):
     latex : string, default=None
         Latex for parameter.
     """
-    _attrs = ['name', 'value', 'fixed', 'prior', 'ref', 'proposal', 'latex']
+    _attrs = ['basename', 'namespace', 'value', 'fixed', 'prior', 'ref', 'proposal', 'latex']
 
-    def __init__(self, name, value=None, fixed=None, prior=None, ref=None, proposal=None, latex=None):
+    def __init__(self, basename, namespace=None, value=None, fixed=None, prior=None, ref=None, proposal=None, latex=None):
         """
         Initialize :class:`Parameter`.
 
@@ -367,10 +369,18 @@ class Parameter(BaseClass):
         latex : string, default=None
             Latex for parameter.
         """
-        if isinstance(name, Parameter):
-            self.__dict__.update(name.__dict__)
+        if isinstance(basename, Parameter):
+            self.__dict__.update(basename.__dict__)
             return
-        self.name = str(name)
+        basename = str(basename)
+        names = basename.split(base.namespace_delimiter)
+        if namespace is not None: names.append(namespace)
+        if len(names) > 2:
+            raise ParameterError('Single namespace accepted')
+        if len(names) == 2:
+            self.basename, self.namespace = names
+        else:
+            self.basename, self.namespace = names[0], None
         self.value = value
         self.prior = prior if isinstance(prior, ParameterPrior) else ParameterPrior(**(prior or {}))
         if value is None:
@@ -398,9 +408,15 @@ class Parameter(BaseClass):
                 elif self.ref.is_proper():
                     self.proposal = (self.ref.limits[1] - self.ref.limits[0]) / 2.
 
+    @property
+    def name(self):
+        if self.namespace:
+            return base.namespace_delimiter.join(self.namespace, self.basename)
+        return self.basename
+
     def clone(self, *args, **kwargs):
         state = {}
-        if len(args) == 1 and isinstance(args[0], Parameter):
+        if len(args) == 1 and isinstance(args[0], self.__class__):
             state.update({key: getattr(args[0], key) for key in args[0]._attrs})
         elif len(args):
             raise ValueError('Unrecognized arguments {}'.format(args))
@@ -412,34 +428,31 @@ class Parameter(BaseClass):
         """Update parameter attributes with new arguments ``kwargs``."""
         self.__dict__.update(self.clone(*args, **kwargs).__dict__)
 
-    def add_suffix(self, suffix):
-        """
-        Add suffix to parameter:
-
-        - update :attr:`name`
-        - update :attr:`latex`
-        """
-        self.name = '{}_{}'.format(self.name, suffix)
-        if self.latex is not None:
-            match1 = re.match('(.*)_(.)$', self.latex)
-            match2 = re.match('(.*)_{(.*)}$', self.latex)
-            if match1 is not None:
-                self.latex = '%s_{%s,\\mathrm{%s}}' % (match1.group(1), match1.group(2), suffix)
-            elif match2 is not None:
-                self.latex = '%s_{%s,\\mathrm{%s}}' % (match2.group(1), match2.group(2), suffix)
-            else:
-                self.latex = '%s_{\\mathrm{%s}}' % (self.latex, suffix)
-
     @property
     def varied(self):
         """Whether parameter is varied (i.e. not fixed)."""
         return (not self.fixed)
 
-    def get_label(self):
-        """If :attr:`latex` is specified (i.e. not ``None``), return :attr:`latex` surrounded by '$' signs, else ``None``."""
+    def latex(self, namespace=False, inline=False):
+        """If :attr:`latex` is specified (i.e. not ``None``), return :attr:`latex` surrounded by '$' signs, else :attr:`name`."""
+        if namespace:
+            namespace = self.namespace
         if self.latex is not None:
-            return '${}$'.format(self.latex)
-        return self.name
+            if namespace:
+                match1 = re.match('(.*)_(.)$', self.latex)
+                match2 = re.match('(.*)_{(.*)}$', self.latex)
+                if match1 is not None:
+                    latex = r'%s_{%s,\mathrm{%s}}' % (match1.group(1), match1.group(2), namespace)
+                elif match2 is not None:
+                    latex = r'%s_{%s,\mathrm{%s}}' % (match2.group(1), match2.group(2), namespace)
+                else:
+                    latex = r'%s_{\mathrm{%s}}' % (self.latex, namespace)
+            else:
+                latex = self.latex
+            if inline:
+                latex = '${}$'.format(latex)
+            return latex
+        return str(self)
 
     @property
     def limits(self):
@@ -747,12 +760,21 @@ class BaseParameterCollection(BaseClass):
         """Empty collection."""
         self.data.clear()
 
+    def update(self, *args, **kwargs):
+        """Update collection with new one."""
+        if len(args) == 1 and isinstance(args[0], self.__class__):
+            other = args[0]
+        else:
+            other = self.__class__(*args, **kwargs)
+        for item in other:
+            self.set(item)
+
 
 class ParameterCollection(BaseParameterCollection):
 
     """Class holding a collection of parameters."""
 
-    def __init__(self, data=None):
+    def __init__(self, data=None, namespace=None):
         """
         Initialize :class:`ParameterCollection`.
 
@@ -775,6 +797,9 @@ class ParameterCollection(BaseParameterCollection):
 
         self.data = []
 
+        if isinstance(data, str):
+            data = Decoder(data)
+
         if is_sequence(data):
             data_ = data
             data = {}
@@ -785,15 +810,38 @@ class ParameterCollection(BaseParameterCollection):
                     data[name['name']] = name
                 else:
                     data[name] = {}  # only name is provided
-
+        data = {name: conf for name, conf in data.items()}
+        list_varied = data.pop('varied', None)
+        list_fixed = data.pop('fixed', None)
+        list_namespace = data.pop('namespace', None)
         for name, conf in data.items():
             if isinstance(conf, Parameter):
                 self.set(conf)
             else:
                 latex = conf.pop('latex', None)
+                paramnamespace = conf.get('namespace', None)
+                if paramnamespace is True:
+                    conf['namespace'] = namespace
+                elif paramnamespace is None:
+                    if namespace is not None or name in list_namespace:
+                        conf['namespace'] = namespace
+                if conf.get('fixed', None) is None:
+                    if name in list_varied:
+                        conf['fixed'] = False
+                    elif name in list_fixed:
+                        conf['fixed'] = True
                 for name, latex in yield_names_latex(name, latex=latex):
                     param = Parameter(name=name, latex=latex, **conf)
                     self.set(param)
+
+    def update(self, *args, **kwargs):
+        """Update collection with new one."""
+        if len(args) == 1 and isinstance(args[0], self.__class__):
+            other = args[0]
+        else:
+            other = self.__class__(*args, **kwargs)
+        for item in other:
+            self[item].update(item)
 
 
 class ParameterPriorError(Exception):

@@ -10,14 +10,10 @@ from .base import BasePowerSpectrumMultipoles
 
 class PowerSpectrumNoWiggles(BaseCalculator):
 
-    name = 'powernowiggles'
-
     def __init__(self, zeff=1., engine='wallish2018', **kwargs):
         self.engine = engine
         self.zeff = float(zeff)
-
-    def requires(self):
-        return ['cosmoprimo']
+        self.requires = {'cosmoprimo': 'BasePrimordialCosmology'}
 
     def run(self):
         self.pk = self.cosmoprimo.get_gourier().pk_interpolator().to_1d(z=self.zeff)
@@ -28,15 +24,13 @@ class PowerSpectrumNoWiggles(BaseCalculator):
 
 class BaseBAOPowerSpectrum(BasePowerSpectrumMultipoles):
 
-    name = 'baopower'
+    calculator_type = 'baopower'
 
     def __init__(self, *args, zeff=1., **kwargs):
         self.zeff = float(zeff)
         super(BaseBAOPowerSpectrum, self).__init__(*args, **kwargs)
         self.set_broadband_coeffs()
-
-    def requires(self):
-        return [('effectap', {'zeff': self.zeff}), ('powernowiggles', {'zeff': self.zeff})]
+        self.requires = {'effectap': ('EffectAP', {'zeff': self.zeff}), 'powernowiggles': ('PowerSpectrumNoWiggles', {'zeff': self.zeff})}
 
     def set_broadband_coeffs(self):
         self.broadband_coeffs = {}

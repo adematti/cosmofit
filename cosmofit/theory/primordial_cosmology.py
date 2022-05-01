@@ -3,9 +3,12 @@ import cosmoprimo
 from cosmofit.base import BaseCalculator
 
 
-class Cosmoprimo(cosmoprimo.Cosmology, BaseCalculator):
+class BasePrimordialCosmology(BaseCalculator):
 
-    name = 'cosmoprimo'
+    pass
+
+
+class Cosmoprimo(cosmoprimo.Cosmology, BasePrimordialCosmology):
 
     def __init__(self, engine='class', extra_params=None):
         self.engine = engine

@@ -12,7 +12,7 @@ class BaseProfiler(BaseClass):
     def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, niterations=None, mpicomm=None):
         self.mpicomm = mpicomm
         self.likelihood = likelihood
-        self.varied = self.likelihood.parameters(varied=True)
+        self.varied = self.likelihood.params(varied=True)
         self.max_tries = int(max_tries)
         self.profiles = None
         self._set_rng(rng=rng, seed=seed)
