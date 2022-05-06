@@ -91,7 +91,7 @@ class BaseMetaClass(type):
     """Metaclass to add logging attributes to :class:`BaseClass` derived classes."""
 
     def __new__(meta, name, bases, class_dict):
-        cls = super().__new__(meta, name, bases, class_dict)
+        cls = type.__new__(meta, name, bases, class_dict)
         cls.set_logger()
         return cls
 
@@ -167,7 +167,7 @@ def _check_valid_inv(mat, invmat, rtol=1e-04, atol=1e-05, check_valid='raise'):
     within relative difference ``rtol`` and absolute difference ``atol``.
     """
     tmp = mat.dot(invmat)
-    ref = np.diag(np.ones(tmp.shape[0]))
+    ref = np.eye(tmp.shape[0], dtype=mat.dtype)
     if not np.allclose(tmp, ref, rtol=rtol, atol=atol):
         msg = 'Numerically inacurrate inverse matrix, max absolute diff {:.6f}.'.format(np.max(np.abs(tmp - ref)))
         if check_valid == 'raise':
@@ -178,7 +178,7 @@ def _check_valid_inv(mat, invmat, rtol=1e-04, atol=1e-05, check_valid='raise'):
             raise ValueError('check_valid must be one of ["raise", "warn", "ignore"]')
 
 
-def inv(mat, inv=np.linalg.inv, check_valid=True):
+def inv(mat, inv=np.linalg.inv, check_valid='raise'):
     """
     Return inverse of input 2D or 0D (scalar) array ``mat``.
 
@@ -253,6 +253,18 @@ def blockinv(blocks, inv=np.linalg.inv, check_valid='raise'):
     mat = np.bmat(blocks).A
     _check_valid_inv(mat, toret, check_valid=check_valid)
     return toret
+
+
+def cov_to_corrcoef(cov):
+    """
+    Return correlation matrix corresponding to input covariance matrix ``cov``.
+    If ``cov`` is scalar, return 1.
+    """
+    if np.ndim(cov) == 0:
+        return 1.
+    stddev = np.sqrt(np.diag(cov).real)
+    c = cov / stddev[:, None] / stddev[None, :]
+    return c
 
 
 def txt_to_latex(txt):

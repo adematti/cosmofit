@@ -1,0 +1,42 @@
+class: LPTGalaxyPowerSpectrum
+
+info:
+  version: 0.0.1
+  date: 05/04/2021
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Compute lagrangian perturbation theory (LPT) power spectrum
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description:
+
+init:
+  ells: [0, 2, 4]
+
+params:
+  b1:
+    value: 1.69
+    fixed: False
+    latex: b_{1}
+  b2:
+    value: -1.17
+    fixed: False
+    latex: b_{2}
+  bs:
+    value: -0.71
+    fixed: False
+    latex: b_{s}
+  b3:
+    value: -0.479
+    fixed: False
+    latex: b_{3}
+  alpha[0:7:2]:
+    value: 0.
+    fixed: False
+    latex: \alpha_[]
+  sn[:5:2]:
+    value: 0.
+    fixed: False
+    latex: s_{n, []}

@@ -43,10 +43,9 @@ class BaseGaussianLikelihood(BaseCalculator):
                 self.log_info('...resulting in Hartlap factor of {:.4f}.'.format(self.hartlap))
             self.precision *= self.hartlap
 
-    def requires(self):
+        self.requires = {}
         if self.data is None:
-            return {'synthetic': ('GaussianSyntheticDataGenerator', {'covariance': self.covariance})}
-        return {}
+            self.requires = {'synthetic': ('GaussianSyntheticDataGenerator', {'covariance': self.covariance})}
 
     def run(self):
         if self.data is None:

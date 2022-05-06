@@ -1,18 +1,18 @@
 import numpy as np
 from scipy import special
 
-import cosmoprimo
-
 from cosmofit.base import BaseCalculator
 from . import utils
 
 
 class BaseTheoryPowerSpectrumMultipoles(BaseCalculator):
 
-    def __init__(self, k, zeff=1., ells=(0, 2, 4)):
-        self.k = np.asarray(k, dtype='f8')
+    def __init__(self, k=None, zeff=1., ells=(0, 2, 4), fiducial=None):
+        if k is None: k = np.linspace(0.01, 0.2, 101)
+        self.k = np.array(k, dtype='f8')
         self.zeff = float(zeff)
         self.ells = tuple(ells)
+        self.fiducial = fiducial
 
     def __getstate__(self):
         state = {}
@@ -34,7 +34,7 @@ class TrapzTheoryPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
             self.mu = np.linspace(0., 1., mu)
         else:
             self.mu = np.asarray(mu)
-        muw = utils.weights_trapz(mu)
+        muw = utils.weights_trapz(self.mu)
         self.muweights = np.array([muw * (2 * ell + 1) * special.legendre(ell)(self.mu) for ell in ells]) / (self.mu[-1] - self.mu[0])
 
     def to_poles(self, pkmu):
@@ -42,6 +42,7 @@ class TrapzTheoryPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
 
 def get_cosmo(cosmo):
+    import cosmoprimo
     if isinstance(cosmo, str):
         cosmo = (cosmo, {})
     if isinstance(cosmo, tuple):
@@ -51,26 +52,38 @@ def get_cosmo(cosmo):
 
 class EffectAP(BaseCalculator):
 
-    def __init__(self, zeff=1., fiducial='DESI'):
+    def __init__(self, zeff=1., fiducial=None, mode=None):
         self.zeff = float(zeff)
         fiducial = get_cosmo(fiducial)
         self.efunc_fid = fiducial.efunc(self.zeff)
         self.comoving_angular_distance_fid = fiducial.comoving_angular_distance(self.zeff)
 
-        self.mode = 'distances'
-        if 'aiso' in self.params:
-            self.mode = 'aiso'
-        elif 'apar' in self.params and 'aper' in self.params:
-            self.mode = 'aparaper'
-        self.requires = {'cosmoprimo': 'BasePrimordialCosmology'}
+        self.mode = mode
+        if self.mode is None:
+            self.mode = 'distances'
+            if 'qiso' in self.params:
+                self.mode = 'qiso'
+            elif 'qpar' in self.params and 'qper' in self.params:
+                self.mode = 'qparqper'
+
+        if self.mode == 'qiso':
+            self.params = self.params.select(name=['qiso'])
+        elif self.mode == 'qparqper':
+            self.params = self.params.select(name=['qpar', 'qper'])
+        elif self.mode == 'distances':
+            self.params = self.clear()
+        else:
+            raise ValueError('mode must be one of ["qiso", "qparqper", "distances"]')
+
+        self.requires = {'cosmo': ('BasePrimordialCosmology', {})}
 
     def run(self, **params):
         if self.mode == 'distances':
-            qpar, qper = self.efunc_fid / self.cosmoprimo.efunc(self.zeff), self.cosmoprimo.comoving_angular_distance(self.zeff) / self.comoving_angular_distance_fid
-        elif self.mode == 'aiso':
-            qpar = qper = params['aiso']
+            qpar, qper = self.efunc_fid / self.cosmo.efunc(self.zeff), self.cosmo.comoving_angular_distance(self.zeff) / self.comoving_angular_distance_fid
+        elif self.mode == 'qiso':
+            qpar = qper = params['qiso']
         else:
-            qpar, qper = params['apar'], params['aper']
+            qpar, qper = params['qpar'], params['qper']
         self.qpar, self.qper = qpar, qper
 
     def ap_k_mu(self, k, mu):
@@ -78,7 +91,7 @@ class EffectAP(BaseCalculator):
         F = self.qpar / self.qper
         factor_ap = np.sqrt(1 + mu**2 * (1. / F**2 - 1))
         # Beutler 2016 (arXiv: 1607.03150v1) eq 44
-        kap = k / self.qper * factor_ap
+        kap = k[..., None] / self.qper * factor_ap
         # Beutler 2016 (arXiv: 1607.03150v1) eq 45
         muap = mu / F / factor_ap
         return jac, kap, muap
@@ -86,7 +99,8 @@ class EffectAP(BaseCalculator):
 
 class WindowedPowerSpectrumMultipoles(BaseCalculator):
 
-    def __init__(self, kout, zeff=1., ellsout=(0, 2, 4), wmatrix=None):
+    def __init__(self, kout=None, ellsout=(0, 2, 4), zeff=None, fiducial=None, wmatrix=None):
+        if kout is None: kout = np.linspace(0.01, 0.2, 20)
         if np.ndim(kout[0]) == 0:
             kout = [kout] * len(ellsout)
         self.kout = [np.array(kk, dtype='f8') for kk in kout]
@@ -101,6 +115,7 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
             else:
                 self.kmask = [np.searchsorted(self.kin, kk, side='left') for kk in self.kout]
                 assert all(kmask.min() >= 0 and kmask.max() < kk.size for kk, kmask in zip(self.kout, self.kmask))
+                self.kmask = np.concatenate([np.searchsorted(self.kin, kk, side='left') for kk in self.kout], axis=0)
         else:
             if isinstance(wmatrix, str):
                 from pypower import BaseMatrix
@@ -124,17 +139,22 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
                 if not np.allclose(wmatrix.xout[iout], kk):
                     raise ValueError('k-coordinates {} for ell = {:d} could not be found in input matrix (rebinning = {:d})'.format(kk, ellout, factorout))
             self.wmatrix = wmatrix.value
-
-    def requires(self):
-        return {'theory': ('BaseTheoryPowerSpectrumMultipoles', {'k': self.kin, 'zeff': self.zeff, 'ells': self.ellsin})}
+            if zeff is None:
+                zeff = wmatrix.attrs.get('zeff', None)
+            if fiducial is None:
+                fiducial = wmatrix.attrs.get('fiducial', None)
+        self.zeff = zeff
+        self.fiducial = fiducial
+        self.requires = {'theory': ('BaseTheoryPowerSpectrumMultipoles', {'k': self.kin, 'ells': self.ellsin, 'zeff': self.zeff, 'fiducial': self.fiducial})}
 
     def run(self):
+        theory = self.theory.power.ravel()
         if self.wmatrix is not None:
-            self.power = np.dot(self.theory, self.wmatrix)
+            self.power = np.dot(theory, self.wmatrix)
         elif self.kmask is not None:
-            self.power = self.theory[self.kmask]
+            self.power = theory[self.kmask]
         else:
-            self.power = self.theory
+            self.power = theory
 
     def unpacked(self):
         toret = []
@@ -147,7 +167,7 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
 
     def __getstate__(self):
         state = {}
-        for name in ['kin', 'kout', 'zeff', 'ells', 'wmatrix', 'kmask', 'power']:
+        for name in ['kin', 'kout', 'zeff', 'ells', 'fiducial', 'wmatrix', 'kmask', 'power']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state

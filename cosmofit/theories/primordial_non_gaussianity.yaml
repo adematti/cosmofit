@@ -1,0 +1,38 @@
+class: PrimordialNonGaussianityPowerSpectrum
+
+info:
+  version: 0.0.1
+  date: 05/04/2021
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Compute primordial non-Gaussianity power spectrum
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description:
+
+init:
+  ells: [0, 2, 4]
+
+params:
+  fnl_loc:
+    value: 0.
+    fixed: False
+    latex: f_{NL}^{\mathrm{loc}}
+  p:
+    value: 1.
+    fixed: True
+    latex: p
+  bias:
+    value: 1.69
+    fixed: False
+    latex: b
+  sn0:
+    value: 0.
+    fixed: False
+    latex: s_{n, 0}
+  sigmas:
+    value: 5.
+    fixed: False
+    latex: \Sigma_{s}

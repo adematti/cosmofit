@@ -1,0 +1,38 @@
+pipeline:
+  namespace1:
+    like1:
+      class: Likelihood
+      params:
+        namespace: [B, C]
+        fixed: []
+        varied: []
+        A:
+          value: 1
+          namespace: True  # by default
+    theory1:
+      class:
+      params:
+      init:
+        k: e'np.linspace(0., 10., 11)'
+    theory2:
+      class:
+      params:
+  namespace2:
+    namespacea:
+      class: Likelihood
+      params:
+        namespace: True
+    namespaceb:
+      class: Likelihood
+      params:
+        namespace: True
+  theory:
+    class:
+    params:
+
+sampler:
+  class: EmceeSampler
+  chains_fn: 'chains'
+
+
+output:

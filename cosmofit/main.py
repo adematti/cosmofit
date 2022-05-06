@@ -5,7 +5,7 @@ import argparse
 from mpytools import CurrentMPIComm
 
 from ._version import __version__
-from .base import Decoder, PipelineError, LikelihoodPipeline, format_clsdict, FileSystem
+from .base import BaseConfig, PipelineError, LikelihoodPipeline, FileSystem
 from .utils import setup_logging
 
 
@@ -35,7 +35,7 @@ def read_args(args=None, mpicomm=None, parser=None):
     if mpicomm.rank == 0:
         print(ascii_art('sample'))
     setup_logging(args.verbose)
-    config = Decoder(args.config_fn)
+    config = Config(args.config_fn)
     for string in args.update:
         keyvalue = string.split('=')
         if len(keyvalue) != 2:
@@ -53,35 +53,35 @@ def sample_from_args(args=None, mpicomm=None):
 
 @CurrentMPIComm.enable
 def sample_from_config(config, mpicomm=None):
-    from cosmofit.samplers import BaseSampler
-    config = Decoder(config)
-    if 'sampler' not in config:
+    from cosmofit.samplers import SamplerConfig
+    config = BaseConfig(config)
+    if 'sampler' not in BaseConfig:
         raise PipelineError('Provide sampler')
-    cls, clsdict = format_clsdict(config['sampler'], registry=BaseSampler._registry)
+    config_sampler = SamplerConfig(config['sampler'])
 
     if 'pipeline' not in config:
         raise PipelineError('Provide pipeline')
     likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
+    sampler = config_sampler.init(likelihood, mpicomm=mpicomm)
 
-    diagnostics = clsdict.pop('diagnostics', None)
-    min_iterations = clsdict.pop('min_iterations', 0)
-    max_iterations = clsdict.pop('max_iterations', int(1e5) if diagnostics is None else sys.maxint)
-    check_every = clsdict.pop('check_every', 200)
+    diagnostics = config_sampler['run'].get('diagnostics', None)
+    min_iterations = config_sampler['run'].get('min_iterations', 0)
+    max_iterations = config_sampler['run'].get('max_iterations', int(1e5) if diagnostics is None else sys.maxint)
+    check_every = config_sampler['run'].get('check_every', 200)
 
     run_kwargs = {}
     for name in ['thin_by']:
-        if name in clsdict: run_kwargs = clsdict.pop(name)
+        if name in config_sampler['run']: run_kwargs = config_sampler['run'].get(name)
 
     filesystem = None
     output = config.get('output', None)
     if output is not None:
         filesystem = FileSystem(output)
 
-    chains_fn = clsdict.pop('chains_fn', None)
+    chains_fn = config_sampler.get('save_fn', None)
     if filesystem is not None and chains_fn is None:
         chains_fn = 'chain'
 
-    sampler = cls(likelihood, **clsdict, mpicomm=mpicomm)
     if chains_fn is not None:
         if filesystem is None:
             filesystem = FileSystem('./')
@@ -101,7 +101,7 @@ def sample_from_config(config, mpicomm=None):
         if chains_fn is not None:
             for ichain in sampler.nchains:
                 sampler.chains[ichain].save(chains_fn[ichain])
-        is_converged = sampler.diagnose(**diagnostics)
+        is_converged = False if diagnostics is None else sampler.check(**diagnostics)
         if count_iterations < min_iterations:
             is_converged = False
         if count_iterations > max_iterations:

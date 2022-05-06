@@ -1,0 +1,35 @@
+pipeline:
+  QSO:
+    like:
+      class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
+      init:
+        data: pk/data.npy
+        covariance: pk/mock_*.npy
+        klim:
+          0: [0.05, 0.2]
+          2: [0.05, 0.2]
+        zeff: 2.0
+        fiducial: DESI
+    theory:
+      class: cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum
+    effectap:
+      class: cosmofit.theories.base.EffectAP
+      init:
+        mode: qparqper
+  cosmo:
+    class: cosmofit.theories.primordial_cosmology.Cosmoprimo
+    init:
+      fiducial: DESI
+    params:
+      fixed: True
+
+sampler:
+  class: cosmofit.samplers.EmceeSampler
+  init:
+    nwalkers: 40
+  run:
+    max_iterations: 10000
+    check_every: 100
+  check:
+
+output: tmp

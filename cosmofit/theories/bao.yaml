@@ -1,0 +1,63 @@
+class: PowerSpectrumNoWiggles
+
+info:
+  version: 0.0.1
+  date: 05/04/2021
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Compute power spectrum BAO wiggles
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description:
+
+init:
+  engine: wallish2018
+
+---
+
+class: Beutler2017BAOGalaxyPowerSpectrum
+
+info:
+  version: 0.0.1
+  date: 05/04/2021
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Model for BAO power spectrum multipoles
+  url:
+  licence:
+  bibtex: [arxiv:1607.03149]
+  requirements: []
+  long_description: BAO model used in the BOSS DR12 BAO analysis by Beutler et al. 2017
+
+init:
+  ells: [0, 2]
+
+params:
+  bias:
+    value: 1.
+    fixed: False
+    prior:
+      dist: uniform
+      limits: [0.2, 4.]
+    latex: b
+  sigmar:
+    value: 0.
+    fixed: True
+    latex: \Sigma_{r}
+  sigmas:
+    value: 5.
+    fixed: True
+    latex: \Sigma_{s}
+  sigmapar:
+    value: 8.
+    fixed: True
+    latex: \Sigma_{\parallel}
+  sigmaper:
+    value: 4.
+    fixed: True
+    latex: \Sigma_{\perp}
+  al[:5:2]_[-3:2]:
+    value: 0.
+    latex: a_{[], []}

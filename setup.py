@@ -4,9 +4,18 @@ from setuptools import setup
 
 
 package_basename = 'cosmofit'
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), package_basename))
+package_filename = os.path.join(os.path.dirname(__file__), package_basename)
+sys.path.insert(0, package_filename)
 import _version
 version = _version.__version__
+
+
+def get_yaml_files():
+    for folder in ['likelihoods', 'theories']:
+        for root, dirs, files in os.walk(os.path.join(package_filename, folder)):
+            for file in files:
+                if file.endswith('.yaml'):
+                    yield os.path.relpath(os.path.join(root, file), package_filename)
 
 
 setup(name=package_basename,
@@ -18,4 +27,5 @@ setup(name=package_basename,
       url='http://github.com/adematti/cosmofit',
       install_requires=['numpy', 'scipy'],
       extras_require={'extras': ['cosmoprimo']},
-      packages=[package_basename])
+      packages=[package_basename],
+      package_data={'cosmofit': list(get_yaml_files())})

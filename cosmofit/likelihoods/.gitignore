@@ -8,16 +8,13 @@ doc/_build/
 **/.cache
 **/.config
 **/.wget*
+**/_tests
 **/dist
 **/eggs
 **/build
 **/.ipynb_checkpoints
-**/bak/
-**/_tests
-**/_catalog
-**/_plots
-**/_results
-**/*.npy
+**/*.png
+**/bak
 
 # Unit test / coverage reports
 **/.coverage

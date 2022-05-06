@@ -5,8 +5,23 @@ import mpytools as mpy
 from mpytools import CurrentMPIComm
 
 from cosmofit import utils
+from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
-from cosmofit.chains import diagnostics, Chain
+from cosmofit.samples import diagnostics, Chain
+
+
+class SamplerConfig(SectionConfig):
+
+    _sections = ['init', 'run', 'check']
+
+    def __init__(self, *args, **kwargs):
+        # cls, init kwargs
+        super(SamplerConfig, self).__init__(*args, **kwargs)
+        self.data['class'] = import_cls(self.data['class'], pythonpath=self.data.pop('pythonpath', None), registry=BaseSampler._registry)
+
+    def init(self, *args, **kwargs):
+        kwargs = {**self.data['init'], **kwargs}
+        return self.data['class'](*args, **kwargs)
 
 
 class RegisteredSampler(type(BaseClass)):
@@ -139,9 +154,9 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             for ichain, (chain, new_chain) in enumerate(zip(chains, self.chains)):
                 self.chains[ichain] = Chain.concatenate(chain, new_chain)
 
-    def diagnose(self, nsplits=4, stable_over=2, burnin=0.3, eigen_gr_stop=0.03, diag_gr_stop=None,
-                 cl_diag_gr_stop=None, nsigmas_cl_diag_gr_stop=1., geweke_stop=None,
-                 iact_stop=None, iact_reliable=50, dact_stop=None):
+    def check(self, nsplits=4, stable_over=2, burnin=0.3, eigen_gr_stop=0.03, diag_gr_stop=None,
+              cl_diag_gr_stop=None, nsigmas_cl_diag_gr_stop=1., geweke_stop=None,
+              iact_stop=None, iact_reliable=50, dact_stop=None):
 
         toret = None
 

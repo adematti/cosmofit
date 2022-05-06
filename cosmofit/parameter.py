@@ -8,7 +8,7 @@ import numpy as np
 from scipy import stats
 
 from . import base
-from .base import Decoder
+from .io import BaseConfig
 from .utils import BaseClass, is_sequence
 
 
@@ -109,71 +109,12 @@ def yield_names_latex(name, latex=None, **kwargs):
     else:
         import itertools
 
-        template = '{:d}'.join(strings)
+        template = '%d'.join(strings)
         if latex is not None:
-            latex = latex.replace('[]', '{{{:d}}}')
+            latex = latex.replace('[]', '%d')
 
         for nums in itertools.product(*ranges):
-            yield template.format(*nums), latex.format(*nums) if latex is not None else latex
-
-
-def find_names_latex(allnames, name, latex=None, quiet=True):
-    r"""
-    Search parameter name ``name`` in list of names ``allnames``,
-    matching template forms ``[::]``;
-    return corresponding parameter names and latex.
-
-    >>> find_names_latex(['a_1', 'a_2', 'b_1'], 'a_[:]', latex='\alpha_[:]')
-    [('a_1', '\alpha_{1}'), ('a_2', '\alpha_{2}')]
-
-    Parameters
-    ----------
-    allnames : list
-        List of parameter names (strings).
-
-    name : string
-        Parameter name to match in ``allnames``.
-
-    latex : string, default=None
-        Latex for parameter.
-
-    quiet : bool, default=True
-        If ``False`` and no match for ``name`` was found is ``allnames``, raise :class:`ParameterError`.
-
-    Returns
-    -------
-    toret : list
-        List of string tuples ``(name, latex)``.
-        ``latex`` is ``None`` if input ``latex`` is ``None``.
-    """
-    name = str(name)
-    error = ParameterError('No match found for {}'.format(name))
-    strings, ranges = decode_name(name, default_start=-sys.maxsize, default_stop=sys.maxsize)
-    if not ranges:
-        if strings[0] in allnames:
-            return [(strings[0], latex)]
-        if not quiet:
-            raise error
-        return []
-    pattern = re.compile(r'(-?\d*)'.join(strings))
-    toret = []
-    if latex is not None:
-        latex = latex.replace('[]', '{{{:d}}}')
-    for paramname in allnames:
-        match = re.match(pattern, paramname)
-        if match:
-            add = True
-            nums = []
-            for s, ra in zip(match.groups(), ranges):
-                idx = int(s)
-                nums.append(idx)
-                add = idx in ra  # ra not in memory
-                if not add: break
-            if add:
-                toret.append((paramname, latex.format(*nums) if latex is not None else latex))
-    if not toret and not quiet:
-        raise error
-    return toret
+            yield template % nums, latex % nums if latex is not None else latex
 
 
 def find_names(allnames, name, quiet=True):
@@ -411,22 +352,23 @@ class Parameter(BaseClass):
     @property
     def name(self):
         if self.namespace:
-            return base.namespace_delimiter.join(self.namespace, self.basename)
+            return base.namespace_delimiter.join([self.namespace, self.basename])
         return self.basename
 
-    def clone(self, *args, **kwargs):
-        state = {}
+    def update(self, *args, **kwargs):
+        """Update parameter attributes with new arguments ``kwargs``."""
+        state = {key: getattr(self, key) for key in self._attrs}
         if len(args) == 1 and isinstance(args[0], self.__class__):
             state.update({key: getattr(args[0], key) for key in args[0]._attrs})
         elif len(args):
             raise ValueError('Unrecognized arguments {}'.format(args))
-        state.update({key: getattr(self, key) for key in self._attrs})
         state.update(kwargs)
-        return self.__class__(**state)
+        self.__init__(**state)
 
-    def update(self, *args, **kwargs):
-        """Update parameter attributes with new arguments ``kwargs``."""
-        self.__dict__.update(self.clone(*args, **kwargs).__dict__)
+    def clone(self, *args, **kwargs):
+        new = self.copy()
+        new.update(*args, **kwargs)
+        return new
 
     @property
     def varied(self):
@@ -524,6 +466,8 @@ class BaseParameterCollection(BaseClass):
             return
 
         self.data = []
+        if data is None:
+            return
 
         if is_sequence(data):
             data_ = data
@@ -793,12 +737,17 @@ class ParameterCollection(BaseParameterCollection):
         """
         if isinstance(data, self.__class__):
             self.__dict__.update(data.copy().__dict__)
+            if namespace is not None:
+                for param in self:
+                    param.namespace = namespace
             return
 
         self.data = []
+        if data is None:
+            return
 
         if isinstance(data, str):
-            data = Decoder(data)
+            data = BaseConfig(data)
 
         if is_sequence(data):
             data_ = data
@@ -811,9 +760,11 @@ class ParameterCollection(BaseParameterCollection):
                 else:
                     data[name] = {}  # only name is provided
         data = {name: conf for name, conf in data.items()}
-        list_varied = data.pop('varied', None)
-        list_fixed = data.pop('fixed', None)
-        list_namespace = data.pop('namespace', None)
+        list_meta, all_meta = {}, {}
+        for name in ['varied', 'fixed', 'namespace']:
+            list_meta[name] = data.pop(name, [])
+            all_meta[name] = isinstance(list_meta[name], bool) and list_meta[name]
+
         for name, conf in data.items():
             if isinstance(conf, Parameter):
                 self.set(conf)
@@ -823,15 +774,14 @@ class ParameterCollection(BaseParameterCollection):
                 if paramnamespace is True:
                     conf['namespace'] = namespace
                 elif paramnamespace is None:
-                    if namespace is not None or name in list_namespace:
+                    if namespace is not None or all_meta['namespace'] or name in list_meta['namespace']:
                         conf['namespace'] = namespace
-                if conf.get('fixed', None) is None:
-                    if name in list_varied:
-                        conf['fixed'] = False
-                    elif name in list_fixed:
-                        conf['fixed'] = True
+                if all_meta['varied'] or name in list_meta['varied']:
+                    conf['fixed'] = False
+                elif all_meta['fixed'] or name in list_meta['fixed']:
+                    conf['fixed'] = True
                 for name, latex in yield_names_latex(name, latex=latex):
-                    param = Parameter(name=name, latex=latex, **conf)
+                    param = Parameter(basename=name, latex=latex, **conf)
                     self.set(param)
 
     def update(self, *args, **kwargs):
@@ -841,7 +791,15 @@ class ParameterCollection(BaseParameterCollection):
         else:
             other = self.__class__(*args, **kwargs)
         for item in other:
-            self[item].update(item)
+            if item in self:
+                tmp = self[item].clone(item)
+            else:
+                tmp = item.copy()
+            self.set(tmp)
+
+    def __eq__(self, other):
+        """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
+        return type(other) == type(self) and len(other) == len(self) and all(other_param == self_param for other_param, self_param in zip(other, self))
 
 
 class ParameterPriorError(Exception):

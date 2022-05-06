@@ -8,11 +8,11 @@ from cosmofit import utils
 
 class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
 
-    def __init__(self, covariance=None, data=None, klim=None, wmatrix=None, zeff=None):
+    def __init__(self, covariance=None, data=None, klim=None, zeff=None, fiducial=None, wmatrix=None):
 
         def load_data(fn):
             from pypower import PowerSpectrumStatistics
-            return PowerSpectrumStatistics.load(data)
+            return PowerSpectrumStatistics.load(fn)
 
         def lim_data(power, klim=klim):
             data = power.get_power(complex=False)
@@ -46,43 +46,34 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         if data is not None:
             if isinstance(data, str):
                 data = load_data(data)
-            self.k, self.kmask, self.ells, self.data = lim_data(data)
+            self.k, self.kmask, self.ells, data = lim_data(data)
 
         if isinstance(covariance, str):
             covariance = [covariance]
 
         if utils.is_sequence(covariance) and isinstance(covariance[0], str):
-            covariance = None
             if self.mpicomm.rank == 0:
                 list_data = []
                 for fn in covariance:
-                    for fn in glob.glob(fn):
+                    for fn in sorted(glob.glob(fn)):
                         k, kmask, ells, data = lim_data(load_data(fn))
                         if self.k is None:
                             self.k, self.kmask, self.ells = k, kmask, ells
-                        if not np.allclose(k[kmask], self.k[self.kmask]):
+                        if not np.allclose(np.repeat(k, len(ells))[kmask], np.repeat(self.k, len(ells))[self.kmask]):
                             raise ValueError('{} does not have expected k-binning (based on previous data)'.format(fn))
                         if ells != self.ells:
                             raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))
                         list_data.append(data)
                 nobs = len(list_data)
-                covariance = np.cov(data, ddof=1)
-            covariance = self.mpicomm.bcast(covariance, root=0)
-
-        self.wmatrix = wmatrix
-        if wmatrix is not None:
-            if isinstance(wmatrix, str):
-                from pypower import BaseMatrix
-                wmatrix = BaseMatrix.load(wmatrix)
-            self.wmatrix = wmatrix.value
-            if zeff is None:
-                zeff = self.wmatrix.attrs.get('zeff', None)
-
-        self.zeff = zeff
-        if zeff is None:
-            raise ValueError('Provide zeff!')
+                covariance = np.cov(list_data, rowvar=False, ddof=1)
+            covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
 
         super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=data, nobs=nobs)
+        self.requires['power'] = ('WindowedPowerSpectrumMultipoles', {'kout': self.k, 'ellsout': self.ells, 'zeff': zeff, 'fiducial': fiducial, 'wmatrix': wmatrix})
+
+    @property
+    def model(self):
+        return self.power.power
 
     def __getstate__(self):
         state = {}
@@ -90,8 +81,3 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
-
-    def requires(self):
-        toret = super(PowerSpectrumMultipolesLikelihood, self).requires()
-        toret['model'] = ('WindowedPowerSpectrumMultipoles', {'kout': self.k, 'ellsout': self.ells, 'zeff': self.zeff, 'wmatrix': self.wmatrix})
-        return toret
