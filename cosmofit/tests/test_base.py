@@ -1,7 +1,7 @@
 import numpy as np
 
 from cosmofit import setup_logging
-from cosmofit.base import BaseConfig, BasePipeline, ParameterCollection
+from cosmofit.base import BaseConfig, BasePipeline, LikelihoodPipeline, ParameterCollection
 
 
 def test_config():
@@ -12,14 +12,22 @@ def test_config():
 
 def test_params():
 
-    config = BaseConfig('/local/home/adematti/Bureau/DESI/NERSC/cosmodesi/cosmofit/cosmofit/theory/bao.yaml', index={'class': 'Beutler2017BAOGalaxyPowerSpectrum'})
+    config = BaseConfig('/local/home/adematti/Bureau/DESI/NERSC/cosmodesi/cosmofit/cosmofit/theories/bao.yaml', index={'class': 'Beutler2017BAOGalaxyPowerSpectrum'})
     params = ParameterCollection(config['params'])
+    assert params.names(name='sigmar') == ['sigmar']
+    assert params.names(name=['sigmar', 'al[:5:2]_[-3:2]']) == ['sigmar', 'al0_-3', 'al0_-2', 'al0_-1', 'al0_0', 'al0_1', 'al2_-3', 'al2_-2', 'al2_-1', 'al2_0', 'al2_1', 'al4_-3', 'al4_-2', 'al4_-1', 'al4_0', 'al4_1']
 
 
 def test_pipeline():
 
     config = BaseConfig('bao_pipeline.yaml')
     pipeline = BasePipeline(config['pipeline'], params=config.get('params', None))
+    assert len(pipeline.end_calculators) == 1 and pipeline.end_calculators[0].runtime_info.basename == 'like'
+    assert len(pipeline.calculators) == 6
+    assert len(pipeline.params.select(fixed=True)) == 14
+    assert pipeline.params.names() == ['QSO.bias', 'QSO.sigmar', 'QSO.sigmas', 'QSO.sigmapar', 'QSO.sigmaper', 'QSO.al0_-3', 'QSO.al0_-2', 'QSO.al0_-1', 'QSO.al0_0', 'QSO.al0_1', 'QSO.al2_-3', 'QSO.al2_-2', 'QSO.al2_-1', 'QSO.al2_0', 'QSO.al2_1', 'QSO.al4_-3', 'QSO.al4_-2', 'QSO.al4_-1', 'QSO.al4_0', 'QSO.al4_1',
+                                       'h', 'omega_cdm', 'omega_b', 'A_s', 'k_pivot', 'n_s', 'omega_ncdm', 'N_ur', 'tau_reio', 'w0_fld', 'wa_fld']
+    pipeline.run()
 
 
 if __name__ == '__main__':

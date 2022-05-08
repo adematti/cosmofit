@@ -154,7 +154,7 @@ def find_names(allnames, name, quiet=True):
     error = ParameterError('No match found for {}'.format(name))
 
     name = fnmatch.translate(name)
-    strings, ranges = decode_name(name, default_start=-sys.maxsize, default_stop=sys.maxsize)
+    strings, ranges = decode_name(name)
     pattern = re.compile(r'(-?\d*)'.join(strings))
     toret = []
     for paramname in allnames:
@@ -181,7 +181,7 @@ class ParameterError(Exception):
 
 class ParameterArray(np.ndarray):
 
-    def __new__(cls, value, parameter, copy=False, dtype=None):
+    def __new__(cls, value, param, copy=False, dtype=None):
         """
         Initalize :class:`array`.
 
@@ -197,11 +197,11 @@ class ParameterArray(np.ndarray):
             If provided, enforce this dtype.
         """
         obj = value.view(cls)
-        obj.parameter = parameter
+        obj.param = param
         return obj
 
     def __array_finalize__(self, obj):
-        self.parameter = getattr(obj, 'parameter', None)
+        self.param = getattr(obj, 'param', None)
 
     def __array_ufunc__(self, ufunc, method, *inputs, out=None, **kwargs):
         args = []
@@ -229,7 +229,7 @@ class ParameterArray(np.ndarray):
 
         if method == 'at':
             if isinstance(inputs[0], ParameterArray):
-                inputs[0].parameter = self.parameter
+                inputs[0].param = self.param
             return
 
         if ufunc.nout == 1:
@@ -241,12 +241,12 @@ class ParameterArray(np.ndarray):
 
         for result in results:
             if isinstance(result, ParameterArray):
-                result.parameter = self.parameter
+                result.param = self.param
 
         return results[0] if len(results) == 1 else results
 
     def __repr__(self):
-        return '{}({}, {})'.format(self.__class__.__name__, self, self.parameter)
+        return '{}({}, {})'.format(self.__class__.__name__, self, self.param)
 
 
 class Parameter(BaseClass):
@@ -436,12 +436,13 @@ class BaseParameterCollection(BaseClass):
     _type = Parameter
     _attrs = []
 
-    @staticmethod
-    def _get_name(param):
+    @classmethod
+    def _get_name(cls, item):
+        param = cls._get_param(item)
         return getattr(param, 'name', str(param))
 
-    @staticmethod
-    def _get_param(item):
+    @classmethod
+    def _get_param(cls, item):
         return item
 
     def __init__(self, data=None):
@@ -627,7 +628,7 @@ class BaseParameterCollection(BaseClass):
             if not names: return []  # no match
         toret = []
         for name in names:
-            param = self._get_name(self[name])
+            param = self._get_param(self[name])
             if all(getattr(param, key) == value for key, value in kwargs.items()):
                 toret.append(param)
         return toret
@@ -681,6 +682,9 @@ class BaseParameterCollection(BaseClass):
         new = self.concatenate(self, other)
         self.__dict__.update(new.__dict__)
 
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, self.names())
+
     def __len__(self):
         """Collection length, i.e. number of items."""
         return len(self.data)
@@ -700,6 +704,11 @@ class BaseParameterCollection(BaseClass):
         """Set this class state dictionary."""
         self.data = [self._type.from_state(item) for item in state['data']]
 
+    def __copy__(self):
+        new = super(BaseParameterCollection, self).__copy__()
+        new.data = self.data.copy()
+        return new
+
     def clear(self):
         """Empty collection."""
         self.data.clear()
@@ -713,12 +722,21 @@ class BaseParameterCollection(BaseClass):
         for item in other:
             self.set(item)
 
+    def clone(self, *args, **kwargs):
+        new = self.copy()
+        new.update(*args, **kwargs)
+        return new
+
+    def items(self):
+        for item in self:
+            yield self._get_name(item), item
+
 
 class ParameterCollection(BaseParameterCollection):
 
     """Class holding a collection of parameters."""
 
-    def __init__(self, data=None, namespace=None):
+    def __init__(self, data=None):
         """
         Initialize :class:`ParameterCollection`.
 
@@ -737,9 +755,6 @@ class ParameterCollection(BaseParameterCollection):
         """
         if isinstance(data, self.__class__):
             self.__dict__.update(data.copy().__dict__)
-            if namespace is not None:
-                for param in self:
-                    param.namespace = namespace
             return
 
         self.data = []
@@ -760,42 +775,53 @@ class ParameterCollection(BaseParameterCollection):
                 else:
                     data[name] = {}  # only name is provided
         data = {name: conf for name, conf in data.items()}
-        list_meta, all_meta = {}, {}
-        for name in ['varied', 'fixed', 'namespace']:
-            list_meta[name] = data.pop(name, [])
-            all_meta[name] = isinstance(list_meta[name], bool) and list_meta[name]
+        meta = {}
+        for name in ['varied', 'fixed']:
+            meta[name] = data.pop(name, [])
+        fixed_none = []
 
         for name, conf in data.items():
             if isinstance(conf, Parameter):
                 self.set(conf)
             else:
                 latex = conf.pop('latex', None)
-                paramnamespace = conf.get('namespace', None)
-                if paramnamespace is True:
-                    conf['namespace'] = namespace
-                elif paramnamespace is None:
-                    if namespace is not None or all_meta['namespace'] or name in list_meta['namespace']:
-                        conf['namespace'] = namespace
-                if all_meta['varied'] or name in list_meta['varied']:
-                    conf['fixed'] = False
-                elif all_meta['fixed'] or name in list_meta['fixed']:
-                    conf['fixed'] = True
                 for name, latex in yield_names_latex(name, latex=latex):
                     param = Parameter(basename=name, latex=latex, **conf)
                     self.set(param)
+                    if conf.get('fixed', None) is None:
+                        fixed_none.append(param.name)
+        if meta:
+            self.update(names=fixed_none, **meta)
 
-    def update(self, *args, **kwargs):
+    def update(self, *args, name=None, **kwargs):
         """Update collection with new one."""
         if len(args) == 1 and isinstance(args[0], self.__class__):
             other = args[0]
+            for item in other:
+                if item in self:
+                    tmp = self[item].clone(item)
+                else:
+                    tmp = item.copy()
+                self.set(tmp)
+        elif len(args) <= 1:
+            list_update = self.names(name=name)
+            for meta_name, fixed in zip(['fixed', 'varied'], [True, False]):
+                if meta_name in kwargs:
+                    meta = kwargs[meta_name]
+                    if isinstance(meta, bool):
+                        if meta:
+                            meta = list_update
+                        else:
+                            meta = []
+                    for name in meta:
+                        self[name] = self[name].clone(fixed=fixed)
+            if 'namespace' in kwargs:
+                namespace = kwargs['namespace']
+                indices = [self.index(name) for name in list_update]
+                for index in indices:
+                    self.data[index] = self.data[index].clone(namespace=namespace)
         else:
-            other = self.__class__(*args, **kwargs)
-        for item in other:
-            if item in self:
-                tmp = self[item].clone(item)
-            else:
-                tmp = item.copy()
-            self.set(tmp)
+            raise ValueError('Unrecognized arguments {}'.format(args))
 
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""

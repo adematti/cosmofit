@@ -2,6 +2,7 @@ import os
 import sys
 import importlib
 import inspect
+import copy
 
 import numpy as np
 from mpytools import CurrentMPIComm
@@ -142,7 +143,28 @@ class CalculatorConfig(SectionConfig):
         self['class'] = import_cls(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
         self['info'] = Info(**data.get('info', {}))
         self['init'] = data.get('init', {})
-        self['params'] = ParameterCollection(data.get('params', None))
+        params = data.get('params', None)
+        if params is None: params = {}
+        else: params = copy.deepcopy(params)
+        meta_names = ['fixed', 'varied', 'namespace']
+        meta = {name: params.get(name, None) for name in meta_names}
+        meta['namespace'] = params.pop('namespace', True)
+        for meta_name in meta_names:
+            self['all_{}'.format(meta_name)] = isinstance(meta[meta_name], bool) and meta[meta_name]
+        self['fixed'] = {}
+        # Resolution order is fixed, varied keywords (which may be specified for more params than currently listed), then fixed specified for each param
+        for meta_name in ['fixed', 'varied']:
+            if not self['all_{}'.format(meta_name)] and meta[meta_name] is not None:
+                self['fixed'].update({name: meta_name == 'fixed' for name in meta[meta_name]})
+        self['namespace'] = {}
+        if not self['all_namespace'] and meta['namespace'] is not None:
+            self['namespace'].update({name: True for name in meta['namespace']})
+        for name in params:
+            if name not in meta_names:
+                self['namespace'][name] = params[name].pop('namespace', True)
+        self['params'] = ParameterCollection(params)
+        for name, param in self['params'].items():
+            self['fixed'][name] = param.fixed
         load_fn = data.get('load_fn', None)
         save_fn = data.get('save_fn', None)
         if not isinstance(load_fn, str):
@@ -157,8 +179,9 @@ class CalculatorConfig(SectionConfig):
     def init(self, namespace=None, params=None, **kwargs):
         cls = self['class']
         new = cls.__new__(cls)
-        new.params = ParameterCollection(getattr(new, 'params', None), namespace=namespace)
-        new.params.update(ParameterCollection(self['params'], namespace=namespace))
+        new.params = ParameterCollection(getattr(new, 'params', None))
+        new.params.update(ParameterCollection(self['params']))
+        new.params = new.params.clone(namespace=namespace, name=[name for name in self['namespace'] if self['namespace'][name]])
         new.info = self['info']
         if params is not None:
             for param in params:
@@ -173,11 +196,27 @@ class CalculatorConfig(SectionConfig):
             try:
                 new.__init__(**self['init'])
             except TypeError as exc:
-                raise PipelineError('Error in {}'.format(new.__class__))
+                raise PipelineError('Error in {}'.format(new.__class__)) from exc
         new.runtime_info = runtime_info
         if save_fn is not None:
             new.save(save_fn)
         return new
+
+    def update(self, *args, **kwargs):
+        meta = {name: self[name].copy() for name in ['fixed', 'namespace']}
+        super(CalculatorConfig, self).update(*args, **kwargs)
+        if len(args) == 1 and isinstance(args[0], self.__class__):
+            other = args[0]
+            kwargs = {}
+            for meta_name in ['fixed', 'varied']:
+                if other['all_{}'.format(meta_name)]:
+                    self['fixed'] = {name: meta_name == 'fixed' for name in meta['fixed']}
+            self['fixed'].update(other['fixed'])
+            for name, fixed in self['fixed'].items():
+                self['params'].update(name=name, fixed=fixed)
+            if other['all_namespace']:
+                self['namespace'] = {name: True for name in meta['namespace']}
+            self['namespace'].update(other['namespace'])
 
 
 class Info(BaseClass):
@@ -203,6 +242,12 @@ class Info(BaseClass):
         new = self.copy()
         new.update(*args, **kwargs)
         return new
+
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, self.__dict__)
+
+    def __eq__(self, other):
+        return type(other) == type(self) and other.__dict__ == self.__dict__
 
 
 class RuntimeInfo(BaseClass):
@@ -244,7 +289,6 @@ class BasePipeline(BaseClass):
     @CurrentMPIComm.enable
     def __init__(self, calculators, params=None, mpicomm=None):
         self.params = ParameterCollection(params)
-        import copy
         calculators = BaseConfig(copy.deepcopy(calculators))
 
         instantiated = []
@@ -298,6 +342,8 @@ class BasePipeline(BaseClass):
         callback_namespace(calculators, callback_config, replace=True)
 
         def callback_instantiate(namespace, basename, config, required_by=None):
+            if required_by is None and any((inst.runtime_info.namespace, inst.runtime_info.basename) == (namespace, basename) for inst in instantiated):
+                return
             new = config.init(namespace=namespace, params=self.params, requires={}, required_by=required_by, basename=basename)
             instantiated.append(new)
             for requirementbasename, config in getattr(new, 'requires', {}).items():
@@ -317,17 +363,19 @@ class BasePipeline(BaseClass):
                     requirementnamespace, requirementbasename, config = match_name
                 elif match_first:
                     requirementnamespace, requirementbasename, config = match_first
+                    #print(config['params']['omega_cdm'], tmpconfig['params']['omega_cdm'])
+                already_instantiated = False
                 for inst in instantiated:
-                    already_instantiated = inst.__class__ == config and inst.runtime_info.namespace == requirementnamespace\
-                                           and inst.runtime_info.basename == requirementnamespace and inst.runtime_info.config == config
-                    if already_instantiated:
-                        break
+                    already_instantiated = inst.__class__ == config['class'] and inst.runtime_info.namespace == requirementnamespace\
+                                           and inst.runtime_info.basename == requirementbasename and inst.runtime_info.config == config
+                    if already_instantiated: break
                 if already_instantiated:
                     requirement = inst
                     requirement.runtime_info.required_by.add(new)
                 else:
                     requirement = callback_instantiate(requirementnamespace, requirementbasename, config, required_by={new})
                 new.runtime_info.requires[requirementbasename] = requirement
+
             return new
 
         callback_namespace(calculators, callback_instantiate)

@@ -28,12 +28,8 @@ class ParameterValues(ParameterCollection):
             super(ParameterValues, self).__init__(data=data)
 
     @staticmethod
-    def _get_name(param):
-        return getattr(param, 'name', str(param))
-
-    @staticmethod
     def _get_param(item):
-        return item.parameter
+        return item.param
 
     @property
     def shape(self):
@@ -89,7 +85,7 @@ class ParameterValues(ParameterCollection):
         if not isinstance(item, self._type):
             param = Parameter(name, latex=metrics_to_latex(name) if name in self._metrics else None)
             if param in self:
-                param = self[param].parameter.clone(param)
+                param = self[param].param.clone(param)
             item = ParameterArray(item, param)
         try:
             self.data[name] = item

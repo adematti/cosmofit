@@ -44,7 +44,7 @@ params:
     latex: b
   sigmar:
     value: 0.
-    fixed: True
+    fixed: False
     latex: \Sigma_{r}
   sigmas:
     value: 5.
@@ -60,4 +60,5 @@ params:
     latex: \Sigma_{\perp}
   al[:5:2]_[-3:2]:
     value: 0.
+    fixed: False
     latex: a_{[], []}

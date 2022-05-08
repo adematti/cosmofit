@@ -18,8 +18,8 @@ pipeline:
         mode: qparqper
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
-    init:
-      fiducial: DESI
+    #init:
+    #  fiducial: DESI
     params:
       fixed: True
 

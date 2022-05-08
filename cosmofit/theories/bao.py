@@ -48,7 +48,11 @@ class BaseBAOPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
         return beta
 
 
-class Beutler2017BAOGalaxyPowerSpectrum(TrapzTheoryPowerSpectrumMultipoles, BaseBAOPowerSpectrum):
+class Beutler2017BAOGalaxyPowerSpectrum(BaseBAOPowerSpectrum, TrapzTheoryPowerSpectrumMultipoles):
+
+    def __init__(self, *args, mu=200, **kwargs):
+        super(Beutler2017BAOGalaxyPowerSpectrum, self).__init__(*args, **kwargs)
+        self.set_k_mu(k=self.k, mu=mu, ells=self.ells)
 
     def run(self, bias=1., sigmar=0., sigmas=5., sigmapar=8., sigmaper=4., **kwargs):
         beta = self.beta(bias=bias, **kwargs)
