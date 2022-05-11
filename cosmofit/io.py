@@ -19,10 +19,13 @@ class FileSystem(BaseClass):
             fni = fn.format(i)
             if fni == fn:
                 base, ext = os.path.splitext(fn)
-                fn = '{}_{}.{}'.format(base, i, ext)
+                fn = '{}_{}{}'.format(base, i, ext)
             else:
                 fn = fni
         return os.path.join(self.output_dir, self.namespace + fn)
+
+    def __call__(self, *args, **kwargs):
+        return self.filename(*args, **kwargs)
 
 
 class YamlLoader(yaml.SafeLoader):

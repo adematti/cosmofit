@@ -8,6 +8,7 @@ from cosmofit import utils
 from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
 from cosmofit.samples import diagnostics, Chain
+from cosmofit.parameter import ParameterPriorError
 
 
 class SamplerConfig(SectionConfig):
@@ -17,11 +18,11 @@ class SamplerConfig(SectionConfig):
     def __init__(self, *args, **kwargs):
         # cls, init kwargs
         super(SamplerConfig, self).__init__(*args, **kwargs)
-        self.data['class'] = import_cls(self.data['class'], pythonpath=self.data.pop('pythonpath', None), registry=BaseSampler._registry)
+        self['class'] = import_cls(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseSampler._registry)
 
     def init(self, *args, **kwargs):
-        kwargs = {**self.data['init'], **kwargs}
-        return self.data['class'](*args, **kwargs)
+        kwargs = {**self['init'], **kwargs}
+        return self['class'](*args, **kwargs)
 
 
 class RegisteredSampler(type(BaseClass)):
@@ -42,7 +43,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
     def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, chains=None, mpicomm=None):
         self.mpicomm = mpicomm
         self.likelihood = likelihood
-        self.varied = self.likelihood.params(varied=True)
+        self.varied = self.likelihood.params.select(varied=True)
         if chains is None: chains = max(self.mpicomm.size - 1, 1)
         if isinstance(chains, numbers.Number):
             self.chains = [None] * int(chains)
@@ -52,21 +53,34 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             self.chains = [chain if isinstance(chain, Chain) else Chain.load(chain) for chain in chains]
         self.max_tries = int(max_tries)
         self._set_rng(rng=rng, seed=seed)
-        self._set_sampler()
         self.diagnostics = {}
 
+    def mpiloglikelihood(self, values):
+        values = np.atleast_2d(values)
+        self.likelihood.mpirun(**{str(param): [value[iparam] for value in values] for iparam, param in enumerate(self.varied)})
+        return self.likelihood.loglikelihood
+
+    def mpilogposterior(self, values):
+        values = np.atleast_2d(values)
+        params = {str(param): np.array([value[iparam] for value in values]) for iparam, param in enumerate(self.varied)}
+        toret = self.likelihood.logprior(**params)
+        mask = ~np.isinf(toret)
+        self.likelihood.mpirun(**{param: value[mask] for param, value in params.items()})
+        toret[mask] += self.likelihood.loglikelihood
+        return toret
+
     def loglikelihood(self, values):
-        params = {str(param): value for param, value in zip(self.varied, values)}
-        self.likelihood.run(**params)
+        self.likelihood.run(**{str(param): value for param, value in zip(self.varied, values)})
         return self.likelihood.loglikelihood
 
     def logposterior(self, values):
         params = {str(param): value for param, value in zip(self.varied, values)}
-        logprior = self.likelihood.logprior(**params)
-        if np.isinf(logprior):
-            return logprior
+        toret = self.likelihood.logprior(**params)
+        if np.isinf(toret):
+            return toret
         self.likelihood.run(**params)
-        return self.likelihood.loglikelihood + logprior
+        toret += self.likelihood.loglikelihood
+        return toret
 
     def __getstate__(self):
         state = {}
@@ -89,7 +103,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
 
     @property
     def start(self):
-        if getattr(self, '_start') is None:
+        if getattr(self, '_start', None) is None:
             self._start = self._get_start()
         return self._start
 
@@ -99,31 +113,33 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             self._start = np.asarray(start).astype(dtype='f8', copy=False).reshape(self.chains, self.nwalkers, len(self.varied))
         self._start = None
 
-    def _get_start(self, max_tries=1000):
+    def _get_start(self, max_tries=None):
         if max_tries is None:
             max_tries = self.max_tries
 
         def get_start(size=1):
             toret = []
             for param in self.varied:
-                if param.ref.is_proper():
+                try:
                     toret.append(param.ref.sample(size=size, random_state=self.rng))
-                else:
-                    toret.append([param.value] * size)
+                except ParameterPriorError as exc:
+                    raise ParameterPriorError('Error in ref/prior distribution of parameter {}'.format(param)) from exc
             return np.array(toret).T
 
-        itry = 0
-        start = np.full(self.nwalkers * self.nchains * len(self.varied), np.nan)
-        while itry < max_tries:
-            mask = np.isnan(start)
+        start = np.full((self.nchains * self.nwalkers, len(self.varied)), np.nan)
+        logposterior = np.full(self.nchains * self.nwalkers, np.inf)
+        for itry in range(max_tries):
+            mask = np.isfinite(logposterior)
+            if mask.all(): break
+            mask = ~mask
             values = get_start(size=mask.sum())
-            itry += 1
-            start[mask] = self.logposterior(values)
+            start[mask] = values
+            logposterior[mask] = self.mpilogposterior(values)
 
-        if np.isnan(start).any():
-            raise ValueError('Could not find finite log posterior after {:d} tries'.format(max_tries))
-
-        return self.mpicomm.bcast(np.array(start), root=0)
+        if not np.isfinite(logposterior).all():
+            raise ValueError('Could not find finite log posterior after {:d} tries'.format(itry))
+        start.shape = (self.nchains, self.nwalkers, -1)
+        return start
 
     def __enter__(self):
         return self
@@ -132,8 +148,12 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
         pass
 
     def run(self, niterations=300, thin_by=1, **kwargs):
+        if niterations <= 0:
+            return
+        if getattr(self, 'sampler', None) is None:
+            self._set_sampler()
+        nprocs_per_chain = max((self.mpicomm.size - 1) // niterations, 1)
         chains = [None] * self.nchains
-        nprocs_per_chain = max((self.mpicomm.size - 1) // self.nchains, 1)
         if self.chains[0] is not None: start = [np.array([chain[param][-1] for param in self.varied]).T for chain in self.chains]
         else: start = self.start
 
@@ -155,7 +175,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
                 self.chains[ichain] = Chain.concatenate(chain, new_chain)
 
     def check(self, nsplits=4, stable_over=2, burnin=0.3, eigen_gr_stop=0.03, diag_gr_stop=None,
-              cl_diag_gr_stop=None, nsigmas_cl_diag_gr_stop=1., geweke_stop=None,
+              cl_diag_gr_stop=None, nsigmas_cl_diag_gr_stop=1., geweke_stop=None, geweke_pvalue_stop=None,
               iact_stop=None, iact_reliable=50, dact_stop=None):
 
         toret = None
@@ -175,9 +195,9 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
                 return all(self.diagnostics[name][-stable_over:])
 
             if 0 < burnin < 1:
-                burnin = int(burnin * len(self.chains[0]) + 0.5)
+                burnin = int(burnin * self.chains[0].shape[0] + 0.5)
 
-            lensplits = (len(self.chains[0]) - burnin) // nsplits
+            lensplits = (self.chains[0].shape[0] - burnin) // nsplits
 
             if lensplits * self.nwalkers < 2:
                 return False
@@ -187,8 +207,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             self.log_info('Diagnostics:')
             item = '- '
             toret = True
-
-            eigen_gr = diagnostics.gelman_rubin(split_samples, self.varied, method='eigen', check=False).max() - 1
+            eigen_gr = diagnostics.gelman_rubin(split_samples, self.varied, method='eigen', check_valid='ignore').max() - 1
             msg = '{}max eigen Gelman-Rubin - 1 is {:.3g}'.format(item, eigen_gr)
             if eigen_gr_stop is not None:
                 test = eigen_gr < eigen_gr_stop
@@ -198,9 +217,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             else:
                 self.log_info('{}.'.format(msg))
 
-            varied = split_samples[0].params(varied=True)
-
-            diag_gr = diagnostics.gelman_rubin(split_samples, varied, method='diag').max() - 1
+            diag_gr = diagnostics.gelman_rubin(split_samples, self.varied, method='diag').max() - 1
             msg = '{}max diag Gelman-Rubin - 1 is {:.3g}'.format(item, diag_gr)
             if diag_gr_stop is not None:
                 test = diag_gr < diag_gr_stop
@@ -211,13 +228,13 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
                 self.log_info('{}.'.format(msg))
 
             def cl_lower(samples, params):
-                return samples.interval(params, nsigmas=nsigmas_cl_diag_gr_stop)[:, 0]
+                return np.array([samples.interval(param, nsigmas=nsigmas_cl_diag_gr_stop)[0] for param in params])
 
             def cl_upper(samples, params):
-                return samples.interval(params, nsigmas=nsigmas_cl_diag_gr_stop)[:, 1]
+                return np.array([samples.interval(param, nsigmas=nsigmas_cl_diag_gr_stop)[1] for param in params])
 
-            cl_diag_gr = np.max([diagnostics.gelman_rubin(split_samples, varied, statistic=cl_lower, method='diag'),
-                                 diagnostics.gelman_rubin(split_samples, varied, statistic=cl_upper, method='diag')]) - 1
+            cl_diag_gr = np.max([diagnostics.gelman_rubin(split_samples, self.varied, statistic=cl_lower, method='diag'),
+                                 diagnostics.gelman_rubin(split_samples, self.varied, statistic=cl_upper, method='diag')]) - 1
             msg = '{}max diag Gelman-Rubin - 1 at {:.1f} sigmas is {:.3g}'.format(item, nsigmas_cl_diag_gr_stop, cl_diag_gr)
             if cl_diag_gr_stop is not None:
                 test = cl_diag_gr - 1 < cl_diag_gr_stop
@@ -228,18 +245,27 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
                 self.log_info('{}.'.format(msg))
 
             # source: https://github.com/JohannesBuchner/autoemcee/blob/38feff48ae524280c8ea235def1f29e1649bb1b6/autoemcee.py#L337
-            geweke = diagnostics.geweke(self.chains, varied, first=0.25, last=0.75).max()
-            msg = '{}Max Geweke p-value is {:.3g}'.format(item, geweke)
+            geweke = diagnostics.geweke(split_samples, self.varied, first=0.25, last=0.75)
+            geweke_max = np.max(geweke)
+            msg = '{}Max Geweke is {:.3g}'.format(item, geweke_max)
             if geweke_stop is not None:
-                test = geweke < geweke_stop
+                test = geweke_max < geweke_stop
                 self.log_info('{} {} {:.3g}.'.format(msg, '<' if test else '>', geweke_stop))
                 add_diagnostics('geweke', test)
                 toret = is_stable('geweke')
             else:
                 self.log_info('{}.'.format(msg))
 
+            if geweke_pvalue_stop is not None:
+                from scipy import stats
+                geweke_pvalue = stats.normaltest(toret).pvalue
+                test = geweke_pvalue < geweke_pvalue_stop
+                self.log_info('{} {} {:.3g}.'.format(msg, '<' if test else '>', geweke_pvalue_stop))
+                add_diagnostics('geweke_pvalue', test)
+                toret = is_stable('geweke_pvalue')
+
             split_samples = [chain[burnin:, iwalker] for iwalker in range(self.nwalkers) for chain in self.chains]
-            iact = diagnostics.integrated_autocorrelation_time(split_samples, varied)
+            iact = diagnostics.integrated_autocorrelation_time(split_samples, self.varied, check_valid='ignore')
             add_diagnostics('tau', iact)
 
             iact = iact.max()
@@ -266,5 +292,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
                     toret = is_stable('dact')
                 else:
                     self.log_info('{}.'.format(msg))
+
+        self.diagnostics = self.mpicomm.bcast(self.diagnostics, root=0)
 
         return self.mpicomm.bcast(toret, root=0)

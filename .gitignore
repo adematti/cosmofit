@@ -17,6 +17,9 @@ doc/_build/
 **/_catalog
 **/_plots
 **/_results
+**/_chains
+**/_profiles
+**/tmp
 **/*.npy
 
 # Unit test / coverage reports

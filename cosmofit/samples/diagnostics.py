@@ -1,17 +1,15 @@
 import logging
+import warnings
 
 import numpy as np
-from scipy import stats
 
-from cosmofit import utils
+from . import utils
 
 
 logger = logging.getLogger('Diagnostics')
-log_info = logger.info
-log_warning = logger.warning
 
 
-def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_matrices=False, check=True):
+def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_matrices=False, check_valid='raise'):
     """
     Estimate Gelman-Rubin statistics, which compares covariance of chain means to (mean of) intra-chain covariances.
 
@@ -35,18 +33,18 @@ def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_m
     return_matrices : bool, default=True
         If ``True``, also return pair of covariance matrices.
 
-    check : bool, default=True
+    check_valid : bool, default=True
         Whether to check for reliable inverse of intra-chain covariances.
 
     Reference
     ---------
     http://www.stat.columbia.edu/~gelman/research/published/brooksgelman2.pdf
     """
-    if params is None: params = chains[0].params(varied=True)
-    isscalar = not utils.is_sequence(params)
-
     if not utils.is_sequence(chains):
         raise ValueError('Provide a list of at least 2 chains to estimate Gelman-Rubin')
+    if params is None: params = chains[0].params(varied=True)
+    isscalar = not utils.is_sequence(params)
+    if isscalar: params = [params]
     nchains = len(chains)
     if nchains < 2:
         raise ValueError('{:d} chains provided; one needs at least 2 to estimate Gelman-Rubin'.format(nchains))
@@ -54,7 +52,7 @@ def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_m
     if statistic == 'mean':
 
         def statistic(chain, params):
-            return chain.mean(params)
+            return [chain.mean(param) for param in params]
 
     means = np.asarray([statistic(chain, params) for chain in chains])
     covs = np.asarray([chain.cov(params) for chain in chains])
@@ -71,7 +69,7 @@ def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_m
         # divide by stddev for numerical stability
         stddev = np.sqrt(np.diag(V).real)
         V = V / stddev[:, None] / stddev[None, :]
-        invWn1 = utils.inv(Wn1 / stddev[:, None] / stddev[None, :], check=check)
+        invWn1 = utils.inv(Wn1 / stddev[:, None] / stddev[None, :], check_valid=check_valid)
         toret = np.linalg.eigvalsh(invWn1.dot(V))
     else:
         toret = np.diag(V) / np.diag(Wn1)
@@ -113,7 +111,7 @@ def autocorrelation(chains, params=None):
     return toret / len(chains)
 
 
-def integrated_autocorrelation_time(chains, params=None, min_corr=None, c=5, reliable=50, check=False):
+def integrated_autocorrelation_time(chains, params=None, min_corr=None, c=5, reliable=50, check_valid='warn'):
     """
     Return integrated autocorrelation time.
     Adapted from https://github.com/dfm/emcee/blob/main/src/emcee/autocorr.py
@@ -137,7 +135,7 @@ def integrated_autocorrelation_time(chains, params=None, min_corr=None, c=5, rel
         Minimum ratio between the chain length and estimated autocorrelation time
         for it to be considered reliable.
 
-    check : bool, default=False
+    check_valid : bool, default=False
         Whether to check for reliable estimate of autocorrelation time (based on ``reliable``).
 
     Returns
@@ -150,7 +148,7 @@ def integrated_autocorrelation_time(chains, params=None, min_corr=None, c=5, rel
     if params is None: params = chains[0].params(varied=True)
 
     if utils.is_sequence(params):
-        return np.array([integrated_autocorrelation_time(chains, param, min_corr=min_corr, c=c, reliable=reliable, check=check) for param in params])
+        return np.array([integrated_autocorrelation_time(chains, param, min_corr=min_corr, c=c, reliable=reliable, check_valid=check_valid) for param in params])
 
     # Automated windowing procedure following Sokal (1989)
     def auto_window(taus, c):
@@ -174,10 +172,15 @@ def integrated_autocorrelation_time(chains, params=None, min_corr=None, c=5, rel
         toret = taus[window]
     else:
         raise ValueError('A criterion must be provided to stop integration of correlation time')
-    if check and reliable * toret > size:
+    if reliable * toret > size:
         msg = 'The chain is shorter than {:d} times the integrated autocorrelation time for {}. Use this estimate with caution and run a longer chain!\n'.format(reliable, params)
         msg += 'N/{:d} = {:.0f};\ntau: {}'.format(reliable, size / reliable, toret)
-        log_warning(msg)
+        if check_valid == 'raise':
+            raise ValueError(msg)
+        elif check_valid == 'warn':
+            warnings.warn(msg)
+        elif check_valid != 'ignore':
+            raise ValueError('check_valid must be one of ["raise", "warn", "ignore"]')
     return toret
 
 
@@ -218,7 +221,7 @@ def geweke(chains, params=None, first=0.25, last=0.75):
 
     if params is None: params = chains[0].params(varied=True)
     if utils.is_sequence(params):
-        return np.array([geweke(chains[0], parameter, first=first, last=last) for parameter in params])
+        return np.array([geweke(chains, param, first=first, last=last) for param in params])
 
     toret = []
     for chain in chains:
@@ -231,4 +234,4 @@ def geweke(chains, params=None, first=0.25, last=0.75):
         diff /= (np.cov(value_first, aweights=aweight_first, fweights=fweight_first) + np.cov(value_last, aweights=aweight_last, fweights=fweight_last))**0.5
         toret.append(diff)
 
-    return stats.normaltest(toret)
+    return np.array(toret)

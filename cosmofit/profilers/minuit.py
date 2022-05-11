@@ -14,10 +14,13 @@ class MinuitProfiler(BaseProfiler):
         self.minos_params = dict(minos or {})
         super(MinuitProfiler, self).__init__(*args, **kwargs)
 
+    def chi2(self, *values):
+        return super(MinuitProfiler, self).chi2(values)
+
     def _set_profiler(self):
         minuit_params = {}
         minuit_params['name'] = parameter_names = [str(param.name) for param in self.varied]
-        self.minuit = iminuit.Minuit(self.chi2, **dict(zip(parameter_names, [param.value for param in self.parameters])), **minuit_params)
+        self.minuit = iminuit.Minuit(self.chi2, **dict(zip(parameter_names, [param.value for param in self.varied])), **minuit_params)
         self.minuit.errordef = 1.0
         for param in self.varied:
             self.minuit.limits[str(param)] = tuple(None if np.isinf(lim) else lim for lim in param.prior.limits)
@@ -34,11 +37,11 @@ class MinuitProfiler(BaseProfiler):
         if 'migrad' in algorithms:
             for param, value in zip(self.varied, start):
                 self.minuit.values[str(param)] = value
-            profiles.set(start=ParameterValues(start, parameters=self.varied))
+            profiles.set(start=ParameterValues(start, params=self.varied))
             self.minuit.migrad(**self.migrad_params)
-            profiles.set(bestfit=ParameterBestFit([self.minuit.values[str(param)] for param in self.varied] + [self.minuit.fval], parameters=self.varied + ['logposterior']))
-            profiles.set(parabolic_errors=ParameterValues([self.minuit.errors[str(param)] for param in self.varied], parameters=self.varied))
-            profiles.set(parabolic_errors=ParameterCovariance(np.array(self.minuit.covariance), parameters=self.varied))
+            profiles.set(bestfit=ParameterBestFit([self.minuit.values[str(param)] for param in self.varied] + [self.minuit.fval], params=self.varied + ['logposterior']))
+            profiles.set(parabolic_errors=ParameterValues([self.minuit.errors[str(param)] for param in self.varied], params=self.varied))
+            profiles.set(covariance=ParameterCovariance(np.array(self.minuit.covariance), params=self.varied))
 
         if 'minos' in algorithms:
             errors = []
@@ -46,5 +49,6 @@ class MinuitProfiler(BaseProfiler):
                 param = str(param)
                 self.minuit.minos(param, **self.minos_params)
                 errors.append((self.minuit.merrors[param].lower, self.minuit.merrors[param].upper))
-            profiles.set(deltachi2_errors=ParameterValues(errors, parameters=self.varied))
+            profiles.set(deltachi2_errors=ParameterValues(errors, params=self.varied))
+
         return profiles

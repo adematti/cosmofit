@@ -5,7 +5,7 @@ import inspect
 import copy
 
 import numpy as np
-from mpytools import CurrentMPIComm
+from mpytools import CurrentMPIComm, COMM_SELF
 
 from . import utils
 from .utils import BaseClass
@@ -32,8 +32,6 @@ class RegisteredCalculator(type(BaseClass)):
 
 
 class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
-
-    is_vectorized = False
 
     def __getattr__(self, name):
         if name == 'requires':
@@ -70,6 +68,24 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             utils.mkdir(os.path.dirname(filename))
             np.save(filename, {'requires': self.requires, **self.__getstate__()}, allow_pickle=True)
 
+    def mpirun(self, **params):
+        self.allstates = []
+        value = []
+        for name, value in params.items():
+            params[name] = np.ravel(value)
+        csize = len(value)
+        if not csize: return
+        mpicomm = self.mpicomm
+        states = {}
+        for ivalue in range(self.mpicomm.rank * csize // self.mpicomm.size, (self.mpicomm.rank + 1) * csize // self.mpicomm.size):
+            self.mpicomm = COMM_SELF
+            self.run(**{name: value[ivalue] for name, value in params.items()})
+            states[ivalue] = self.__getstate__()
+        self.mpicomm = mpicomm
+        allstates = {}
+        for state in self.mpicomm.allgather(states): allstates.update(state)
+        self.allstates = [allstates[i] for i in range(csize)]
+
 
 class PipelineError(Exception):
 
@@ -104,7 +120,7 @@ class SectionConfig(BaseConfig):
     def __init__(self, *args, **kwargs):
         super(SectionConfig, self).__init__(*args, **kwargs)
         for name in self._sections:
-            self.data = self.data.get(name, {})
+            self.data[name] = self.data.get(name, {})
 
     def update(self, *args, **kwargs):
         if len(args) == 1 and isinstance(args[0], self.__class__):
@@ -205,12 +221,12 @@ class CalculatorConfig(SectionConfig):
     def update(self, *args, **kwargs):
         meta = {name: self[name].copy() for name in ['fixed', 'namespace']}
         super(CalculatorConfig, self).update(*args, **kwargs)
+        for name in meta: self[name] = meta[name]
         if len(args) == 1 and isinstance(args[0], self.__class__):
             other = args[0]
-            kwargs = {}
             for meta_name in ['fixed', 'varied']:
                 if other['all_{}'.format(meta_name)]:
-                    self['fixed'] = {name: meta_name == 'fixed' for name in meta['fixed']}
+                    self['fixed'] = {name: meta_name == 'fixed' for name in self['fixed']}
             self['fixed'].update(other['fixed'])
             for name, fixed in self['fixed'].items():
                 self['params'].update(name=name, fixed=fixed)
@@ -263,10 +279,18 @@ class RuntimeInfo(BaseClass):
             for name, clsdict in calculator.requires:
                 self.requires.update(CalculatorConfig(clsdict).init(namespace=namespace))
         self.params = {param.basename: param.value for param in calculator.params}
+        self.torun = True
 
     @property
     def torun(self):
-        return getattr(self, '_torun', True)
+        return self._torun
+
+    @torun.setter
+    def torun(self, torun):
+        self._torun = torun
+        if torun:
+            for inst in self.required_by:
+                inst.runtime_info.torun = torun
 
     @property
     def params(self):
@@ -274,13 +298,13 @@ class RuntimeInfo(BaseClass):
 
     @params.setter
     def params(self, params):
-        self._torun = True
+        self.torun = True
         self._params = params
 
     @property
     def name(self):
         if self.namespace:
-            return namespace_delimiter.join(self.namespace, self.basename)
+            return namespace_delimiter.join([self.namespace, self.basename])
         return self.basename
 
 
@@ -363,7 +387,6 @@ class BasePipeline(BaseClass):
                     requirementnamespace, requirementbasename, config = match_name
                 elif match_first:
                     requirementnamespace, requirementbasename, config = match_first
-                    #print(config['params']['omega_cdm'], tmpconfig['params']['omega_cdm'])
                 already_instantiated = False
                 for inst in instantiated:
                     already_instantiated = inst.__class__ == config['class'] and inst.runtime_info.namespace == requirementnamespace\
@@ -402,18 +425,22 @@ class BasePipeline(BaseClass):
             callback(calculator, calculator.runtime_info.required_by)
 
         self.mpicomm = mpicomm
-
         # Init run, e.g. for fixed parameters
+
         for calculator in self.end_calculators:
             calculator.run(**calculator.runtime_info.params)
 
     def run(self, **params):  # params with namespace
         for calculator in self.calculators:
+            calculator.runtime_info.torun = False
             for param in calculator.params:
                 value = params.get(param.name, None)
                 if value is not None and value != calculator.runtime_info.params[param.basename]:
                     calculator.runtime_info.params[param.basename] = value
                     calculator.runtime_info.torun = True
+        # for calculator in self.calculators:
+        #     if calculator.runtime_info.torun:
+        #         print(calculator, calculator.runtime_info.torun)
         for calculator in self.end_calculators:
             calculator.run(**calculator.runtime_info.params)
 
@@ -436,19 +463,32 @@ class LikelihoodPipeline(BasePipeline):
     def __init__(self, *args, **kwargs):
         super(LikelihoodPipeline, self).__init__(*args, **kwargs)
         # Check end_calculators are likelihoods
-        for calculator in self.calculators:
+        for calculator in self.end_calculators:
             likelihood_name = 'loglikelihood'
-            if not hasattr(calculator, 'loglikelihood'):
+            if not hasattr(calculator, likelihood_name):
                 raise PipelineError('End calculator {} has no attribute {}'.format(calculator, likelihood_name))
             loglikelihood = getattr(calculator, likelihood_name)
             if not np.ndim(loglikelihood) == 0:
                 raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, likelihood_name))
 
     def run(self, **params):
-        super(self, LikelihoodPipeline).run(**params)
+        super(LikelihoodPipeline, self).run(**params)
+        self.loglikelihoods = {}
         for calculator in self.end_calculators:
-            self.loglikelihoods[calculator.info.name] = calculator.loglikelihood
-        self.loglikelihood = sum(loglike for loglike in self.loglikelihoods)
+            self.loglikelihoods[calculator.runtime_info.name] = calculator.loglikelihood
+        self.loglikelihood = sum(loglike for loglike in self.loglikelihoods.values())
+
+    def mpirun(self, **params):
+        BaseCalculator.mpirun(self, **params)
+        self.loglikelihoods = {calculator.runtime_info.name: np.array([state['loglikelihoods'][calculator.runtime_info.name] for state in self.allstates]) for calculator in self.end_calculators}
+        self.loglikelihood = np.array([state['loglikelihood'] for state in self.allstates])
+
+    def __getstate__(self):
+        state = {}
+        for name in ['loglikelihoods', 'loglikelihood']:
+            if hasattr(self, name):
+                state[name] = getattr(self, name)
+        return state
 
     def logprior(self, **params):
         logprior = 0.

@@ -6,11 +6,10 @@ import glob
 
 import numpy as np
 
-from cosmofit import utils
 from cosmofit.parameter import ParameterCollection, Parameter, ParameterArray
 
 from .profile import ParameterValues
-from .utils import nsigmas_to_quantiles_1d_sym, metrics_to_latex
+from . import utils
 
 
 class Chain(ParameterValues):
@@ -18,14 +17,14 @@ class Chain(ParameterValues):
     """Class that holds samples drawn from likelihood."""
 
     _type = ParameterArray
-    _attrs = []
+    _attrs = ParameterValues._attrs + ['_logposterior', '_aweight', '_fweight', '_weight']
 
-    def __init__(self, data=None, params=None, logposterior='logposterior', aweight='aweight', fweight='fweight', weight='weight'):
-        super(Chain, self).__init__(data=data, params=params)
+    def __init__(self, data=None, params=None, logposterior='logposterior', aweight='aweight', fweight='fweight', weight='weight', **kwargs):
         self._logposterior = logposterior
         self._aweight = aweight
         self._fweight = fweight
         self._weight = weight
+        super(Chain, self).__init__(data=data, params=params, **kwargs)
 
     @property
     def _metrics(self):
@@ -63,7 +62,7 @@ class Chain(ParameterValues):
 
     @property
     def weight(self):
-        return ParameterArray(self.aweight * self.fweight, Parameter(self._weight, latex=metrics_to_latex(self._weight)))
+        return ParameterArray(self.aweight * self.fweight, Parameter(self._weight, latex=utils.metrics_to_latex(self._weight)))
 
     def remove_burnin(self, burnin=0):
         """
@@ -116,11 +115,11 @@ class Chain(ParameterValues):
                 return self.weight
             if has_default:
                 return default
-                raise KeyError('Column {} does not exist'.format(name))
+            raise KeyError('Column {} does not exist'.format(name))
 
     def __repr__(self):
         """Return string representation, including shape and columns."""
-        return 'Chain(shape={:d}, params={})'.format(self.shape, self.params())
+        return 'Chain(shape={}, params={})'.format(self.shape, self.params())
 
     @classmethod
     def read_cosmomc(cls, base_filename, ichains=None):
@@ -155,7 +154,7 @@ class Chain(ParameterValues):
                 name = name.strip()
                 if name.endswith('*'): name = name[:-1]
                 latex = latex.strip().replace('\n', '')
-                params.set(Parameter(name=name.strip(), latex=latex, fixed=False))
+                params.set(Parameter(basename=name.strip(), latex=latex, fixed=False))
 
             ranges_filename = '{}.ranges'.format(base_filename)
             if os.path.exists(ranges_filename):
@@ -222,7 +221,7 @@ class Chain(ParameterValues):
         metrics_columns = [self._weight, self._logposterior]
         for column in metrics_columns:
             if column in columns: del columns[columns.index(column)]
-        data = self.to_array(columns=metrics_columns + columns, struct=False).reshape(-1, self.size)
+        data = self.to_array(params=metrics_columns + columns, struct=False).reshape(-1, self.size)
         data[1] *= -1
         data = data.T
         utils.mkdir(os.path.dirname(base_filename))
@@ -231,11 +230,10 @@ class Chain(ParameterValues):
         np.savetxt(chain_filename, data, header='', fmt=fmt, delimiter=delimiter, **kwargs)
 
         output = ''
-        params = self.params()
-        params = [params[column] for column in columns]
+        params = self.params(name=columns)
         for param in params:
             tmp = '{}* {}\n' if getattr(param, 'derived', getattr(param, 'fixed')) else '{} {}\n'
-            output += tmp.format(param.name, param.latex if param.latex is not None else param.name)
+            output += tmp.format(param.name, param.latex())
         params_filename = '{}.paramnames'.format(base_filename)
         self.log_info('Saving parameter names to {}.'.format(params_filename))
         with open(params_filename, 'w') as file:
@@ -264,18 +262,18 @@ class Chain(ParameterValues):
         -------
         samples : getdist.MCChain
         """
-        from getdist import MCChain
+        from getdist import MCSamples
         toret = None
         if params is None: params = self.params()
-        labels = [param.latex for param in params]
+        labels = [param.latex() for param in params]
         samples = self.to_array(params=params, struct=False).reshape(-1, self.size)
         names = [str(param) for param in params]
-        toret = MCChain(samples=samples.T, weights=self.weight, loglikes=-self.logposterior, names=names, labels=labels)
+        toret = MCSamples(samples=samples.T, weights=self.weight, loglikes=-self.logposterior, names=names, labels=labels)
         return toret
 
-    def var(self, parameter, ddof=1):
+    def var(self, param, ddof=1):
         """
-        Estimate weighted parameter variance.
+        Estimate weighted param variance.
 
         Parameters
         ----------
@@ -291,21 +289,28 @@ class Chain(ParameterValues):
             If single parameter provided as ``columns``, returns variance for that parameter (scalar).
             Else returns variance array.
         """
-        return np.cov(self[parameter].ravel(), fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof)
+        return np.cov(self[param].ravel(), fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof)
 
-    def mean(self, parameter):
+    def std(self, param, ddof=1):
+        return self.var(param, ddof=ddof) ** 0.5
+
+    def mean(self, param):
         """Return weighted mean."""
-        return np.average(self[parameter].ravel(), weights=self.weight.ravel())
+        return np.average(self[param].ravel(), weights=self.weight.ravel())
 
-    def argmax(self, parameter):
+    def argmax(self, param):
         """Return parameter value for maximum of ``cost.``"""
-        return self[parameter].ravel()[np.argmax(self.logposterior.ravel())]
+        return self[param].ravel()[np.argmax(self.logposterior.ravel())]
 
-    def quantile(self, parameter, q=(0.1587, 0.8413)):
+    def median(self, param):
         """Return weighted quantiles."""
-        return utils.weighted_quantile(self[parameter].ravel(), q=q, weights=self.weight.ravel())
+        return utils.weighted_quantile(self[param].ravel(), q=0.5, weights=self.weight.ravel())
 
-    def interval(self, parameter, **kwargs):
+    def quantile(self, param, q=(0.1587, 0.8413)):
+        """Return weighted quantiles."""
+        return utils.weighted_quantile(self[param].ravel(), q=q, weights=self.weight.ravel())
+
+    def interval(self, param, **kwargs):
         """
         Return n-sigmas confidence interval(s).
 
@@ -317,26 +322,15 @@ class Chain(ParameterValues):
         nsigmas : int
             Return interval for this number of sigmas.
 
-        bins : int, default=100
-            Number of bins i.e. mesh nodes.
-            See :meth:`Mesh.from_samples`.
-
-        method : string
-            Method to interpolate (weighted) samples on mesh.
-            See :meth:`Mesh.from_samples`.
-
-        bw_method : string, default='scott'
-            If ``method`` is ``'gaussian_kde'``, method to determine KDE bandwidth, see :class:`scipy.stats.gaussian_kde`.
-
         Returns
         -------
         interval : array
         """
-        return utils.interval(self[parameter].ravel(), self.weight.ravel(), **kwargs)
+        return utils.interval(self[param].ravel(), self.weight.ravel(), **kwargs)
 
     def cov(self, params=None, ddof=1):
         """
-        Estimate weighted parameter covariance.
+        Estimate weighted param covariance.
 
         Parameters
         ----------
@@ -353,7 +347,11 @@ class Chain(ParameterValues):
             If single parameter provided as ``columns``, returns variance for that parameter (scalar).
             Else returns covariance (2D array).
         """
-        return np.cov([self[param].ravel() for param in params], fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof)
+        if params is None:
+            params = self.params()
+        if not utils.is_sequence(params):
+            params = [params]
+        return np.atleast_2d(np.cov([self[param].ravel() for param in params], fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof))
 
     def invcov(self, params=None, ddof=1):
         """
@@ -426,10 +424,10 @@ class Chain(ParameterValues):
 
         for iparam, param in enumerate(params):
             row = []
-            if is_latex: row.append(param.get_label())
+            if is_latex: row.append(param.latex(inline=True))
             else: row.append(str(param.name))
             ref_center = self.mean(param)
-            ref_error = self.std(param)
+            ref_error = self.var(param) ** 0.5
             for quantity in quantities:
                 if quantity in ['argmax', 'mean', 'median', 'std']:
                     value = getattr(self, quantity)(param)
@@ -438,7 +436,7 @@ class Chain(ParameterValues):
                     row.append(value)
                 elif quantity.startswith('quantile'):
                     nsigmas = int(re.match('quantile:(.*)sigma', quantity).group(1))
-                    low, up = self.quantile(param, q=nsigmas_to_quantiles_1d_sym(nsigmas))
+                    low, up = self.quantile(param, q=utils.nsigmas_to_quantiles_1d_sym(nsigmas))
                     row.append(round_errors(low - ref_center, up - ref_center))
                 elif quantity.startswith('interval'):
                     nsigmas = int(re.match('interval:(.*)sigma', quantity).group(1))

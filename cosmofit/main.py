@@ -5,7 +5,8 @@ import argparse
 from mpytools import CurrentMPIComm
 
 from ._version import __version__
-from .base import BaseConfig, PipelineError, LikelihoodPipeline, FileSystem
+from .base import BaseConfig, PipelineError, LikelihoodPipeline
+from .io import FileSystem
 from .utils import setup_logging
 
 
@@ -25,7 +26,7 @@ def ascii_art(section):
 
 
 @CurrentMPIComm.enable
-def read_args(args=None, mpicomm=None, parser=None):
+def read_args(args=None, mpicomm=None, parser=None, section='sample'):
     if parser is None:
         parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('config_fn', action='store', type=str, help='Name of configuration file')
@@ -33,9 +34,9 @@ def read_args(args=None, mpicomm=None, parser=None):
     parser.add_argument('--update', nargs='*', type=str, help='List of namespace1....name.key=value to update config file')
     args = parser.parse_args(args=args)
     if mpicomm.rank == 0:
-        print(ascii_art('sample'))
+        print(ascii_art(section))
     setup_logging(args.verbose)
-    config = Config(args.config_fn)
+    config = BaseConfig(args.config_fn)
     for string in args.update:
         keyvalue = string.split('=')
         if len(keyvalue) != 2:
@@ -47,7 +48,7 @@ def read_args(args=None, mpicomm=None, parser=None):
 
 @CurrentMPIComm.enable
 def sample_from_args(args=None, mpicomm=None):
-    config, config_fn = read_args(args=args, mpicomm=mpicomm)
+    config, config_fn = read_args(args=args, mpicomm=mpicomm, section='sample')
     return sample_from_config(config, mpicomm=mpicomm)
 
 
@@ -55,18 +56,20 @@ def sample_from_args(args=None, mpicomm=None):
 def sample_from_config(config, mpicomm=None):
     from cosmofit.samplers import SamplerConfig
     config = BaseConfig(config)
-    if 'sampler' not in BaseConfig:
+    if 'sampler' not in config:
         raise PipelineError('Provide sampler')
     config_sampler = SamplerConfig(config['sampler'])
 
     if 'pipeline' not in config:
         raise PipelineError('Provide pipeline')
     likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
-    sampler = config_sampler.init(likelihood, mpicomm=mpicomm)
 
-    diagnostics = config_sampler['run'].get('diagnostics', None)
+    sampler = config_sampler.init(likelihood, mpicomm=mpicomm)
+    check = config_sampler.get('check', {})
+    run_check = bool(check)
+    if isinstance(check, bool): check = {}
     min_iterations = config_sampler['run'].get('min_iterations', 0)
-    max_iterations = config_sampler['run'].get('max_iterations', int(1e5) if diagnostics is None else sys.maxint)
+    max_iterations = config_sampler['run'].get('max_iterations', int(1e5) if run_check else sys.maxsize)
     check_every = config_sampler['run'].get('check_every', 200)
 
     run_kwargs = {}
@@ -99,11 +102,51 @@ def sample_from_config(config, mpicomm=None):
         count_iterations += niter
         sampler.run(niterations=niter, **run_kwargs)
         if chains_fn is not None:
-            for ichain in sampler.nchains:
+            for ichain in range(sampler.nchains):
                 sampler.chains[ichain].save(chains_fn[ichain])
-        is_converged = False if diagnostics is None else sampler.check(**diagnostics)
+        is_converged = sampler.check(**check) if run_check else False
         if count_iterations < min_iterations:
             is_converged = False
-        if count_iterations > max_iterations:
+        if count_iterations >= max_iterations:
             is_converged = True
     return sampler
+
+
+@CurrentMPIComm.enable
+def profile_from_args(args=None, mpicomm=None):
+    config, config_fn = read_args(args=args, mpicomm=mpicomm, section='profile')
+    return sample_from_config(config, mpicomm=mpicomm)
+
+
+@CurrentMPIComm.enable
+def profile_from_config(config, mpicomm=None):
+    from cosmofit.profilers import ProfilerConfig
+    config = BaseConfig(config)
+    if 'profiler' not in config:
+        raise PipelineError('Provide profiler')
+    config_profiler = ProfilerConfig(config['profiler'])
+
+    if 'pipeline' not in config:
+        raise PipelineError('Provide pipeline')
+    likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
+
+    profiler = config_profiler.init(likelihood, mpicomm=mpicomm)
+
+    filesystem = None
+    output = config.get('output', None)
+    if output is not None:
+        filesystem = FileSystem(output)
+
+    profiles_fn = config_profiler.get('save_fn', None)
+    if filesystem is not None and profiles_fn is None:
+        profiles_fn = 'profiles'
+
+    if profiles_fn is not None:
+        if filesystem is None:
+            filesystem = FileSystem('./')
+        profiles_fn = filesystem(profiles_fn)
+
+    profiler.run(**config_profiler['run'])
+    if profiles_fn is not None:
+        profiler.profiles.save(profiles_fn)
+    return profiler

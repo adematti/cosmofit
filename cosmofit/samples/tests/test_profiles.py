@@ -1,51 +1,46 @@
 import os
 import numpy as np
 
-from cosmopipe.lib import setup_logging
-from cosmopipe.lib.samples import Profiles, ProfilesPlotStyle
+from cosmofit import setup_logging
+from cosmofit.samples.profile import Profiles, ParameterBestFit, ParameterValues, ParameterCovariance
 
 
-def get_profiles(parameters):
-    size = 10
+def get_profiles(params):
     rng = np.random.RandomState()
-    ndim = len(parameters)
-    mean = np.zeros(ndim,dtype='f8')
-    std = np.ones(ndim,dtype='f8')
-    profiles = Profiles(parameters=parameters)
-    for param in profiles.parameters:
-        param.fixed = False
-        param.latex = param.name.tuple[-1]
-    profiles.set_bestfit({param:rng.normal(loc=mean_,scale=std_,size=size) for param,mean_,std_ in zip(parameters,mean,std)})
-    profiles.set_parabolic_errors({param:rng.normal(loc=std_,scale=std_/10.,size=size) for param,mean_,std_ in zip(parameters,mean,std)})
-    profiles.set_deltachi2_errors({param:np.array([-rng.normal(loc=std_,scale=std_/10.,size=size),rng.normal(loc=std_,scale=std_,size=size)]).T\
-                                    for param,mean_,std_ in zip(parameters,mean,std)})
-    profiles.set_metrics({'fval':rng.normal(loc=10,scale=0.1,size=size)})
+    profiles = Profiles()
+    profiles.set(start=ParameterValues([0. for param in params], params=params))
+    profiles.set(bestfit=ParameterBestFit([rng.normal(0., 0.1) for param in params] + [rng.normal(0., 0.1)], params=params + ['logposterior']))
+    profiles.set(parabolic_errors=ParameterValues([0.5 for param in params], params=params))
+    profiles.set(deltachi2_errors=ParameterValues([(0.5, 0.5) for param in params], params=params, enforce={'ndmin': 2}))
+    profiles.set(covariance=ParameterCovariance(np.eye(len(params)), params=params))
+
     return profiles
 
 
+def test_misc():
+    profiles_dir = '_profiles'
+    params = ['params.a', 'params.b', 'params.c', 'params.d']
+    profiles = Profiles.concatenate(*[get_profiles(params) for i in range(5)])
+    assert profiles.bestfit.shape == profiles.bestfit['logposterior'].shape == (5,)
+    fn = os.path.join(profiles_dir, 'profile.npy')
+    profiles.save(fn)
+    profiles2 = profiles.load(fn)
+    assert profiles2 == profiles
+    profiles.bcast(profiles)
+    del profiles.deltachi2_errors
+    profiles.bcast(profiles)
+
+
 def test_stats():
-    parameters = ['parameters.a','parameters.b','parameters.c','parameters.d']
-    profiles = get_profiles(parameters)
+    params = ['params.a', 'params.b', 'params.c', 'params.d']
+    profiles = get_profiles(params)
     print(profiles.to_stats(tablefmt='latex_raw'))
     print(profiles.to_stats(tablefmt='pretty'))
-
-
-def test_plotting():
-    plot_dir = '_plots'
-    parameters = ['parameters.a','parameters.b','parameters.c','parameters.d']
-    profiles = get_profiles(parameters)
-    assert 'parameters.a' in profiles.bestfit
-    style = ProfilesPlotStyle()
-    style.plot_aligned(profiles,'parameters.a',truth=0.,yband=(-1.,1.,'abs'),filename=os.path.join(plot_dir,'aligned_a.png'))
-    profiles = [get_profiles(parameters) for i in range(100)]
-    style.plot_aligned_stacked(profiles[:4],['parameters.a','parameters.b'],truths=[0.]*2,ybands=[(-1.,1.,'abs')]*2,filename=os.path.join(plot_dir,'aligned_stacked_a.png'))
-    style.plot_1d(profiles,parameter='parameters.a',filename=os.path.join(plot_dir,'kstest_a.png'))
-    style.plot_2d(profiles,parameters=['parameters.a','parameters.b'],filename=os.path.join(plot_dir,'scatter_ab.png'))
-    style.plot_corner(profiles,filename=os.path.join(plot_dir,'corner.png'))
 
 
 if __name__ == '__main__':
 
     setup_logging()
+
+    test_misc()
     test_stats()
-    test_plotting()

@@ -1,6 +1,6 @@
 """Classes to handle parameters."""
 
-import sys
+import functools
 import re
 import fnmatch
 
@@ -181,7 +181,7 @@ class ParameterError(Exception):
 
 class ParameterArray(np.ndarray):
 
-    def __new__(cls, value, param, copy=False, dtype=None):
+    def __new__(cls, value, param, copy=False, dtype=None, **kwargs):
         """
         Initalize :class:`array`.
 
@@ -196,6 +196,7 @@ class ParameterArray(np.ndarray):
         dtype : dtype, default=None
             If provided, enforce this dtype.
         """
+        value = np.array(value, copy=copy, dtype=dtype, **kwargs)
         obj = value.view(cls)
         obj.param = param
         return obj
@@ -248,6 +249,13 @@ class ParameterArray(np.ndarray):
     def __repr__(self):
         return '{}({}, {})'.format(self.__class__.__name__, self, self.param)
 
+    def __getstate__(self):
+        return {'value': self.view(np.ndarray), 'param': self.param.__getstate__()}
+
+    @classmethod
+    def from_state(cls, state):
+        return cls(state['value'], Parameter.from_state(state['param']))
+
 
 class Parameter(BaseClass):
     """
@@ -277,7 +285,7 @@ class Parameter(BaseClass):
     latex : string, default=None
         Latex for parameter.
     """
-    _attrs = ['basename', 'namespace', 'value', 'fixed', 'prior', 'ref', 'proposal', 'latex']
+    _attrs = ['basename', 'namespace', 'value', 'fixed', 'prior', 'ref', 'proposal', '_latex']
 
     def __init__(self, basename, namespace=None, value=None, fixed=None, prior=None, ref=None, proposal=None, latex=None):
         """
@@ -315,13 +323,13 @@ class Parameter(BaseClass):
             return
         basename = str(basename)
         names = basename.split(base.namespace_delimiter)
-        if namespace is not None: names.append(namespace)
+        if namespace is not None: names = [namespace] + names
         if len(names) > 2:
             raise ParameterError('Single namespace accepted')
         if len(names) == 2:
-            self.basename, self.namespace = names
+            self.namespace, self.basename = names
         else:
-            self.basename, self.namespace = names[0], None
+            self.namespace, self.basename = None, names[0]
         self.value = value
         self.prior = prior if isinstance(prior, ParameterPrior) else ParameterPrior(**(prior or {}))
         if value is None:
@@ -362,6 +370,7 @@ class Parameter(BaseClass):
             state.update({key: getattr(args[0], key) for key in args[0]._attrs})
         elif len(args):
             raise ValueError('Unrecognized arguments {}'.format(args))
+        state['latex'] = state.pop('_latex')
         state.update(kwargs)
         self.__init__(**state)
 
@@ -374,27 +383,6 @@ class Parameter(BaseClass):
     def varied(self):
         """Whether parameter is varied (i.e. not fixed)."""
         return (not self.fixed)
-
-    def latex(self, namespace=False, inline=False):
-        """If :attr:`latex` is specified (i.e. not ``None``), return :attr:`latex` surrounded by '$' signs, else :attr:`name`."""
-        if namespace:
-            namespace = self.namespace
-        if self.latex is not None:
-            if namespace:
-                match1 = re.match('(.*)_(.)$', self.latex)
-                match2 = re.match('(.*)_{(.*)}$', self.latex)
-                if match1 is not None:
-                    latex = r'%s_{%s,\mathrm{%s}}' % (match1.group(1), match1.group(2), namespace)
-                elif match2 is not None:
-                    latex = r'%s_{%s,\mathrm{%s}}' % (match2.group(1), match2.group(2), namespace)
-                else:
-                    latex = r'%s_{\mathrm{%s}}' % (self.latex, namespace)
-            else:
-                latex = self.latex
-            if inline:
-                latex = '${}$'.format(latex)
-            return latex
-        return str(self)
 
     @property
     def limits(self):
@@ -429,6 +417,49 @@ class Parameter(BaseClass):
         return type(other) == type(self) and all(getattr(other, key) == getattr(self, key) for key in self._attrs)
 
 
+class GetterSetter(object):
+
+    def __init__(self, setter, getter, doc=None):
+        self.setter = setter
+        self.getter = getter
+        self.__doc__ = doc if doc is not None else setter.__doc__
+
+    def __set__(self, obj, value):
+        return self.setter(obj, value)
+
+    def __get__(self, obj, cls):
+        return functools.partial(self.getter, obj)
+
+
+def latex_setter(self, latex):
+    self._latex = latex
+
+
+def latex_getter(self, namespace=False, inline=False):
+    """If :attr:`latex` is specified (i.e. not ``None``), return :attr:`latex` surrounded by '$' signs, else :attr:`name`."""
+    if namespace:
+        namespace = self.namespace
+    if self._latex is not None:
+        if namespace:
+            match1 = re.match('(.*)_(.)$', self._latex)
+            match2 = re.match('(.*)_{(.*)}$', self._latex)
+            if match1 is not None:
+                latex = r'%s_{%s,\mathrm{%s}}' % (match1.group(1), match1.group(2), namespace)
+            elif match2 is not None:
+                latex = r'%s_{%s,\mathrm{%s}}' % (match2.group(1), match2.group(2), namespace)
+            else:
+                latex = r'%s_{\mathrm{%s}}' % (self._latex, namespace)
+        else:
+            latex = self._latex
+        if inline:
+            latex = '${}$'.format(latex)
+        return latex
+    return str(self)
+
+
+Parameter.latex = GetterSetter(latex_setter, latex_getter)
+
+
 class BaseParameterCollection(BaseClass):
 
     """Class holding a collection of parameters."""
@@ -438,7 +469,12 @@ class BaseParameterCollection(BaseClass):
 
     @classmethod
     def _get_name(cls, item):
-        param = cls._get_param(item)
+        if isinstance(item, str):
+            return item
+        if isinstance(item, Parameter):
+            param = item
+        else:
+            param = cls._get_param(item)
         return getattr(param, 'name', str(param))
 
     @classmethod
@@ -499,9 +535,9 @@ class BaseParameterCollection(BaseClass):
         try:
             self.data[name] = item
         except TypeError:
-            name = self._get_name(item)
-            if self._get_name(item) != name:
-                raise KeyError('Parameter {} must be indexed by name (incorrect {})'.format(self._get_name(item), name))
+            item_name = str(self._get_name(item))
+            if str(name) != item_name:
+                raise KeyError('Parameter {} must be indexed by name (incorrect {})'.format(item_name, name))
             self.data[self._index_name(name)] = item
 
     def __getitem__(self, name):
@@ -570,7 +606,7 @@ class BaseParameterCollection(BaseClass):
         except IndexError:
             if has_default:
                 return default
-                raise KeyError('Column {} does not exist'.format(name))
+            raise KeyError('Column {} does not exist'.format(name))
 
     def set(self, item):
         """
@@ -695,13 +731,15 @@ class BaseParameterCollection(BaseClass):
 
     def __getstate__(self):
         """Return this class state dictionary."""
-        toret = {'data': [item.__getstate__() for item in self]}
+        state = {'data': [item.__getstate__() for item in self]}
         for name in self._attrs:
             if hasattr(self, name):
-                toret[name] = getattr(self, name)
+                state[name] = getattr(self, name)
+        return state
 
     def __setstate__(self, state):
         """Set this class state dictionary."""
+        super(BaseParameterCollection, self).__setstate__(state)
         self.data = [self._type.from_state(item) for item in state['data']]
 
     def __copy__(self):
@@ -730,6 +768,14 @@ class BaseParameterCollection(BaseClass):
     def items(self):
         for item in self:
             yield self._get_name(item), item
+
+    def deepcopy(self):
+        import copy
+        return copy.deepcopy(self)
+
+    def __eq__(self, other):
+        """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
+        return type(other) == type(self) and other.params() == self.params() and all(np.all(other_value == self_value) for other_value, self_value in zip(other, self))
 
 
 class ParameterCollection(BaseParameterCollection):
@@ -790,8 +836,8 @@ class ParameterCollection(BaseParameterCollection):
                     self.set(param)
                     if conf.get('fixed', None) is None:
                         fixed_none.append(param.name)
-        if meta:
-            self.update(names=fixed_none, **meta)
+        if any(meta.values()):
+            self.update(name=fixed_none, **meta)
 
     def update(self, *args, name=None, **kwargs):
         """Update collection with new one."""
@@ -814,7 +860,8 @@ class ParameterCollection(BaseParameterCollection):
                         else:
                             meta = []
                     for name in meta:
-                        self[name] = self[name].clone(fixed=fixed)
+                        for name in self.names(name=name):
+                            self[name] = self[name].clone(fixed=fixed)
             if 'namespace' in kwargs:
                 namespace = kwargs['namespace']
                 indices = [self.index(name) for name in list_update]
@@ -823,9 +870,16 @@ class ParameterCollection(BaseParameterCollection):
         else:
             raise ValueError('Unrecognized arguments {}'.format(args))
 
-    def __eq__(self, other):
-        """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
-        return type(other) == type(self) and len(other) == len(self) and all(other_param == self_param for other_param, self_param in zip(other, self))
+    def __add__(self, other):
+        return self.concatenate(self, self.__class__(other))
+
+    def __radd__(self, other):
+        if other == 0: return self.copy()
+        return self.__add__(other)
+
+    def __iadd__(self, other):
+        if other == 0: return self.copy()
+        return self.__add__(other)
 
 
 class ParameterPriorError(Exception):
@@ -911,12 +965,15 @@ class ParameterPrior(BaseClass):
 
     def isin(self, x):
         """Whether ``x`` is within prior, i.e. within limits - strictly positive probability."""
-        return self.limits[0] < x < self.limits[1]
+        x = np.asarray(x)
+        return (self.limits[0] < x) & (x < self.limits[1])
 
     def __call__(self, x):
         """Return probability density at ``x``."""
         if not self.is_proper():
-            return 1. * self.isin(x)
+            toret = - np.inf * np.ones_like(x)
+            toret[self.isin(x)] = 0.
+            return toret
         return self.logpdf(x)
 
     def sample(self, size=None, random_state=None):
@@ -969,16 +1026,9 @@ class ParameterPrior(BaseClass):
         """Whether distribution has (at least one) finite limit."""
         return not np.isinf(self.limits).all()
 
-    def __getattribute__(self, name):
+    def __getattr__(self, name):
         """Make :attr:`rv` attributes directly available in :class:`ParameterPrior`."""
-        try:
-            return object.__getattribute__(self, name)
-        except AttributeError:
-            attrs = object.__getattribute__(self, 'attrs')
-            if name in attrs:
-                return attrs[name]
-            rv = object.__getattribute__(self, 'rv')
-            return getattr(rv, name)
+        return getattr(object.__getattribute__(self, 'rv'), name)
 
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""

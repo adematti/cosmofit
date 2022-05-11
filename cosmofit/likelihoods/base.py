@@ -49,7 +49,6 @@ class BaseGaussianLikelihood(BaseCalculator):
 
     def run(self):
         if self.data is None:
-            diff = self.synthetic.data
-        else:
-            diff = self.data - self.model
+            self.data = self.synthetic.data + self.model
+        diff = self.data - self.model
         self.loglikelihood = -0.5 * diff.dot(self.precision).T.dot(diff)

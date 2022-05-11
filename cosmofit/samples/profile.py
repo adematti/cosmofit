@@ -4,21 +4,23 @@ import os
 
 import numpy as np
 
-from cosmofit import utils
 from cosmofit.utils import BaseClass, is_sequence
-from cosmofit.parameter import Parameter, ParameterArray, ParameterCollection
+from cosmofit.parameter import Parameter, ParameterArray, ParameterCollection, BaseParameterCollection
 from .utils import metrics_to_latex
+from . import utils
 
 
-class ParameterValues(ParameterCollection):
+class ParameterValues(BaseParameterCollection):
 
     """Class that holds samples drawn from likelihood."""
 
     _type = ParameterArray
-    _attrs = []
+    _attrs = ['_enforce']
     _metrics = []
 
-    def __init__(self, data=None, params=None):
+    def __init__(self, data=None, params=None, enforce=None):
+        self.data = []
+        self._enforce = enforce or {'ndmin': 1}
         if params is not None:
             if len(params) != len(data):
                 raise ValueError('Provide as many parameters as arrays')
@@ -42,7 +44,10 @@ class ParameterValues(ParameterCollection):
         """Equivalent for :meth:`__len__`."""
         return np.prod(self.shape, dtype='intp')
 
-    def params(self, include_metrics=False, **kwargs):
+    def __len__(self):
+        return self.shape[0]
+
+    def params(self, include_metrics=True, **kwargs):
         params = super(ParameterValues, self).params(**kwargs)
         if not include_metrics:
             params = [param for param in params if str(param) not in self._metrics]
@@ -63,8 +68,8 @@ class ParameterValues(ParameterCollection):
             other_names = other.names()
             if new_names and other_names and set(other_names) != set(new_names):
                 raise ValueError('Cannot concatenate values as parameters do not match: {} != {}.'.format(other_names, new_names))
-        for name in new_names:
-            new[name] = np.concatenate([other[name] for other in others], axis=0)
+        for param in new.params():
+            new[param] = np.concatenate([other[param] for other in others], axis=0)
         return new
 
     def __setitem__(self, name, item):
@@ -86,14 +91,17 @@ class ParameterValues(ParameterCollection):
             param = Parameter(name, latex=metrics_to_latex(name) if name in self._metrics else None)
             if param in self:
                 param = self[param].param.clone(param)
-            item = ParameterArray(item, param)
+            item = ParameterArray(item, param, **self._enforce)
         try:
             self.data[name] = item
         except TypeError:
-            name = self._get_name(item)
-            if self._get_name(item) != name:
-                raise KeyError('Parameter {} must be indexed by name (incorrect {})'.format(self._get_name(item), name))
-            self.data[self._index_name(name)] = item
+            item_name = str(self._get_name(item))
+            if str(name) != item_name:
+                raise KeyError('Parameter {} must be indexed by name (incorrect {})'.format(item_name, name))
+            try:
+                self.data[self._index_name(name)] = item
+            except IndexError:
+                self.set(item)
 
     def __getitem__(self, name):
         """
@@ -103,12 +111,15 @@ class ParameterValues(ParameterCollection):
         if isinstance(name, (Parameter, str)):
             return self.get(name)
         new = self.copy()
-        new.data = [column[name] for column in self.data]
+        try:
+            new.data = [column[name] for column in self.data]
+        except IndexError as exc:
+            raise IndexError('Unrecognized indices {}'.format(name)) from exc
         return new
 
     def __repr__(self):
         """Return string representation, including shape and columns."""
-        return 'ParameterValues(shape={:d}, params={})'.format(self.shape, self.params())
+        return 'ParameterValues(shape={}, params={})'.format(self.shape, self.params())
 
     def to_array(self, params=None, struct=True):
         """
@@ -139,21 +150,25 @@ class ParameterValues(ParameterCollection):
     @classmethod
     def bcast(cls, value, mpicomm=None, mpiroot=0):
         import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
         state = None
-        if value is not None:
+        if mpicomm.rank == mpiroot:
             state = value.__getstate__()
-            state['data'] = [None] * len(state['data'])
+            state['data'] = [value['param'] for value in state['data']]
         state = mpicomm.bcast(state, root=mpiroot)
-        for ival, val in enumerate(state['data']):
-            state['data'][ival] = mpy.bcast(val, mpicomm=mpicomm, mpiroot=mpiroot)
+        for ivalue, param in enumerate(state['data']):
+            state['data'][ivalue] = {'value': mpy.bcast(value.data[ivalue] if mpicomm.rank == mpiroot else None, mpicomm=mpicomm, mpiroot=mpiroot), 'param': param}
         return cls.from_state(state)
 
 
 class ParameterBestFit(ParameterValues):
 
-    def __init__(self, data=None, logposterior='logposterior'):
-        super(ParameterBestFit, self).__init__(data=data)
+    _attrs = ParameterValues._attrs + ['_logposterior']
+
+    def __init__(self, *args, logposterior='logposterior', **kwargs):
         self._logposterior = logposterior
+        super(ParameterBestFit, self).__init__(*args, **kwargs)
 
     @property
     def _metrics(self):
@@ -182,15 +197,18 @@ class ParameterCovariance(BaseClass):
         params : list, ParameterCollection
             Parameters corresponding to input ``covariance``.
         """
-        self._cov = np.asarray(covariance)
-        self.params = ParameterCollection(params)
+        self._value = np.atleast_2d(covariance)
+        self._params = ParameterCollection(params)
+
+    def params(self, *args, **kwargs):
+        return self._params.params(*args, **kwargs)
 
     def cov(self, params=None):
         """Return covariance matrix for input parameters ``params``."""
         if params is None:
             params = self.params
         idx = np.array([self.params.index(param) for param in params])
-        toret = self._cov[np.ix_(idx, idx)]
+        toret = self._value[np.ix_(idx, idx)]
         return toret
 
     def invcov(self, params=None):
@@ -203,20 +221,33 @@ class ParameterCovariance(BaseClass):
 
     def __getstate__(self):
         """Return this class state dictionary."""
-        return {'cov': self._cov, 'params': self.params.__getstate__()}
+        return {'value': self._value, 'params': self._params.__getstate__()}
 
     def __setstate__(self, state):
         """Set this class state dictionary."""
-        self._cov = state['cov']
-        self.params = ParameterCollection.from_state(state['params'])
+        self._value = state['value']
+        self._params = ParameterCollection.from_state(state['params'])
 
     def __repr__(self):
         """Return string representation of parameter covariance, including parameters."""
         return '{}({})'.format(self.__class__.__name__, self.params)
 
+    def __eq__(self, other):
+        """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
+        return type(other) == type(self) and other.params() == self.params() and np.all(other._value == self._value)
+
     @classmethod
     def bcast(cls, value, mpicomm=None, mpiroot=0):
-        return mpicomm.bcast(value, root=mpiroot)
+        import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
+        state = None
+        if mpicomm.rank == mpiroot:
+            state = value.__getstate__()
+            state['value'] = None
+        state = mpicomm.bcast(state, root=mpiroot)
+        state['value'] = mpy.bcast(value._value if mpicomm.rank == mpiroot else None, mpicomm=mpicomm, mpiroot=mpiroot)
+        return cls.from_state(state)
 
 
 class Profiles(BaseClass):
@@ -254,8 +285,8 @@ class Profiles(BaseClass):
         self.attrs = attrs or {}
         self.set(**kwargs)
 
-    def params(self, **kwargs):
-        return self.start.params(**kwargs)
+    def params(self, *args, **kwargs):
+        return self.start.params(*args, **kwargs)
 
     def set(self, params=None, **kwargs):
         for name, cls in self._attrs.items():
@@ -303,7 +334,7 @@ class Profiles(BaseClass):
             if [name for name in other._attrs if other.has(name) and name != 'covariance'] != attrs:
                 raise ValueError('Cannot concatenate two profiles if both do not have same attributes.')
         for name in attrs:
-            setattr(new, name, new._attrs[name].concatenate([other.get(name) for other in others]))
+            setattr(new, name, new._attrs[name].concatenate(*[other.get(name) for other in others]))
         return new
 
     def extend(self, other):
@@ -357,11 +388,11 @@ class Profiles(BaseClass):
             Summary table.
         """
         import tabulate
-        if params is None: params = self.params
+        if params is None: params = self.params()
         data = []
         if quantities is None: quantities = [quantity for quantity in ['bestfit', 'parabolic_errors', 'deltachi2_errors'] if self.has(quantity)]
         is_latex = 'latex_raw' in tablefmt
-        argmax = self.besfit.logposterior.argmax()
+        argmax = self.bestfit.logposterior.argmax()
 
         def round_errors(low, up):
             low, up = utils.round_measurement(0.0, low, up, sigfigs=sigfigs)[1:]
@@ -370,7 +401,7 @@ class Profiles(BaseClass):
 
         for iparam, param in enumerate(params):
             row = []
-            if is_latex: row.append(param.get_label())
+            if is_latex: row.append(param.latex(inline=True))
             else: row.append(str(param.name))
             row.append(str(param.varied))
             ref_error = self.parabolic_errors[param][argmax]
@@ -401,10 +432,21 @@ class Profiles(BaseClass):
 
     @classmethod
     def bcast(cls, value, mpicomm=None, mpiroot=0):
+        import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
         state = None
-        if value is not None:
+        if mpicomm.rank == mpiroot:
             state = value.__getstate__()
             for name in cls._attrs: state[name] = None
         state = mpicomm.bcast(state, root=mpiroot)
-        for name, acls in cls._attrs.items(): state[name] = acls.bcast(state[name], root=mpiroot)
+        for name, acls in cls._attrs.items():
+            if mpicomm.bcast(value.has(name) if mpicomm.rank == mpiroot else None, root=mpiroot):
+                state[name] = acls.bcast(value.get(name) if mpicomm.rank == mpiroot else None, mpiroot=mpiroot).__getstate__()
+            else:
+                del state[name]
         return cls.from_state(state)
+
+    def __eq__(self, other):
+        """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
+        return all(getattr(other, name) == getattr(self, name) for name in self._attrs)
