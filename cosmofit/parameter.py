@@ -778,6 +778,91 @@ class BaseParameterCollection(BaseClass):
         return type(other) == type(self) and other.params() == self.params() and all(np.all(other_value == self_value) for other_value, self_value in zip(other, self))
 
 
+class ParameterConfig(BaseConfig):
+
+    _attrs = BaseConfig._attrs + ['fixed', 'namespace']
+
+    def __init__(self, data=None, **kwargs):
+        if isinstance(data, self.__class__):
+            self.__dict__.update(data.copy().__dict__)
+            return
+        super(ParameterConfig, self).__init__(data=data, **kwargs)
+        data = self.copy()
+        self.namespace, self.fixed = {}, {}
+        for meta_name, meta_default in zip(['fixed', 'varied', 'namespace'], [[], [], '*']):
+            meta = data.pop(meta_name, meta_default)
+            if not is_sequence(meta): meta = [meta]
+            if meta_name == 'namespace':
+                self.namespace.update({name: True for name in meta})
+            else:
+                self.fixed.update({name: meta_name == 'fixed' for name in meta})
+        self.data = {}
+        for name, conf in data.items():
+            conf = conf.copy()
+            latex = conf.pop('latex', None)
+            for name, latex in yield_names_latex(name, latex=latex):
+                tmp = conf.copy()
+                if latex is not None: tmp['latex'] = latex
+                namespace = tmp.get('namespace', None)
+                if isinstance(namespace, str):
+                    name = base.namespace_delimiter.join([namespace, name])
+                    tmp['namespace'] = False
+                self[name] = tmp
+                for meta_name in ['fixed', 'namespace']:
+                    meta = getattr(self, meta_name)
+                    param_meta = tmp.pop(meta_name, None)
+                    # if meta_name == 'fixed':
+                    #     print(name, meta_name, param_meta, meta)
+                    if param_meta is None:
+                        for template in meta:
+                            if find_names([name], template, quiet=True):
+                                param_meta = meta[template]
+                    meta[name] = tmp[meta_name] = param_meta
+
+    def update(self, *args, **kwargs):
+        other = self.__class__(*args, **kwargs)
+        for name in other:
+            if name in self:
+                self[name].update(other[name])
+            else:
+                self[name] = other[name]
+
+        def update_order(d1, d2):
+            for name, value in d2.items():
+                d1.pop(name, None)
+                d1[name] = value
+            return d1
+
+        update_order(self.fixed, other.fixed)
+        update_order(self.namespace, other.namespace)
+        for meta_name in ['fixed', 'namespace']:
+            meta = getattr(self, meta_name)
+            for name in self:
+                for tmpname in meta:
+                    if find_names([name], tmpname, quiet=True):
+                        self[name][meta_name] = meta[tmpname]
+
+    def with_namespace(self, namespace=None):
+        if namespace is None:
+            new = self.deepcopy()
+            for name in new:
+                new[name].pop('namespace')
+            return new
+        new = self.__class__()
+        for name, param in self.items():
+            newparam = param.copy()
+            newparam.pop('namespace')
+            if param['namespace']:
+                name = base.namespace_delimiter.join([namespace, name])
+            new[name] = newparam
+        for meta_name in ['fixed', 'namespace']:
+            setattr(new, meta_name, {base.namespace_delimiter.join([namespace, name]): value for name, value in getattr(self, meta_name).items()})
+        return new
+
+    def init(self, namespace=None):
+        return ParameterCollection(self.with_namespace(namespace=namespace).data)
+
+
 class ParameterCollection(BaseParameterCollection):
 
     """Class holding a collection of parameters."""
@@ -808,7 +893,10 @@ class ParameterCollection(BaseParameterCollection):
             return
 
         if isinstance(data, str):
-            data = BaseConfig(data)
+            data = ParameterConfig(data)
+
+        if isinstance(data, ParameterConfig):
+            self.__dict__.update(data.init())
 
         if is_sequence(data):
             data_ = data
@@ -821,23 +909,16 @@ class ParameterCollection(BaseParameterCollection):
                 else:
                     data[name] = {}  # only name is provided
         data = {name: conf for name, conf in data.items()}
-        meta = {}
-        for name in ['varied', 'fixed']:
-            meta[name] = data.pop(name, [])
-        fixed_none = []
 
         for name, conf in data.items():
             if isinstance(conf, Parameter):
                 self.set(conf)
             else:
+                conf = conf.copy()
                 latex = conf.pop('latex', None)
                 for name, latex in yield_names_latex(name, latex=latex):
                     param = Parameter(basename=name, latex=latex, **conf)
                     self.set(param)
-                    if conf.get('fixed', None) is None:
-                        fixed_none.append(param.name)
-        if any(meta.values()):
-            self.update(name=fixed_none, **meta)
 
     def update(self, *args, name=None, **kwargs):
         """Update collection with new one."""

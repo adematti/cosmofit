@@ -9,7 +9,7 @@ from mpytools import CurrentMPIComm, COMM_SELF
 
 from . import utils
 from .utils import BaseClass
-from .parameter import ParameterCollection
+from .parameter import ParameterCollection, ParameterConfig
 from .io import BaseConfig
 
 
@@ -32,6 +32,11 @@ class RegisteredCalculator(type(BaseClass)):
 
 
 class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
+
+    def __setattr__(self, name, item):
+        super(BaseCalculator, self).__setattr__(name, item)
+        if name in self.runtime_info.requires:
+            raise PipelineError('Attribute {} is reserved to a calculator, hence cannot be set!'.format(name))
 
     def __getattr__(self, name):
         if name == 'requires':
@@ -159,28 +164,7 @@ class CalculatorConfig(SectionConfig):
         self['class'] = import_cls(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
         self['info'] = Info(**data.get('info', {}))
         self['init'] = data.get('init', {})
-        params = data.get('params', None)
-        if params is None: params = {}
-        else: params = copy.deepcopy(params)
-        meta_names = ['fixed', 'varied', 'namespace']
-        meta = {name: params.get(name, None) for name in meta_names}
-        meta['namespace'] = params.pop('namespace', True)
-        for meta_name in meta_names:
-            self['all_{}'.format(meta_name)] = isinstance(meta[meta_name], bool) and meta[meta_name]
-        self['fixed'] = {}
-        # Resolution order is fixed, varied keywords (which may be specified for more params than currently listed), then fixed specified for each param
-        for meta_name in ['fixed', 'varied']:
-            if not self['all_{}'.format(meta_name)] and meta[meta_name] is not None:
-                self['fixed'].update({name: meta_name == 'fixed' for name in meta[meta_name]})
-        self['namespace'] = {}
-        if not self['all_namespace'] and meta['namespace'] is not None:
-            self['namespace'].update({name: True for name in meta['namespace']})
-        for name in params:
-            if name not in meta_names:
-                self['namespace'][name] = params[name].pop('namespace', True)
-        self['params'] = ParameterCollection(params)
-        for name, param in self['params'].items():
-            self['fixed'][name] = param.fixed
+        self['params'] = ParameterConfig(data.get('params', None))
         load_fn = data.get('load_fn', None)
         save_fn = data.get('save_fn', None)
         if not isinstance(load_fn, str):
@@ -195,14 +179,20 @@ class CalculatorConfig(SectionConfig):
     def init(self, namespace=None, params=None, **kwargs):
         cls = self['class']
         new = cls.__new__(cls)
-        new.params = ParameterCollection(getattr(new, 'params', None))
-        new.params.update(ParameterCollection(self['params']))
-        new.params = new.params.clone(namespace=namespace, name=[name for name in self['namespace'] if self['namespace'][name]])
-        new.info = self['info']
+        initparams = self['params']
         if params is not None:
-            for param in params:
-                if param in new.params:
-                    new.params[str(param)].update(param)
+            if isinstance(params, ParameterCollection):
+                initparams = initparams.init(namespace=namespace)
+                initparams.update(params)
+            else:
+                initparams = initparams.with_namespace(namespace)
+                initparams.update(params)
+                initparams = initparams.init()
+        else:
+            initparams = initparams.init(namespace=namespace)
+        new.params = ParameterCollection(getattr(new, 'params', None)).clone(namespace=self['params'].namespace, name=self['params'].namespace)
+        new.params.update(initparams)
+        new.info = self['info']
         runtime_info = RuntimeInfo(new, namespace=namespace, config=self, **kwargs)
         load_fn = self['load_fn']
         save_fn = self['save_fn']
@@ -217,22 +207,6 @@ class CalculatorConfig(SectionConfig):
         if save_fn is not None:
             new.save(save_fn)
         return new
-
-    def update(self, *args, **kwargs):
-        meta = {name: self[name].copy() for name in ['fixed', 'namespace']}
-        super(CalculatorConfig, self).update(*args, **kwargs)
-        for name in meta: self[name] = meta[name]
-        if len(args) == 1 and isinstance(args[0], self.__class__):
-            other = args[0]
-            for meta_name in ['fixed', 'varied']:
-                if other['all_{}'.format(meta_name)]:
-                    self['fixed'] = {name: meta_name == 'fixed' for name in self['fixed']}
-            self['fixed'].update(other['fixed'])
-            for name, fixed in self['fixed'].items():
-                self['params'].update(name=name, fixed=fixed)
-            if other['all_namespace']:
-                self['namespace'] = {name: True for name in meta['namespace']}
-            self['namespace'].update(other['namespace'])
 
 
 class Info(BaseClass):
@@ -312,7 +286,7 @@ class BasePipeline(BaseClass):
 
     @CurrentMPIComm.enable
     def __init__(self, calculators, params=None, mpicomm=None):
-        self.params = ParameterCollection(params)
+        self.params = params
         calculators = BaseConfig(copy.deepcopy(calculators))
 
         instantiated = []
@@ -402,7 +376,7 @@ class BasePipeline(BaseClass):
             return new
 
         callback_namespace(calculators, callback_instantiate)
-
+        self.params = ParameterCollection(params)
         self.end_calculators = []
         self.calculators = instantiated
         for calculator in self.calculators:
@@ -426,6 +400,8 @@ class BasePipeline(BaseClass):
 
         self.mpicomm = mpicomm
         # Init run, e.g. for fixed parameters
+        # for calculator in self.calculators:
+        #     print(calculator.runtime_info.params)
 
         for calculator in self.end_calculators:
             calculator.run(**calculator.runtime_info.params)

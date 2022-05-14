@@ -98,6 +98,8 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
     parser : callable
         *yaml* parser.
     """
+    _attrs = ['data']
+
     def __init__(self, data=None, string=None, parser=None, decode=True, **kwargs):
         """
         Initialize :class:`Decoder`.
@@ -121,11 +123,15 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         kwargs : dict
             Arguments for :func:`parser`.
         """
+        if isinstance(data, self.__class__):
+            self.__dict__.update(data.copy().__dict__)
+            return
+
         self.parser = parser
         if parser is None:
             self.parser = yaml_parser
 
-        data_ = {}
+        datad = {}
 
         self.base_dir = '.'
         if isinstance(data, str):
@@ -133,12 +139,12 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
             # if base_dir is None: self.base_dir = os.path.dirname(data)
             string += self.read_file(data)
         elif data is not None:
-            data_ = dict(data)
+            datad = dict(data)
 
         if string is not None:
-            data_.update(self.parser(string, **kwargs))
+            datad.update(self.parser(string, **kwargs))
 
-        self.data = data_
+        self.data = datad
         if decode: self.decode()
 
     def read_file(self, filename):
@@ -181,9 +187,16 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
             d[name] = value
 
     def __copy__(self):
+        import copy
         new = super(BaseConfig, self).__copy__()
-        new.data = self.data.copy()
+        for name in self._attrs:
+            if hasattr(self, name):
+                setattr(self, name, copy.copy(getattr(self, name)))
         return new
+
+    def deepcopy(self):
+        import copy
+        return copy.deepcopy(self)
 
     def clone(self, *args, **kwargs):
         new = self.copy()

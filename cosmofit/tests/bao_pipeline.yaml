@@ -13,8 +13,9 @@ pipeline:
     theory:
       class: cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum
       params:
-        fixed: True
-        varied: [sigmar]
+        fixed: '*'
+        sigmar:
+          fixed: False
     effectap:
       class: cosmofit.theories.base.EffectAP
       init:
@@ -24,21 +25,21 @@ pipeline:
     #init:
     #  fiducial: DESI
     params:
-      fixed: True
+      fixed: '*'
 
 sampler:
-  class: cosmofit.samplers.ZeusSampler
+  class: cosmofit.samplers.DynestySampler
   init:
-    nwalkers: 40
+    mode: static
   run:
     max_iterations: 10000
     check_every: 100
   check: True
 
 sampler:
-  class: cosmofit.samplers.DynestySampler
+  class: cosmofit.samplers.EmceeSampler
   init:
-    mode: static
+    nwalkers: 40
   run:
     max_iterations: 10000
     check_every: 100
