@@ -810,14 +810,15 @@ class ParameterConfig(BaseConfig):
                 self[name] = tmp
                 for meta_name in ['fixed', 'namespace']:
                     meta = getattr(self, meta_name)
+                    found = meta_name in tmp
                     param_meta = tmp.pop(meta_name, None)
-                    # if meta_name == 'fixed':
-                    #     print(name, meta_name, param_meta, meta)
                     if param_meta is None:
                         for template in meta:
                             if find_names([name], template, quiet=True):
                                 param_meta = meta[template]
-                    meta[name] = tmp[meta_name] = param_meta
+                                found = True
+                    if found:
+                        meta[name] = tmp[meta_name] = param_meta
 
     def update(self, *args, **kwargs):
         other = self.__class__(*args, **kwargs)
@@ -829,7 +830,6 @@ class ParameterConfig(BaseConfig):
 
         def update_order(d1, d2):
             for name, value in d2.items():
-                d1.pop(name, None)
                 d1[name] = value
             return d1
 
@@ -899,9 +899,9 @@ class ParameterCollection(BaseParameterCollection):
             self.__dict__.update(data.init())
 
         if is_sequence(data):
-            data_ = data
+            dd = data
             data = {}
-            for name in data_:
+            for name in dd:
                 if isinstance(name, Parameter):
                     data[name.name] = name
                 elif isinstance(name, dict):
@@ -914,7 +914,10 @@ class ParameterCollection(BaseParameterCollection):
             if isinstance(conf, Parameter):
                 self.set(conf)
             else:
-                conf = conf.copy()
+                if not isinstance(conf, dict):  # parameter value
+                    conf = {'value': conf}
+                else:
+                    conf = conf.copy()
                 latex = conf.pop('latex', None)
                 for name, latex in yield_names_latex(name, latex=latex):
                     param = Parameter(basename=name, latex=latex, **conf)

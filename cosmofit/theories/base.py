@@ -120,7 +120,7 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
             if isinstance(wmatrix, str):
                 from pypower import BaseMatrix
                 wmatrix = BaseMatrix.load(wmatrix)
-            wmatrix.select_proj(projsout=self.ellsout)
+            wmatrix.select_proj(projsout=[(ellout, None) for ellout in self.ellsout])
             self.ellsin = []
             for proj in wmatrix.projsin:
                 assert proj.wa_order in (None, 0)
@@ -128,16 +128,15 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
             self.kin = wmatrix.xin[0]
             assert all(np.allclose(xin, self.kin) for xin in wmatrix.xin)
             # TODO: implement best match BaseMatrix method
-            for iout, (ellout, kk) in enumerate(zip(self.ellsout, self.kout)):
-                mk = wmatrix.xout[iout]
-                diff = np.abs(np.diff(mk)).min() / 2.
-                nmk = np.sum((mk >= kk[0] - diff) & (mk <= kk[-1] + diff))
+            for iout, (projout, kk) in enumerate(zip(wmatrix.projsout, self.kout)):
+                nmk = np.sum((wmatrix.xout[iout] >= 2 * kk[0] - kk[1]) & (wmatrix.xout[iout] <= 2 * kk[-1] - kk[-2]))
                 factorout = nmk // kk.size
-                wmatrix.rebin_x(factorout=factorout, projsout=ellout)
-                istart = np.argmin(np.abs(wmatrix.xout[iout], kk[0]))
-                wmatrix.slice_x(sliceout=slice(istart, istart + kk.size), projsout=ellout)
+                wmatrix.slice_x(sliceout=slice(0, wmatrix.xout[iout].size // factorout * factorout), projsout=projout)
+                wmatrix.rebin_x(factorout=factorout, projsout=projout)
+                istart = np.nanargmin(np.abs(wmatrix.xout[iout] - kk[0]))
+                wmatrix.slice_x(sliceout=slice(istart, istart + kk.size), projsout=projout)
                 if not np.allclose(wmatrix.xout[iout], kk):
-                    raise ValueError('k-coordinates {} for ell = {:d} could not be found in input matrix (rebinning = {:d})'.format(kk, ellout, factorout))
+                    raise ValueError('k-coordinates {} for ell = {:d} could not be found in input matrix (rebinning = {:d})'.format(kk, projout.ell, factorout))
             self.wmatrix = wmatrix.value
             if zeff is None:
                 zeff = wmatrix.attrs.get('zeff', None)
@@ -148,26 +147,27 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
         self.requires = {'theory': ('BaseTheoryPowerSpectrumMultipoles', {'k': self.kin, 'ells': self.ellsin, 'zeff': self.zeff, 'fiducial': self.fiducial})}
 
     def run(self):
-        theory = self.theory.power.ravel()
+        theory = np.ravel(self.theory.power)
         if self.wmatrix is not None:
-            self.power = np.dot(theory, self.wmatrix)
+            self.flatpower = np.dot(theory, self.wmatrix)
         elif self.kmask is not None:
-            self.power = theory[self.kmask]
+            self.flatpower = theory[self.kmask]
         else:
-            self.power = theory
+            self.flatpower = theory
 
-    def unpacked(self):
+    @property
+    def power(self):
         toret = []
         nout = 0
         for k in self.kout:
             sl = slice(nout, nout + len(k))
-            toret.append(self.power[sl])
+            toret.append(self.flatpower[sl])
             nout = sl.stop
         return toret
 
     def __getstate__(self):
         state = {}
-        for name in ['kin', 'kout', 'zeff', 'ells', 'fiducial', 'wmatrix', 'kmask', 'power']:
+        for name in ['kin', 'kout', 'zeff', 'ells', 'fiducial', 'wmatrix', 'kmask', 'flatpower']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state

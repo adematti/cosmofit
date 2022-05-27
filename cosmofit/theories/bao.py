@@ -38,6 +38,15 @@ class BaseBAOPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
                     pow = int(match.group(1))
                     self.broadband_coeffs[ell][name] = pow
 
+    def broadband_poles(self, **params):
+        toret = []
+        for ell in self.ells:
+            tmp = 0.
+            for name, ii in self.broadband_coeffs[ell].items():
+                tmp += params[name] * self.k**ii
+            toret.append(tmp)
+        return np.array(toret)
+
     def beta(self, bias=1., **kwargs):
         if 'beta' in kwargs:
             beta = kwargs['beta']
@@ -63,13 +72,4 @@ class Beutler2017BAOGalaxyPowerSpectrum(BaseBAOPowerSpectrum, TrapzTheoryPowerSp
         fog = 1. / (1. + (sigmas * kap * muap)**2 / 2.)**2.
         r = 1. - np.exp(-(sigmar * kap)**2 / 2.)
         pkmu = jac * fog * bias**2 * (1 + beta * muap**2 * r)**2 * pk * (1. + (wiggles - 1.) * np.exp(-sigmanl2 / 2.))
-        self.power = self.to_poles(pkmu)
-
-    def broadband_poles(self, inputs):
-        toret = []
-        for ell in self.ells:
-            tmp = 0.
-            for name, ii in self.broadband_coeffs[ell].items():
-                tmp += inputs[name] * self.k**ii
-            toret.append(tmp)
-        return np.array(toret)
+        self.power = self.to_poles(pkmu) + self.broadband_poles(**kwargs)

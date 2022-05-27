@@ -36,32 +36,32 @@ init:
 
 params:
   bias:
-    value: 1.
+    value: 2.
     fixed: False
     prior:
       dist: uniform
       limits: [0.2, 4.]
     latex: b
   sigmar:
-    value: 0.
-    fixed: False
+    value: 15.
+    fixed: True
     latex: \Sigma_{r}
     prior:
-      limits: [0.1, 10]
+      limits: [0.1, 30]
   sigmas:
-    value: 5.
+    value: 2.
     fixed: True
     latex: \Sigma_{s}
     prior:
       limits: [0.1, 10]
   sigmapar:
-    value: 8.
+    value: 9.
     fixed: True
     latex: \Sigma_{\parallel}
     prior:
       limits: [0.1, 10]
   sigmaper:
-    value: 4.
+    value: 6.
     fixed: True
     latex: \Sigma_{\perp}
     prior:

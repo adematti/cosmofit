@@ -18,23 +18,37 @@ init:
 params:
   b1:
     value: 1.69
-    fixed: False
+    prior:
+      dist: uniform
+      limits: [-0.5, 2.0]
     latex: b_{1}
   b2:
     value: -1.17
-    fixed: False
+    prior:
+      dist: norm
+      loc: 0.
+      scale: 15.
     latex: b_{2}
   bs:
     value: -0.71
-    fixed: False
+    prior:
+      dist: norm
+      loc: 0.
+      scale: 5.
     latex: b_{s}
   b3:
     value: -0.479
-    fixed: False
+    prior:
+      dist: norm
+      loc: 0.
+      scale: 15.
     latex: b_{3}
   alpha[0:7:2]:
     value: 0.
-    fixed: False
+    prior:
+      dist:  norm
+      loc: 0.
+      scale: 50.
     latex: \alpha_[]
   sn[:5:2]:
     value: 0.

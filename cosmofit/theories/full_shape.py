@@ -20,7 +20,8 @@ class BasePTPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
 
 class LPTPowerSpectrum(BasePTPowerSpectrum):
 
-    def run(self, **params):
+    def run(self):
+        super(LPTPowerSpectrum, self).run()
         ki = np.logspace(-3., 1., 200)
         self.lpt = LPT_RSD(ki, self.pklin(ki), kIR=0.2, cutoff=10, extrap_min=-4, extrap_max=3, N=2000, threads=1, jn=5)
         self.lpt.make_pltable(self.growth_rate, kv=self.k, apar=self.effectap.qpar, aperp=self.effectap.qper, ngauss=2)
@@ -30,7 +31,7 @@ class LPTPowerSpectrum(BasePTPowerSpectrum):
         bias += [alpha0, alpha2, alpha4, alpha6]
         bias += [sn0, sn2, sn4]
         pkells = self.lpt.combine_bias_terms_pkell(bias)[1:]
-        return [pkells[self.ells.index(ell)] for ell in self.ells]
+        return np.array([pkells[self.ells.index(ell)] for ell in self.ells])
 
 
 class LPTGalaxyPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
@@ -40,5 +41,6 @@ class LPTGalaxyPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
         self.requires = {'pt': ('LPTPowerSpectrum', {'k': self.k, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial})}
 
     def run(self, **params):
-        params['b1'] = params.pop('bsigma8') / self.pt.sigma8 - 1.
+        if 'b1sigma8' in params:
+            params['b1'] = params.pop('b1sigma8') / self.pt.sigma8
         self.power = self.pt.combine_bias_terms_power_poles(**params)

@@ -10,9 +10,14 @@ from .utils import BaseClass
 
 class FileSystem(BaseClass):
 
-    def __init__(self, output='./'):
-        self.output_dir = os.path.dirname(output)
-        self.namespace = os.path.basename(output)
+    def __init__(self, name=None):
+        if isinstance(name, self.__class__):
+            self.__dict__.update(name.__dict__)
+            return
+        if name is None:
+            name = './'
+        self.base_dir = os.path.dirname(name)
+        self.namespace = os.path.basename(name)
 
     def filename(self, fn, i=None):
         if i is not None:
@@ -22,7 +27,7 @@ class FileSystem(BaseClass):
                 fn = '{}_{}{}'.format(base, i, ext)
             else:
                 fn = fni
-        return os.path.join(self.output_dir, self.namespace + fn)
+        return os.path.join(self.base_dir, self.namespace + fn)
 
     def __call__(self, *args, **kwargs):
         return self.filename(*args, **kwargs)
@@ -66,7 +71,7 @@ def yaml_parser(string, index=None):
                 match = all([config.get(name) == value for name, value in index.items()])
                 if match: break
             if not match:
-                raise ValueError('No match found for index {}'.format(index))
+                raise IndexError('No match found for index {}'.format(index))
         else:
             config = alls[index]
     else:
@@ -220,3 +225,9 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
             return False
 
         return type(other) == type(self) and callback(self.data, other.data)
+
+
+class FileSystemConfig(BaseConfig):
+
+    def init(self):
+        return FileSystem(self.get('input', None)), FileSystem(self.get('output', None))

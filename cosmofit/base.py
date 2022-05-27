@@ -10,10 +10,28 @@ from mpytools import CurrentMPIComm, COMM_SELF
 from . import utils
 from .utils import BaseClass
 from .parameter import ParameterCollection, ParameterConfig
-from .io import BaseConfig
+from .io import FileSystem, BaseConfig
 
 
 namespace_delimiter = '.'
+
+
+def source_sample_params(source='params', filesystem=None, fn=None, params=None):
+    params = params or {}
+    if source == 'params':
+        return {param.name: param.value for param in ParameterCollection(params)}
+    fn = FileSystem(filesystem)(fn)
+    if source == 'profiles':
+        from cosmofit.samples import Profiles
+        profiles = Profiles.load(fn)
+        argmax = profiles.bestfit.logposterior.argmax()
+        return {param.name: profiles.bestfit[param][argmax] for param in profiles.bestfit.params()}
+    if source == 'chain':
+        from cosmofit.samples import Chain
+        chain = Chain.load(fn)
+        argmax = chain.logposterior.argmax()
+        return {param.name: chain[param].flat[argmax] for param in chain.params()}
+    raise ValueError('source must be one of ["params", "profiles", "chain"]')
 
 
 class RegisteredCalculator(type(BaseClass)):
@@ -51,7 +69,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             if toret.runtime_info.torun:
                 toret.run(**toret.runtime_info.params)
             return toret
-        raise AttributeError('Attribute {} does not exist'.format(name))
+        return super(BaseCalculator, self).__getattribute__(name)
 
     def __repr__(self):
         return '{}(namespace={}, basename={})'.format(self.__class__.__name__, self.runtime_info.namespace, self.runtime_info.basename)
@@ -125,7 +143,7 @@ class SectionConfig(BaseConfig):
     def __init__(self, *args, **kwargs):
         super(SectionConfig, self).__init__(*args, **kwargs)
         for name in self._sections:
-            self.data[name] = self.data.get(name, {})
+            self.data[name] = self.data.get(name, None) or {}
 
     def update(self, *args, **kwargs):
         if len(args) == 1 and isinstance(args[0], self.__class__):
@@ -160,11 +178,10 @@ class CalculatorConfig(SectionConfig):
                 raise PipelineError('Provide (ClassName, {}) or {class: ClassName, ...}')
         else:
             data = dict(data)
-        self.data = {}
+        super(CalculatorConfig, self).__init__(data)
         self['class'] = import_cls(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
-        self['info'] = Info(**data.get('info', {}))
-        self['init'] = data.get('init', {})
-        self['params'] = ParameterConfig(data.get('params', None))
+        self['info'] = Info(**self['info'])
+        self['params'] = ParameterConfig(self['params'])
         load_fn = data.get('load_fn', None)
         save_fn = data.get('save_fn', None)
         if not isinstance(load_fn, str):
@@ -326,16 +343,7 @@ class BasePipeline(BaseClass):
             return toret
 
         def callback_config(namespace, basename, calcdict):
-            config = CalculatorConfig(calcdict)
-            config_fn = calcdict.get('config_fn', None)
-            default_config_fn = config['class'].config_fn
-            if config_fn is None and os.path.isfile(default_config_fn):
-                config_fn = default_config_fn
-            if config_fn is not None:
-                if self.mpicomm.rank == 0:
-                    self.log_info('Loading config file {}'.format(config_fn))
-                config = CalculatorConfig(config_fn, index={'class': config['class'].__name__}).clone(config)
-            return config
+            return CalculatorConfig(calcdict)
 
         callback_namespace(calculators, callback_config, replace=True)
 
@@ -347,10 +355,30 @@ class BasePipeline(BaseClass):
             for requirementbasename, config in getattr(new, 'requires', {}).items():
                 # Search for parameter
                 config = CalculatorConfig(config)
+
+                def update_from_config_fn(config, cls, config_fn=None):
+                    default_config_fn = cls.config_fn
+                    if config_fn is None and os.path.isfile(default_config_fn):
+                        config_fn = default_config_fn
+                    if config_fn is not None:
+                        if self.mpicomm.rank == 0:
+                            self.log_info('Loading config file {}'.format(config_fn))
+                        try:
+                            tmpconfig = CalculatorConfig(config_fn, index={'class': cls.__name__})
+                        except IndexError:  # no config for this class in config_fn
+                            self.log_info('No config for {} found in config file {}'.format(cls.__name__, config_fn))
+                            config = config.deepcopy()
+                        else:
+                            config = tmpconfig.clone(config)
+                    else:
+                        config = config.deepcopy()
+                    return config
+
                 requirementnamespace = namespace
                 match_first, match_name = None, None
                 for tmpnamespace, tmpbasename, tmpconfig in search_parent_namespace(calculators, namespace):
                     if issubclass(tmpconfig['class'], config['class']):
+                        tmpconfig = update_from_config_fn(config, tmpconfig['class'], config_fn=tmpconfig.get('config_fn', None)).clone(tmpconfig)
                         tmp = (tmpnamespace, tmpbasename, config.clone(tmpconfig))
                         if match_first is None:
                             match_first = tmp
@@ -361,6 +389,8 @@ class BasePipeline(BaseClass):
                     requirementnamespace, requirementbasename, config = match_name
                 elif match_first:
                     requirementnamespace, requirementbasename, config = match_first
+                else:
+                    config = update_from_config_fn(config, config['class'], config_fn=config.get('config_fn', None))
                 already_instantiated = False
                 for inst in instantiated:
                     already_instantiated = inst.__class__ == config['class'] and inst.runtime_info.namespace == requirementnamespace\
@@ -471,3 +501,41 @@ class LikelihoodPipeline(BasePipeline):
         for name, value in params.items():
             logprior += self.params[name].prior(value)
         return logprior
+
+
+class RunnerConfig(SectionConfig):
+
+    _sections = ['source']
+
+    def __init__(self, *args, **kwargs):
+        super(RunnerConfig, self).__init__(*args, **kwargs)
+        if 'run' not in self:
+            self['run'] = {section: value for section, value in self.items() if section != 'source'}
+
+    def params(self, params=None, filesystem=None):
+        from cosmofit import ParameterCollection
+        params = {param.name: param.value for param in ParameterCollection(params)}
+        for source, value in self['source'].items():
+            if isinstance(value, str):
+                value = {'fn': value}
+            value = dict(value)
+            fn = value.pop('fn', None)
+            params.update(source_sample_params(source=source, filesystem=filesystem, fn=fn, params=value))
+        return params
+
+    def run(self, pipeline, filesystem=None):
+        if filesystem is not None:
+            filesystem = FileSystem(filesystem)
+        calculators = {calculator.runtime_info.name: calculator for calculator in pipeline.calculators}
+        for section in self['run']:
+            for name, value in self['run'][section].items():
+                func = getattr(calculators[name], section)
+                if filesystem is not None and isinstance(value, dict):
+                    value = dict(value)
+                    for name in ['save_fn', 'fn', 'filename']:
+                        if name in value and isinstance(value[name], str):
+                            value[name] = filesystem(value[name])
+                if isinstance(value, dict):
+                    func(**value)
+                else:
+                    func(value)

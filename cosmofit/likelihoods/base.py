@@ -17,8 +17,8 @@ class GaussianSyntheticDataGenerator(BaseCalculator):
 
     def run(self):
         if self.seed is not None:
-            self.data = self.mpicomm.bcast(self.rng.multivariate_normal(self.zeros, self.covariance), root=0)
-        self.data = self.zeros.copy()
+            self.flatdata = self.mpicomm.bcast(self.rng.multivariate_normal(self.zeros, self.covariance), root=0)
+        self.flatdata = self.zeros.copy()
 
 
 class BaseGaussianLikelihood(BaseCalculator):
@@ -27,11 +27,11 @@ class BaseGaussianLikelihood(BaseCalculator):
         self.covariance = np.atleast_2d(covariance)
         if self.covariance.shape != (self.covariance.shape[0],) * 2:
             raise ValueError('Covariance must be a square matrix')
-        self.data = data
+        self.flatdata = data
         if data is not None:
-            self.data = np.ravel(data)
-            if self.covariance.shape != (self.data.size, ) * 2:
-                raise ValueError('Based on provided data, covariance expected to be a matrix of shape ({0:d}, {0:d})'.format(self.data.size))
+            self.flatdata = np.ravel(data)
+            if self.covariance.shape != (self.flatdata.size,) * 2:
+                raise ValueError('Based on provided data, covariance expected to be a matrix of shape ({0:d}, {0:d})'.format(self.flatdata.size))
         self.precision = utils.inv(self.covariance)
         self.nobs = nobs
         if nobs is not None:
@@ -44,11 +44,18 @@ class BaseGaussianLikelihood(BaseCalculator):
             self.precision *= self.hartlap
 
         self.requires = {}
-        if self.data is None:
+        if self.flatdata is None:
             self.requires = {'synthetic': ('GaussianSyntheticDataGenerator', {'covariance': self.covariance})}
 
     def run(self):
-        if self.data is None:
-            self.data = self.synthetic.data + self.model
-        diff = self.data - self.model
+        if self.flatdata is None:
+            self.flatdata = self.synthetic.flatdata + self.flatmodel
+        diff = self.flatdata - self.flatmodel
         self.loglikelihood = -0.5 * diff.dot(self.precision).T.dot(diff)
+
+    def __getstate__(self):
+        state = {}
+        for name in ['flatdata', 'covariance', 'precision', 'loglikelihood']:
+            if hasattr(self, name):
+                state[name] = getattr(self, name)
+        return state

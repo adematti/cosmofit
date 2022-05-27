@@ -18,21 +18,31 @@ init:
 params:
   fnl_loc:
     value: 0.
-    fixed: False
+    prior:
+      dist: uniform
+      limits: [-1e3, 1e3]
     latex: f_{NL}^{\mathrm{loc}}
   p:
     value: 1.
-    fixed: True
+    prior:
+      dist: uniform
+      limits: [0.1, 10]
     latex: p
   bias:
     value: 1.69
-    fixed: False
+    prior:
+      dist: uniform
+      limits: [0.1, 10]
     latex: b
   sn0:
     value: 0.
-    fixed: False
+    prior:
+      dist: uniform
+      limits: [-1e5, 1e5]
     latex: s_{n, 0}
   sigmas:
     value: 5.
-    fixed: False
+    prior:
+      dist: uniform
+      limits: [0.1, 10]
     latex: \Sigma_{s}

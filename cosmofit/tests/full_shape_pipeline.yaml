@@ -5,24 +5,15 @@ pipeline:
       init:
         data: pk/data.npy
         covariance: pk/mock_*.npy
-        #wmatrix: pk/window.npy
+        wmatrix: pk/window.npy
         klim:
           0: [0.05, 0.2]
           2: [0.05, 0.2]
         krebin: 2
         zeff: 2.0
         fiducial: DESI
-      save_fn: QSO.like.npy
-      load_fn: True
     theory:
-      class: cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum
-      params:
-        sigmar:
-          value: .inf
-        al[:5:2]_[-3:2]:
-          fixed: True
-        al[:5:2]_[0:2]:
-          fixed: False
+      class: cosmofit.theories.full_shape.LPTGalaxyPowerSpectrum
     effectap:
       class: cosmofit.theories.base.EffectAP
       init:
@@ -34,15 +25,7 @@ pipeline:
     params:
       fixed: '*'
 
-run:
-  source:
-    #profiles: profiles.npy
-    chain: chain_0.npy
-  plot:
-    QSO.like:
-      fn: power.png
-
-sample:
+sampler:
   class: cosmofit.samplers.DynestySampler
   init:
     mode: static
@@ -51,7 +34,7 @@ sample:
     check_every: 100
   check: True
 
-sample:
+sampler:
   class: cosmofit.samplers.EmceeSampler
   init:
     nwalkers: 40
@@ -60,7 +43,7 @@ sample:
     check_every: 100
   check: True
 
-profile:
+profiler:
   class: cosmofit.profilers.MinuitProfiler
 
 filesystem: tmp/

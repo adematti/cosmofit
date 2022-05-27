@@ -5,8 +5,8 @@ import argparse
 from mpytools import CurrentMPIComm
 
 from ._version import __version__
-from .base import BaseConfig, PipelineError, LikelihoodPipeline
-from .io import FileSystem
+from .base import BaseConfig, PipelineError, BasePipeline, LikelihoodPipeline, RunnerConfig
+from .io import FileSystemConfig
 from .utils import setup_logging
 
 
@@ -56,9 +56,9 @@ def sample_from_args(args=None, mpicomm=None):
 def sample_from_config(config, mpicomm=None):
     from cosmofit.samplers import SamplerConfig
     config = BaseConfig(config)
-    if 'sampler' not in config:
-        raise PipelineError('Provide sampler')
-    config_sampler = SamplerConfig(config['sampler'])
+    if 'sample' not in config:
+        raise PipelineError('Provide "sample"')
+    config_sampler = SamplerConfig(config['sample'])
 
     if 'pipeline' not in config:
         raise PipelineError('Provide pipeline')
@@ -76,18 +76,16 @@ def sample_from_config(config, mpicomm=None):
     for name in ['thin_by']:
         if name in config_sampler['run']: run_kwargs = config_sampler['run'].get(name)
 
-    filesystem = None
-    output = config.get('output', None)
-    if output is not None:
-        filesystem = FileSystem(output)
-
+    filesystem = config.get('filesystem', None)
     chains_fn = config_sampler.get('save_fn', None)
     if filesystem is not None and chains_fn is None:
         chains_fn = 'chain'
 
+    if isinstance(filesystem, str):
+        filesystem = {'output': filesystem}
+    filesystem = FileSystemConfig(filesystem).init()[1]
+
     if chains_fn is not None:
-        if filesystem is None:
-            filesystem = FileSystem('./')
         if isinstance(chains_fn, str):
             chains_fn = [filesystem(chains_fn, i=i) for i in range(sampler.nchains)]
         else:
@@ -122,9 +120,9 @@ def profile_from_args(args=None, mpicomm=None):
 def profile_from_config(config, mpicomm=None):
     from cosmofit.profilers import ProfilerConfig
     config = BaseConfig(config)
-    if 'profiler' not in config:
-        raise PipelineError('Provide profiler')
-    config_profiler = ProfilerConfig(config['profiler'])
+    if 'profile' not in config:
+        raise PipelineError('Provide "profile"')
+    config_profiler = ProfilerConfig(config['profile'])
 
     if 'pipeline' not in config:
         raise PipelineError('Provide pipeline')
@@ -132,21 +130,45 @@ def profile_from_config(config, mpicomm=None):
 
     profiler = config_profiler.init(likelihood, mpicomm=mpicomm)
 
-    filesystem = None
-    output = config.get('output', None)
-    if output is not None:
-        filesystem = FileSystem(output)
-
+    filesystem = config.get('filesystem', None)
     profiles_fn = config_profiler.get('save_fn', None)
     if filesystem is not None and profiles_fn is None:
         profiles_fn = 'profiles'
 
+    if isinstance(filesystem, str):
+        filesystem = {'output': filesystem}
+    filesystem = FileSystemConfig(filesystem).init()[1]
+
     if profiles_fn is not None:
-        if filesystem is None:
-            filesystem = FileSystem('./')
         profiles_fn = filesystem(profiles_fn)
 
     profiler.run(**config_profiler['run'])
     if profiles_fn is not None:
         profiler.profiles.save(profiles_fn)
     return profiler
+
+
+@CurrentMPIComm.enable
+def run_from_args(args=None, mpicomm=None):
+    config, config_fn = read_args(args=args, mpicomm=mpicomm, section='run')
+    return run_from_config(config, mpicomm=mpicomm)
+
+
+@CurrentMPIComm.enable
+def run_from_config(config, mpicomm=None):
+    config = BaseConfig(config)
+    if 'run' not in config:
+        raise PipelineError('Provide "run"')
+    config_runner = RunnerConfig(config['run'])
+
+    filesystem = config.get('filesystem', None)
+    if isinstance(filesystem, str):
+        filesystem = {'input': filesystem, 'output': filesystem}
+    filesystem_input, filesystem_output = FileSystemConfig(filesystem).init()
+
+    if 'pipeline' not in config:
+        raise PipelineError('Provide pipeline')
+    pipeline = BasePipeline(config['pipeline'], params=config.get('params', None))
+    params = config_runner.params(params=pipeline.params, filesystem=filesystem_input)
+    pipeline.run(**params)
+    config_runner.run(pipeline, filesystem=filesystem_output)

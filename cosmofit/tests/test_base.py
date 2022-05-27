@@ -1,7 +1,6 @@
 import copy
 
 import numpy as np
-import pytest
 
 from cosmofit import setup_logging
 from cosmofit.base import BaseConfig, BasePipeline, PipelineError, LikelihoodPipeline, ParameterConfig, ParameterCollection
@@ -51,20 +50,23 @@ def test_params():
 
 
 def test_pipeline():
-
     config = BaseConfig('bao_pipeline.yaml')
     pipeline = BasePipeline(config['pipeline'], params=config.get('params', None))
+    # import pytest
     # with pytest.raises(PipelineError):
     #     pipeline.end_calculators[0].power = None
     assert len(pipeline.end_calculators) == 1 and pipeline.end_calculators[0].runtime_info.basename == 'like'
     assert len(pipeline.calculators) == 6
     varied = pipeline.params.select(varied=True)
-    assert len(varied) == 1
-    assert varied['QSO.sigmar'].latex() == r'\Sigma_{r}'
-    print(varied['QSO.sigmar'].prior)
-    assert len(pipeline.params.select(fixed=True)) == 30
+    assert len(varied) == 7
+    assert pipeline.params['QSO.sigmar'].latex() == r'\Sigma_{r}'
+    assert len(pipeline.params.select(fixed=True)) == 24
     assert pipeline.params.names() == ['QSO.bias', 'QSO.sigmar', 'QSO.sigmas', 'QSO.sigmapar', 'QSO.sigmaper', 'QSO.al0_-3', 'QSO.al0_-2', 'QSO.al0_-1', 'QSO.al0_0', 'QSO.al0_1', 'QSO.al2_-3', 'QSO.al2_-2', 'QSO.al2_-1', 'QSO.al2_0', 'QSO.al2_1', 'QSO.al4_-3', 'QSO.al4_-2', 'QSO.al4_-1', 'QSO.al4_0', 'QSO.al4_1',
                                        'h', 'omega_cdm', 'omega_b', 'A_s', 'k_pivot', 'n_s', 'omega_ncdm', 'N_ur', 'tau_reio', 'w0_fld', 'wa_fld']
+    pipeline.run()
+
+    config = BaseConfig('full_shape_pipeline.yaml')
+    pipeline = BasePipeline(config['pipeline'], params=config.get('params', None))
     pipeline.run()
 
 
@@ -84,7 +86,13 @@ def test_sampler():
 
 def test_profiler():
     from cosmofit.main import profile_from_config
-    profile_from_config('bao_pipeline.yaml')
+    profiler = profile_from_config('bao_pipeline.yaml')
+    assert profiler.likelihood.loglikelihood < 0.
+
+
+def test_runner():
+    from cosmofit.main import run_from_config
+    run_from_config('bao_pipeline.yaml')
 
 
 if __name__ == '__main__':
@@ -93,7 +101,8 @@ if __name__ == '__main__':
 
     # test_config()
     # test_params()
-    test_pipeline()
+    # test_pipeline()
     # test_likelihood()
     # test_sampler()
     # test_profiler()
+    test_runner()
