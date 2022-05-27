@@ -9,6 +9,7 @@ from cosmofit.base import BaseConfig, BasePipeline, PipelineError, LikelihoodPip
 def test_config():
 
     config = BaseConfig('test_config.yaml')
+    assert config['pipeline']['namespace1']['like1']['init']['answer'] == '42is42'
     assert np.allclose(config['pipeline']['namespace1']['theory1']['init']['k'], np.linspace(0., 10., 11))
 
 

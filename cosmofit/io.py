@@ -161,31 +161,56 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
     def decode(self):
 
         eval_re_pattern = re.compile("e'(.*?)'$")
+        format_re_pattern = re.compile("f'(.*?)'$")
 
         def decode_eval(word):
             m = re.match(eval_re_pattern, word)
             if m:
-                words = m.group(1)
-                return eval(words, {'np': np}, {})
+                return eval(m.group(1), {'np': np}, {})
             return word
 
-        def callback(di):
+        def decode_format(word):
+            m = re.match(format_re_pattern, word)
+            if m:
+                word = m.group(1)
+                placeholders = re.finditer('({.*?})', word)
+                for placeholder in placeholders:
+                    placeholder = placeholder.group(1)
+                    replace = self.search(placeholder[1:-1])
+                    freplace = decode_format(replace)
+                    if freplace is None: freplace = replace
+                    word = word.replace(placeholder, replace)
+                return word
+            return None
+
+        def callback(di, decode):
             for key, value in (di.items() if isinstance(di, dict) else enumerate(di)):
                 if isinstance(value, (dict, list)):
-                    callback(value)
+                    callback(value, decode)
                 elif isinstance(value, str):
-                    di[key] = decode_eval(value)
+                    tmp = decode(value)
+                    if tmp is not None:
+                        di[key] = tmp
 
-        callback(self.data)
+        callback(self.data, decode_eval)
+        callback(self.data, decode_format)
+
+    def search(self, namespaces, delimiter=None):
+        if isinstance(namespaces, str):
+            if delimiter is None:
+                from .base import namespace_delimiter as delimiter
+            namespaces = namespaces.split(delimiter)
+        d = self
+        for namespace in namespaces:
+            d = d[namespace]
+        return d
 
     def update_from_namespace(self, string, value, inherit_type=True, delimiter=None):
         if delimiter is None:
             from .base import namespace_delimiter as delimiter
         namespaces = string.split(delimiter)
         namespaces, name = namespaces[:-1], namespaces[-1]
-        d = self.data
-        for namespace in namespaces:
-            d = d[namespace]
+        d = self.search(namespaces)
         if inherit_type and name in d:
             d[name] = type(d[name])(value)
         else:

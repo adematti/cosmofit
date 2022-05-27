@@ -12,7 +12,7 @@ pipeline:
         krebin: 2
         zeff: 2.0
         fiducial: DESI
-      save_fn: QSO.like.npy
+      save_fn: f'{filesystem}QSO.like.npy'
       load_fn: True
     theory:
       class: cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum

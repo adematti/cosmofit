@@ -9,6 +9,8 @@ pipeline:
         A:
           value: 1
           namespace: True  # by default
+      init:
+        answer: f'{filesystem.answer}is42'
     theory1:
       class:
       params:
@@ -34,5 +36,5 @@ sampler:
   class: EmceeSampler
   chains_fn: 'chains'
 
-
-output:
+filesystem:
+  answer: '42'
