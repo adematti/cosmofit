@@ -8,31 +8,6 @@ import yaml
 from .utils import BaseClass
 
 
-class FileSystem(BaseClass):
-
-    def __init__(self, name=None):
-        if isinstance(name, self.__class__):
-            self.__dict__.update(name.__dict__)
-            return
-        if name is None:
-            name = './'
-        self.base_dir = os.path.dirname(name)
-        self.namespace = os.path.basename(name)
-
-    def filename(self, fn, i=None):
-        if i is not None:
-            fni = fn.format(i)
-            if fni == fn:
-                base, ext = os.path.splitext(fn)
-                fn = '{}_{}{}'.format(base, i, ext)
-            else:
-                fn = fni
-        return os.path.join(self.base_dir, self.namespace + fn)
-
-    def __call__(self, *args, **kwargs):
-        return self.filename(*args, **kwargs)
-
-
 class YamlLoader(yaml.SafeLoader):
     """
     *yaml* loader that correctly parses numbers.
@@ -173,13 +148,16 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
             m = re.match(format_re_pattern, word)
             if m:
                 word = m.group(1)
-                placeholders = re.finditer('({.*?})', word)
+                placeholders = re.finditer(r'\{.*?\}', word)
                 for placeholder in placeholders:
-                    placeholder = placeholder.group(1)
-                    replace = self.search(placeholder[1:-1])
-                    freplace = decode_format(replace)
-                    if freplace is None: freplace = replace
-                    word = word.replace(placeholder, replace)
+                    placeholder = placeholder.group()
+                    if placeholder.startswith('{{'):
+                        word = word.replace(placeholder, placeholder[1:-1])
+                    else:
+                        replace = self.search(placeholder[1:-1])
+                        freplace = decode_format(replace)
+                        if freplace is None: freplace = replace
+                        word = word.replace(placeholder, replace)
                 return word
             return None
 
@@ -250,9 +228,3 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
             return False
 
         return type(other) == type(self) and callback(self.data, other.data)
-
-
-class FileSystemConfig(BaseConfig):
-
-    def init(self):
-        return FileSystem(self.get('input', None)), FileSystem(self.get('output', None))

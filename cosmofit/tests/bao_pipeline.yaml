@@ -3,16 +3,16 @@ pipeline:
     like:
       class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
       init:
-        data: pk/data.npy
-        covariance: pk/mock_*.npy
-        #wmatrix: pk/window.npy
+        data: f'{data_dir}/data.npy'
+        covariance: f'{data_dir}/mock_*.npy'
+        wmatrix: f'{data_dir}/window.npy'
         klim:
           0: [0.05, 0.2]
           2: [0.05, 0.2]
         krebin: 2
         zeff: 2.0
         fiducial: DESI
-      save_fn: f'{filesystem}QSO.like.npy'
+      save_fn: f'{output_dir}/QSO.like.npy'
       load_fn: True
     theory:
       class: cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum
@@ -36,11 +36,10 @@ pipeline:
 
 run:
   source:
-    #profiles: profiles.npy
-    chain: chain_0.npy
+    #profiles: f'{output_dir}/profiles.npy'
+    chain: f'{output_dir}/chain_0.npy'
   plot:
-    QSO.like:
-      fn: power.png
+    QSO.like: f'{output_dir}/power.png'
 
 sample:
   class: cosmofit.samplers.DynestySampler
@@ -50,6 +49,7 @@ sample:
     max_iterations: 10000
     check_every: 100
   check: True
+  save_fn: f'{output_dir}/samples_*.npy'
 
 sample:
   class: cosmofit.samplers.EmceeSampler
@@ -59,8 +59,11 @@ sample:
     max_iterations: 10000
     check_every: 100
   check: True
+  save_fn: f'{output_dir}/samples_*.npy'
 
 profile:
   class: cosmofit.profilers.MinuitProfiler
+  save_fn: f'{output_dir}/profiles.npy'
 
-filesystem: tmp/
+data_dir: pk
+output_dir: tmp

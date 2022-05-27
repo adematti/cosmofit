@@ -10,7 +10,7 @@ pipeline:
           value: 1
           namespace: True  # by default
       init:
-        answer: f'{filesystem.answer}is42'
+        answer: f'{filesystem.answer}is42{{test}}'
     theory1:
       class:
       params:

@@ -10,17 +10,16 @@ from mpytools import CurrentMPIComm, COMM_SELF
 from . import utils
 from .utils import BaseClass
 from .parameter import ParameterCollection, ParameterConfig
-from .io import FileSystem, BaseConfig
+from .io import BaseConfig
 
 
 namespace_delimiter = '.'
 
 
-def source_sample_params(source='params', filesystem=None, fn=None, params=None):
+def source_sample_params(source='params', fn=None, params=None):
     params = params or {}
     if source == 'params':
         return {param.name: param.value for param in ParameterCollection(params)}
-    fn = FileSystem(filesystem)(fn)
     if source == 'profiles':
         from cosmofit.samples import Profiles
         profiles = Profiles.load(fn)
@@ -512,7 +511,7 @@ class RunnerConfig(SectionConfig):
         if 'run' not in self:
             self['run'] = {section: value for section, value in self.items() if section != 'source'}
 
-    def params(self, params=None, filesystem=None):
+    def params(self, params=None):
         from cosmofit import ParameterCollection
         params = {param.name: param.value for param in ParameterCollection(params)}
         for source, value in self['source'].items():
@@ -520,21 +519,14 @@ class RunnerConfig(SectionConfig):
                 value = {'fn': value}
             value = dict(value)
             fn = value.pop('fn', None)
-            params.update(source_sample_params(source=source, filesystem=filesystem, fn=fn, params=value))
+            params.update(source_sample_params(source=source, fn=fn, params=value))
         return params
 
-    def run(self, pipeline, filesystem=None):
-        if filesystem is not None:
-            filesystem = FileSystem(filesystem)
+    def run(self, pipeline):
         calculators = {calculator.runtime_info.name: calculator for calculator in pipeline.calculators}
         for section in self['run']:
             for name, value in self['run'][section].items():
                 func = getattr(calculators[name], section)
-                if filesystem is not None and isinstance(value, dict):
-                    value = dict(value)
-                    for name in ['save_fn', 'fn', 'filename']:
-                        if name in value and isinstance(value[name], str):
-                            value[name] = filesystem(value[name])
                 if isinstance(value, dict):
                     func(**value)
                 else:
