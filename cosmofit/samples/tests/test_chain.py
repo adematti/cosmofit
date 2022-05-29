@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 from cosmofit import Chain, Parameter, ParameterPrior, diagnostics, setup_logging
+from cosmofit.samples import plotting
 
 
 def get_chain(params, nwalkers=4, size=4000, seed=42):
@@ -15,7 +16,7 @@ def get_chain(params, nwalkers=4, size=4000, seed=42):
     diff = array - mean
     logposterior = -0.5 * np.sum(diff.dot(invcov) * diff, axis=-1)
     chain = Chain(list(array.T) + [logposterior], params=params + ['logposterior'])
-    for iparam, param in enumerate(chain.params()):
+    for iparam, param in enumerate(chain.params(include_metrics=False)):
         param.fixed = False
         param.value = mean[iparam]
     return mean, cov, chain
@@ -23,7 +24,7 @@ def get_chain(params, nwalkers=4, size=4000, seed=42):
 
 def test_misc():
 
-    chain_dir = '_chain'
+    chain_dir = '_chains'
     params = ['like.a', 'like.b', 'like.c', 'like.d']
     mean, cov, chain = get_chain(params, nwalkers=10)
 
@@ -50,6 +51,7 @@ def test_misc():
     assert chain2.size == size
     assert chain == chain
     chain.bcast(chain)
+    chain.sendrecv(source=0, dest=0)
     chain['like.a'].param.fixed = False
     assert not chain[4:10]['like.a'].param.fixed
     assert not chain.concatenate(chain, chain)['like.a'].param.fixed
@@ -89,10 +91,23 @@ def test_bcast():
     print(mpicomm.rank, type(mpy.bcast(array, mpiroot=0, mpicomm=mpicomm)))
 
 
+def test_plot():
+
+    chain_dir = '_chains'
+    params = ['like.a', 'like.b', 'like.c', 'like.d']
+    chains = [get_chain(params, seed=ii)[-1] for ii in range(4)]
+    plotting.plot_triangle(chains[0], fn=os.path.join(chain_dir, 'triangle.png'))
+    plotting.plot_trace(chains[0], fn=os.path.join(chain_dir, 'trace.png'))
+    plotting.plot_autocorrelation_time(chains[0], fn=os.path.join(chain_dir, 'autocorrelation_time.png'))
+    plotting.plot_gelman_rubin(chains, fn=os.path.join(chain_dir, 'gelman_rubin.png'))
+    plotting.plot_geweke(chains, fn=os.path.join(chain_dir, 'geweke.png'))
+
+
 if __name__ == '__main__':
 
     setup_logging()
 
     # test_bcast()
-    test_misc()
-    test_stats()
+    # test_misc()
+    # test_stats()
+    test_plot()

@@ -5,7 +5,9 @@ import argparse
 from mpytools import CurrentMPIComm
 
 from ._version import __version__
-from .base import BaseConfig, PipelineError, BasePipeline, LikelihoodPipeline, RunnerConfig
+from .io import BaseConfig, ConfigError
+from .base import BasePipeline, LikelihoodPipeline, RunnerConfig
+from .samples import SourceConfig, SummaryConfig
 from .utils import setup_logging
 
 
@@ -56,11 +58,11 @@ def sample_from_config(config, mpicomm=None):
     from cosmofit.samplers import SamplerConfig
     config = BaseConfig(config)
     if 'sample' not in config:
-        raise PipelineError('Provide "sample"')
+        raise ConfigError('Provide "sample"')
     config_sampler = SamplerConfig(config['sample'])
 
     if 'pipeline' not in config:
-        raise PipelineError('Provide pipeline')
+        raise ConfigError('Provide pipeline')
     likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
 
     sampler = config_sampler.init(likelihood, mpicomm=mpicomm)
@@ -81,7 +83,7 @@ def sample_from_config(config, mpicomm=None):
             chains_fn = [chains_fn.replace('*', '{}').format(i) for i in range(sampler.nchains)]
         else:
             if len(chains_fn) != sampler.nchains:
-                raise PipelineError('Provide {:d} chain file names'.format(sampler.nchains))
+                raise ConfigError('Provide {:d} chain file names'.format(sampler.nchains))
 
     count_iterations = 0
     is_converged = False
@@ -89,7 +91,7 @@ def sample_from_config(config, mpicomm=None):
         niter = min(max_iterations - count_iterations, check_every)
         count_iterations += niter
         sampler.run(niterations=niter, **run_kwargs)
-        if chains_fn is not None:
+        if chains_fn is not None and sampler.mpicomm.rank == 0:
             for ichain in range(sampler.nchains):
                 sampler.chains[ichain].save(chains_fn[ichain])
         is_converged = sampler.check(**check) if run_check else False
@@ -111,11 +113,11 @@ def profile_from_config(config, mpicomm=None):
     from cosmofit.profilers import ProfilerConfig
     config = BaseConfig(config)
     if 'profile' not in config:
-        raise PipelineError('Provide "profile"')
+        raise ConfigError('Provide "profile"')
     config_profiler = ProfilerConfig(config['profile'])
 
     if 'pipeline' not in config:
-        raise PipelineError('Provide pipeline')
+        raise ConfigError('Provide pipeline')
     likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
 
     profiler = config_profiler.init(likelihood, mpicomm=mpicomm)
@@ -123,7 +125,7 @@ def profile_from_config(config, mpicomm=None):
     profiles_fn = config_profiler.get('save_fn', None)
 
     profiler.run(**config_profiler['run'])
-    if profiles_fn is not None:
+    if profiles_fn is not None and profiler.mpicomm.rank == 0:
         profiler.profiles.save(profiles_fn)
     return profiler
 
@@ -138,12 +140,27 @@ def run_from_args(args=None, mpicomm=None):
 def run_from_config(config, mpicomm=None):
     config = BaseConfig(config)
     if 'run' not in config:
-        raise PipelineError('Provide "run"')
+        raise ConfigError('Provide "run"')
     config_runner = RunnerConfig(config['run'])
 
     if 'pipeline' not in config:
-        raise PipelineError('Provide pipeline')
+        raise ConfigError('Provide pipeline')
     pipeline = BasePipeline(config['pipeline'], params=config.get('params', None))
-    params = config_runner.params(params=pipeline.params)
+    params = SourceConfig(config_runner['source']).choice(params=pipeline.params)
     pipeline.run(**params)
     config_runner.run(pipeline)
+
+
+@CurrentMPIComm.enable
+def summarize_from_args(args=None, mpicomm=None):
+    config, config_fn = read_args(args=args, mpicomm=mpicomm, section='summarize')
+    return summarize_from_config(config, mpicomm=mpicomm)
+
+
+@CurrentMPIComm.enable
+def summarize_from_config(config, mpicomm=None):
+    config = BaseConfig(config)
+    if 'summarize' not in config:
+        raise ConfigError('Provide "summarize"')
+    config_summary = SummaryConfig(config['summarize'])
+    config_summary.run()

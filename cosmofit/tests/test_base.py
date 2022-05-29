@@ -96,6 +96,11 @@ def test_runner():
     run_from_config('bao_pipeline.yaml')
 
 
+def test_summary():
+    from cosmofit.main import summarize_from_config
+    summarize_from_config('bao_pipeline.yaml')
+
+
 if __name__ == '__main__':
 
     setup_logging('info')
@@ -105,5 +110,6 @@ if __name__ == '__main__':
     # test_pipeline()
     # test_likelihood()
     # test_sampler()
-    test_profiler()
+    # test_profiler()
     # test_runner()
+    test_summary()

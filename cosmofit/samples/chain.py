@@ -64,6 +64,12 @@ class Chain(ParameterValues):
     def weight(self):
         return ParameterArray(self.aweight * self.fweight, Parameter(self._weight, latex=utils.metrics_to_latex(self._weight)))
 
+    def ravel(self):
+        new = self.copy()
+        for param in self.names():
+            new[param] = self[param].ravel()
+        return new
+
     def remove_burnin(self, burnin=0):
         """
         Return new samples with burn-in removed.
@@ -219,7 +225,7 @@ class Chain(ParameterValues):
         if params is None: params = self.names()
         columns = list([str(param) for param in params])
         metrics_columns = [self._weight, self._logposterior]
-        for column in metrics_columns:
+        for column in self._metrics:
             if column in columns: del columns[columns.index(column)]
         data = self.to_array(params=metrics_columns + columns, struct=False).reshape(-1, self.size)
         data[1] *= -1
@@ -249,7 +255,7 @@ class Chain(ParameterValues):
         with open(ranges_filename, 'w') as file:
             file.write(output)
 
-    def to_getdist(self, params=None):
+    def to_getdist(self, params=None, label=None):
         """
         Return *GetDist* hook to samples.
 
@@ -260,7 +266,7 @@ class Chain(ParameterValues):
 
         Returns
         -------
-        samples : getdist.MCChain
+        samples : getdist.MCSamples
         """
         from getdist import MCSamples
         toret = None
@@ -268,7 +274,7 @@ class Chain(ParameterValues):
         labels = [param.latex() for param in params]
         samples = self.to_array(params=params, struct=False).reshape(-1, self.size)
         names = [str(param) for param in params]
-        toret = MCSamples(samples=samples.T, weights=self.weight, loglikes=-self.logposterior, names=names, labels=labels)
+        toret = MCSamples(samples=samples.T, weights=self.weight.ravel(), loglikes=-self.logposterior.ravel(), names=names, labels=labels, label=label)
         return toret
 
     def var(self, param, ddof=1):
@@ -411,7 +417,6 @@ class Chain(ParameterValues):
             Summary table.
         """
         import tabulate
-        # if columns is None: columns = self.columns(exclude='metrics.*')
         if params is None: params = self.params(varied=True)
         data = []
         if quantities is None: quantities = ['argmax', 'mean', 'median', 'std', 'quantile:1sigma', 'interval:1sigma']

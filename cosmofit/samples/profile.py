@@ -3,6 +3,7 @@
 import os
 
 import numpy as np
+from mpi4py import MPI
 
 from cosmofit.utils import BaseClass, is_sequence
 from cosmofit.parameter import Parameter, ParameterArray, ParameterCollection, BaseParameterCollection
@@ -155,11 +156,45 @@ class ParameterValues(BaseParameterCollection):
         state = None
         if mpicomm.rank == mpiroot:
             state = value.__getstate__()
-            state['data'] = [value['param'] for value in state['data']]
+            state['data'] = [array['param'] for array in state['data']]
         state = mpicomm.bcast(state, root=mpiroot)
         for ivalue, param in enumerate(state['data']):
             state['data'][ivalue] = {'value': mpy.bcast(value.data[ivalue] if mpicomm.rank == mpiroot else None, mpicomm=mpicomm, mpiroot=mpiroot), 'param': param}
         return cls.from_state(state)
+
+    def send(self, dest, tag=0, mpicomm=None):
+        import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
+        state = self.__getstate__()
+        state['data'] = [array['param'] for array in state['data']]
+        mpicomm.send(state, dest=dest, tag=tag)
+        for array in self:
+            mpy.send(array, dest=dest, tag=tag)
+
+    @classmethod
+    def recv(cls, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, mpicomm=None):
+        import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
+        state = mpicomm.recv(source=source, tag=tag)
+        for ivalue, param in enumerate(state['data']):
+            state['data'][ivalue] = {'value': mpy.recv(source, tag=tag, mpicomm=mpicomm), 'param': param}
+        return cls.from_state(state)
+
+    @classmethod
+    def sendrecv(cls, value, source=0, dest=0, tag=0, mpicomm=None):
+        import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
+        if dest == source:
+            return value.copy()
+        if mpicomm.rank == source:
+            value.send(dest=dest, tag=tag, mpicomm=mpicomm)
+        toret = None
+        if mpicomm.rank == dest:
+            toret = cls.recv(source=source, tag=tag, mpicomm=mpicomm)
+        return toret
 
 
 class ParameterBestFit(ParameterValues):

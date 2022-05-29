@@ -21,7 +21,7 @@ pipeline:
           value: .inf
         al[:5:2]_[-3:2]:
           fixed: True
-        al[:5:2]_[0:2]:
+        al[:3:2]_[0:2]:
           fixed: False
     effectap:
       class: cosmofit.theories.base.EffectAP
@@ -41,12 +41,26 @@ run:
   plot:
     QSO.like: f'{output_dir}/power.png'
 
+summarize:
+  chain: f'{output_dir}/samples_0.npy'
+  plot_triangle: f'{output_dir}/triangle.png'
+  plot_trace: f'{output_dir}/trace.png'
+  plot_autocorrelation_time: f'{output_dir}/autocorrelation_time.png'
+  plot_gelman_rubin:
+    fn: f'{output_dir}/gelman_rubin.png'
+    nsplits: 4
+  plot_geweke: f'{output_dir}/geweke.png'
+
+# summarize:
+#   profiles: f'{output_dir}/profiles.npy'
+#   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
+
 sample:
   class: cosmofit.samplers.DynestySampler
   init:
     mode: static
   run:
-    max_iterations: 10000
+    max_iterations: 100000
     check_every: 100
   check: True
   save_fn: f'{output_dir}/samples_*.npy'

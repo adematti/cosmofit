@@ -16,23 +16,6 @@ from .io import BaseConfig
 namespace_delimiter = '.'
 
 
-def source_sample_params(source='params', fn=None, params=None):
-    params = params or {}
-    if source == 'params':
-        return {param.name: param.value for param in ParameterCollection(params)}
-    if source == 'profiles':
-        from cosmofit.samples import Profiles
-        profiles = Profiles.load(fn)
-        argmax = profiles.bestfit.logposterior.argmax()
-        return {param.name: profiles.bestfit[param][argmax] for param in profiles.bestfit.params()}
-    if source == 'chain':
-        from cosmofit.samples import Chain
-        chain = Chain.load(fn)
-        argmax = chain.logposterior.argmax()
-        return {param.name: chain[param].flat[argmax] for param in chain.params()}
-    raise ValueError('source must be one of ["params", "profiles", "chain"]')
-
-
 class RegisteredCalculator(type(BaseClass)):
 
     _registry = set()
@@ -510,17 +493,6 @@ class RunnerConfig(SectionConfig):
         super(RunnerConfig, self).__init__(*args, **kwargs)
         if 'run' not in self:
             self['run'] = {section: value for section, value in self.items() if section != 'source'}
-
-    def params(self, params=None):
-        from cosmofit import ParameterCollection
-        params = {param.name: param.value for param in ParameterCollection(params)}
-        for source, value in self['source'].items():
-            if isinstance(value, str):
-                value = {'fn': value}
-            value = dict(value)
-            fn = value.pop('fn', None)
-            params.update(source_sample_params(source=source, fn=fn, params=value))
-        return params
 
     def run(self, pipeline):
         calculators = {calculator.runtime_info.name: calculator for calculator in pipeline.calculators}

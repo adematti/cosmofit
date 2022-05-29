@@ -9,7 +9,7 @@ from . import utils
 logger = logging.getLogger('Diagnostics')
 
 
-def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_matrices=False, check_valid='raise'):
+def gelman_rubin(chains, params=None, nsplits=None, statistic='mean', method='eigen', return_matrices=False, check_valid='raise'):
     """
     Estimate Gelman-Rubin statistics, which compares covariance of chain means to (mean of) intra-chain covariances.
 
@@ -18,7 +18,7 @@ def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_m
     chains : list
         List of :class:`Chain` instances.
 
-    columns : list, ParameterCollection
+    params : list, ParameterCollection
         Parameters to compute Gelman-Rubin statistics for.
         Defaults to all parameters.
 
@@ -40,14 +40,16 @@ def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_m
     ---------
     http://www.stat.columbia.edu/~gelman/research/published/brooksgelman2.pdf
     """
-    if not utils.is_sequence(chains):
-        raise ValueError('Provide a list of at least 2 chains to estimate Gelman-Rubin')
+    if not utils.is_sequence(chains): chains = [chains]
+    nchains = len(chains)
+    if nchains < 2:
+        if nsplits is None or nchains * nsplits < 2:
+            raise ValueError('Provide a list of at least 2 chains to estimate Gelman-Rubin, or specify nsplits >= {:d}'.format(int(2. / nchains + 0.5)))
+        chains = [chain[islab * len(chain) // nsplits:(islab + 1) * len(chain) // nsplits] for islab in range(nsplits) for chain in chains]
     if params is None: params = chains[0].params(varied=True)
     isscalar = not utils.is_sequence(params)
     if isscalar: params = [params]
     nchains = len(chains)
-    if nchains < 2:
-        raise ValueError('{:d} chains provided; one needs at least 2 to estimate Gelman-Rubin'.format(nchains))
 
     if statistic == 'mean':
 
@@ -56,10 +58,11 @@ def gelman_rubin(chains, params=None, statistic='mean', method='eigen', return_m
 
     means = np.asarray([statistic(chain, params) for chain in chains])
     covs = np.asarray([chain.cov(params) for chain in chains])
-    nsteps = np.asarray([chain.weight.sum() for chain in chains])
+    wsums = np.asarray([chain.weight.sum() for chain in chains])
+    w2sums = np.asarray([(chain.weight * chain.aweight).sum() for chain in chains])
     # W = "within"
-    Wn1 = np.average(covs, weights=nsteps, axis=0)
-    Wn = np.average(((nsteps - 1.) / nsteps)[:, None, None] * covs, weights=nsteps, axis=0)
+    Wn1 = np.average(covs, weights=wsums, axis=0)
+    Wn = np.average(((wsums - w2sums / wsums) / wsums)[:, None, None] * covs, weights=wsums, axis=0)
     # B = "between"
     # We don't weight with the number of samples in the chains here:
     # shorter chains will likely be outliers, and we want to notice them

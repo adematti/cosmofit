@@ -60,6 +60,11 @@ class MetaClass(type(BaseClass), type(UserDict)):
     pass
 
 
+class ConfigError(Exception):
+
+    pass
+
+
 class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
     """
     Class that decodes configuration dictionary, taking care of template forms.

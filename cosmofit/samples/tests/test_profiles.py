@@ -3,6 +3,7 @@ import numpy as np
 
 from cosmofit import setup_logging
 from cosmofit.samples.profile import Profiles, ParameterBestFit, ParameterValues, ParameterCovariance
+from cosmofit.samples import plotting
 
 
 def get_profiles(params):
@@ -10,6 +11,7 @@ def get_profiles(params):
     profiles = Profiles()
     profiles.set(start=ParameterValues([0. for param in params], params=params))
     profiles.set(bestfit=ParameterBestFit([rng.normal(0., 0.1) for param in params] + [rng.normal(0., 0.1)], params=params + ['logposterior']))
+    for param in profiles.bestfit.params(): param.fixed = False
     profiles.set(parabolic_errors=ParameterValues([0.5 for param in params], params=params))
     profiles.set(deltachi2_errors=ParameterValues([(0.5, 0.5) for param in params], params=params, enforce={'ndmin': 2}))
     profiles.set(covariance=ParameterCovariance(np.eye(len(params)), params=params))
@@ -38,9 +40,18 @@ def test_stats():
     print(profiles.to_stats(tablefmt='pretty'))
 
 
+def test_plot():
+
+    profiles_dir = '_profiles'
+    params = ['like.a', 'like.b', 'like.c', 'like.d']
+    profiles = [get_profiles(params)] * 2
+    plotting.plot_aligned_stacked(profiles, fn=os.path.join(profiles_dir, 'aligned.png'))
+
+
 if __name__ == '__main__':
 
     setup_logging()
 
-    test_misc()
-    test_stats()
+    # test_misc()
+    # test_stats()
+    test_plot()

@@ -154,8 +154,10 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             self._set_sampler()
         nprocs_per_chain = max((self.mpicomm.size - 1) // niterations, 1)
         chains = [None] * self.nchains
-        if self.chains[0] is not None: start = [np.array([chain[param][-1] for param in self.varied]).T for chain in self.chains]
-        else: start = self.start
+        if self.mpicomm.bcast(self.chains[0] is not None, root=0):
+            start = self.mpicomm.bcast([np.array([chain[param][-1] for param in self.varied]).T for chain in self.chains] if self.mpicomm.rank == 0 else None, root=0)
+        else:
+            start = self.start
 
         with TaskManager(nprocs_per_task=nprocs_per_chain, use_all_nprocs=True, mpicomm=self.mpicomm) as tm:
             self.likelihood.mpicomm = tm.mpicomm
@@ -166,13 +168,14 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             for mpiroot_worker in self.mpicomm.allgather(mpiroot_worker):
                 if mpiroot_worker is not None: break
             assert mpiroot_worker is not None
-            chains[ichain] = Chain.bcast(chain, mpicomm=self.mpicomm, mpiroot=mpiroot_worker)
+            chains[ichain] = Chain.sendrecv(chain, source=mpiroot_worker, dest=0, mpicomm=self.mpicomm)
 
-        if self.chains[0] is None:
+        if self.mpicomm.bcast(self.chains[0] is None, root=0):
             self.chains = chains
         else:
-            for ichain, (chain, new_chain) in enumerate(zip(chains, self.chains)):
-                self.chains[ichain] = Chain.concatenate(chain, new_chain)
+            if self.mpicomm.rank == 0:
+                for ichain, (chain, new_chain) in enumerate(zip(chains, self.chains)):
+                    self.chains[ichain] = Chain.concatenate(chain, new_chain)
 
     def check(self, nsplits=4, stable_over=2, burnin=0.3, eigen_gr_stop=0.03, diag_gr_stop=None,
               cl_diag_gr_stop=None, nsigmas_cl_diag_gr_stop=1., geweke_stop=None, geweke_pvalue_stop=None,
