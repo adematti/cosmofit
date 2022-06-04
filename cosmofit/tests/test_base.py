@@ -61,9 +61,9 @@ def test_pipeline():
     varied = pipeline.params.select(varied=True)
     assert len(varied) == 7
     assert pipeline.params['QSO.sigmar'].latex() == r'\Sigma_{r}'
-    assert len(pipeline.params.select(fixed=True)) == 24
+    assert len(pipeline.params.select(fixed=True)) == 26
     assert pipeline.params.names() == ['QSO.bias', 'QSO.sigmar', 'QSO.sigmas', 'QSO.sigmapar', 'QSO.sigmaper', 'QSO.al0_-3', 'QSO.al0_-2', 'QSO.al0_-1', 'QSO.al0_0', 'QSO.al0_1', 'QSO.al2_-3', 'QSO.al2_-2', 'QSO.al2_-1', 'QSO.al2_0', 'QSO.al2_1', 'QSO.al4_-3', 'QSO.al4_-2', 'QSO.al4_-1', 'QSO.al4_0', 'QSO.al4_1',
-                                       'h', 'omega_cdm', 'omega_b', 'A_s', 'k_pivot', 'n_s', 'omega_ncdm', 'N_ur', 'tau_reio', 'w0_fld', 'wa_fld']
+                                       'QSO.qpar', 'QSO.qper', 'h', 'omega_cdm', 'omega_b', 'A_s', 'k_pivot', 'n_s', 'omega_ncdm', 'N_ur', 'tau_reio', 'w0_fld', 'wa_fld']
     pipeline.run()
 
     config = BaseConfig('full_shape_pipeline.yaml')
@@ -80,25 +80,30 @@ def test_likelihood():
     assert len(pipeline.loglikelihood) == 2
 
 
-def test_sampler():
+def test_sample():
     from cosmofit.main import sample_from_config
     sample_from_config('bao_pipeline.yaml')
 
 
-def test_profiler():
+def test_profile():
     from cosmofit.main import profile_from_config
     profiler = profile_from_config('bao_pipeline.yaml')
     assert profiler.likelihood.loglikelihood < 0.
 
 
-def test_runner():
-    from cosmofit.main import run_from_config
-    run_from_config('bao_pipeline.yaml')
+def test_do():
+    from cosmofit.main import do_from_config
+    do_from_config('bao_pipeline.yaml')
 
 
-def test_summary():
+def test_summarize():
     from cosmofit.main import summarize_from_config
     summarize_from_config('bao_pipeline.yaml')
+
+
+def test_emulate():
+    from cosmofit.main import emulate_from_config
+    emulate_from_config('bao_pipeline.yaml')
 
 
 if __name__ == '__main__':
@@ -109,7 +114,8 @@ if __name__ == '__main__':
     # test_params()
     # test_pipeline()
     # test_likelihood()
-    # test_sampler()
-    # test_profiler()
-    # test_runner()
-    test_summary()
+    # test_sample()
+    test_profile()
+    # test_do()
+    # test_summarize()
+    # test_emulate()

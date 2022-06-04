@@ -25,13 +25,19 @@ class LPTPowerSpectrum(BasePTPowerSpectrum):
         ki = np.logspace(-3., 1., 200)
         self.lpt = LPT_RSD(ki, self.pklin(ki), kIR=0.2, cutoff=10, extrap_min=-4, extrap_max=3, N=2000, threads=1, jn=5)
         self.lpt.make_pltable(self.growth_rate, kv=self.k, apar=self.effectap.qpar, aperp=self.effectap.qper, ngauss=2)
+        self.lpttable = [self.lpt.p0ktable, self.lpt.p2ktable, self.lpt.p4ktable]
 
     def combine_bias_terms_power_poles(self, b1=1.69, b2=-1.17, bs=-0.71, b3=0., alpha0=0., alpha2=0., alpha4=0., alpha6=0., sn0=0., sn2=0., sn4=0.):
         bias = [b1, b2, bs, b3]
         bias += [alpha0, alpha2, alpha4, alpha6]
         bias += [sn0, sn2, sn4]
-        pkells = self.lpt.combine_bias_terms_pkell(bias)[1:]
-        return np.array([pkells[self.ells.index(ell)] for ell in self.ells])
+        # pkells = self.lpt.combine_bias_terms_pkell(bias)[1:]
+        # return np.array([pkells[[0, 2, 4].index(ell)] for ell in self.ells])
+        bias_monomials = np.array([1, b1, b1**2, b2, b1 * b2, b2**2, bs, b1 * bs, b2 * bs, bs**2, b3, b1 * b3, alpha0, alpha2, alpha4, alpha6, sn0, sn2, sn4])
+        return np.array([np.sum(self.lpttable[[0, 2, 4].index(ell)] * bias_monomials, axis=1) for ell in self.ells])
+
+    def __getstate__(self):
+        return {'lpttable': self.lpttable}
 
 
 class LPTGalaxyPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):

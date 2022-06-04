@@ -14,15 +14,18 @@ pipeline:
         fiducial: DESI
       save_fn: f'{output_dir}/QSO.like.npy'
       load_fn: True
+      plot: f'{output_dir}/power.png'
     theory:
       class: cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum
       params:
+        fixed: ['al*']
         sigmar:
           value: .inf
-        al[:5:2]_[-3:2]:
-          fixed: True
         al[:3:2]_[0:2]:
           fixed: False
+      load_fn: f'{output_dir}/emulator.npy'
+      emulator:
+        save_fn: f'{output_dir}/emulator.npy'
     effectap:
       class: cosmofit.theories.base.EffectAP
       init:
@@ -34,12 +37,16 @@ pipeline:
     params:
       fixed: '*'
 
-run:
+emulate:
+  class: TaylorEmulatorEngine
+  fit:
+    order: 1
+
+do:
   source:
     #profiles: f'{output_dir}/profiles.npy'
     chain: f'{output_dir}/chain_0.npy'
-  plot:
-    QSO.like: f'{output_dir}/power.png'
+  do: plot
 
 summarize:
   chain: f'{output_dir}/samples_0.npy'

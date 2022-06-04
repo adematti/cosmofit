@@ -6,7 +6,7 @@ from mpytools import CurrentMPIComm
 
 from ._version import __version__
 from .io import BaseConfig, ConfigError
-from .base import BasePipeline, LikelihoodPipeline, RunnerConfig
+from .base import BasePipeline, LikelihoodPipeline, DoConfig
 from .samples import SourceConfig, SummaryConfig
 from .utils import setup_logging
 
@@ -63,43 +63,9 @@ def sample_from_config(config, mpicomm=None):
 
     if 'pipeline' not in config:
         raise ConfigError('Provide pipeline')
-    likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
+    likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
 
-    sampler = config_sampler.init(likelihood, mpicomm=mpicomm)
-    check = config_sampler.get('check', {})
-    run_check = bool(check)
-    if isinstance(check, bool): check = {}
-    min_iterations = config_sampler['run'].get('min_iterations', 0)
-    max_iterations = config_sampler['run'].get('max_iterations', int(1e5) if run_check else sys.maxsize)
-    check_every = config_sampler['run'].get('check_every', 200)
-
-    run_kwargs = {}
-    for name in ['thin_by']:
-        if name in config_sampler['run']: run_kwargs = config_sampler['run'].get(name)
-
-    chains_fn = config_sampler.get('save_fn', None)
-    if chains_fn is not None:
-        if isinstance(chains_fn, str):
-            chains_fn = [chains_fn.replace('*', '{}').format(i) for i in range(sampler.nchains)]
-        else:
-            if len(chains_fn) != sampler.nchains:
-                raise ConfigError('Provide {:d} chain file names'.format(sampler.nchains))
-
-    count_iterations = 0
-    is_converged = False
-    while not is_converged:
-        niter = min(max_iterations - count_iterations, check_every)
-        count_iterations += niter
-        sampler.run(niterations=niter, **run_kwargs)
-        if chains_fn is not None and sampler.mpicomm.rank == 0:
-            for ichain in range(sampler.nchains):
-                sampler.chains[ichain].save(chains_fn[ichain])
-        is_converged = sampler.check(**check) if run_check else False
-        if count_iterations < min_iterations:
-            is_converged = False
-        if count_iterations >= max_iterations:
-            is_converged = True
-    return sampler
+    return config_sampler.run(likelihood)
 
 
 @CurrentMPIComm.enable
@@ -118,37 +84,31 @@ def profile_from_config(config, mpicomm=None):
 
     if 'pipeline' not in config:
         raise ConfigError('Provide pipeline')
-    likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
+    likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
 
-    profiler = config_profiler.init(likelihood, mpicomm=mpicomm)
-
-    profiles_fn = config_profiler.get('save_fn', None)
-
-    profiler.run(**config_profiler['run'])
-    if profiles_fn is not None and profiler.mpicomm.rank == 0:
-        profiler.profiles.save(profiles_fn)
-    return profiler
+    return config_profiler.run(likelihood)
 
 
 @CurrentMPIComm.enable
-def run_from_args(args=None, mpicomm=None):
-    config, config_fn = read_args(args=args, mpicomm=mpicomm, section='run')
-    return run_from_config(config, mpicomm=mpicomm)
+def do_from_args(args=None, mpicomm=None):
+    config, config_fn = read_args(args=args, mpicomm=mpicomm, section='do')
+    return do_from_config(config, mpicomm=mpicomm)
 
 
 @CurrentMPIComm.enable
-def run_from_config(config, mpicomm=None):
+def do_from_config(config, mpicomm=None):
     config = BaseConfig(config)
-    if 'run' not in config:
-        raise ConfigError('Provide "run"')
-    config_runner = RunnerConfig(config['run'])
+    if 'do' not in config:
+        raise ConfigError('Provide "do"')
+    config_do = DoConfig(config['do'])
 
     if 'pipeline' not in config:
         raise ConfigError('Provide pipeline')
-    pipeline = BasePipeline(config['pipeline'], params=config.get('params', None))
-    params = SourceConfig(config_runner['source']).choice(params=pipeline.params)
+    pipeline = BasePipeline(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
+
+    params = SourceConfig(config_do['source']).choice(params=pipeline.params)
     pipeline.run(**params)
-    config_runner.run(pipeline)
+    config_do.run(pipeline)
 
 
 @CurrentMPIComm.enable
@@ -163,4 +123,27 @@ def summarize_from_config(config, mpicomm=None):
     if 'summarize' not in config:
         raise ConfigError('Provide "summarize"')
     config_summary = SummaryConfig(config['summarize'])
-    config_summary.run()
+    return config_summary.run()
+
+
+@CurrentMPIComm.enable
+def emulate_from_args(args=None, mpicomm=None):
+    config, config_fn = read_args(args=args, mpicomm=mpicomm, section='emulate')
+    return emulate_from_config(config, mpicomm=mpicomm)
+
+
+@CurrentMPIComm.enable
+def emulate_from_config(config, mpicomm=None):
+    from cosmofit.emulators import EmulatorConfig
+    config = BaseConfig(config)
+    if 'emulate' not in config:
+        raise ConfigError('Provide "emulate"')
+    config_emulator = EmulatorConfig(config['emulate'])
+
+    if 'pipeline' not in config:
+        raise ConfigError('Provide pipeline')
+    pipeline = BasePipeline(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
+
+    params = SourceConfig(config_emulator['source']).choice(params=pipeline.params)
+    pipeline.run(**params)
+    return config_emulator.run(pipeline)

@@ -19,7 +19,7 @@ class MinuitProfiler(BaseProfiler):
 
     def _set_profiler(self):
         minuit_params = {}
-        minuit_params['name'] = parameter_names = [str(param.name) for param in self.varied]
+        minuit_params['name'] = parameter_names = [str(param) for param in self.varied]
         self.minuit = iminuit.Minuit(self.chi2, **dict(zip(parameter_names, [param.value for param in self.varied])), **minuit_params)
         self.minuit.errordef = 1.0
         for param in self.varied:
@@ -27,7 +27,7 @@ class MinuitProfiler(BaseProfiler):
             if hasattr(param.ref, 'scale'):
                 self.minuit.errors[str(param)] = param.ref.scale
             elif param.ref.is_proper():
-                self.minuit.errors[str(param)] = np.diff(param.ref.limits) / 2.
+                self.minuit.errors[str(param)] = (param.ref.limits[1] - param.ref.limits[0]) / 2.
 
     def _run_one(self, start, algorithms=('migrad',)):
         if not utils.is_sequence(algorithms): algorithms = [algorithms]

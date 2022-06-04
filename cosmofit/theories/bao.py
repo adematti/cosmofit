@@ -41,7 +41,7 @@ class BaseBAOPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
     def broadband_poles(self, **params):
         toret = []
         for ell in self.ells:
-            tmp = 0.
+            tmp = np.zeros_like(self.k)
             for name, ii in self.broadband_coeffs[ell].items():
                 tmp += params[name] * self.k**ii
             toret.append(tmp)

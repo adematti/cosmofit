@@ -16,7 +16,7 @@ class BaseTheoryPowerSpectrumMultipoles(BaseCalculator):
 
     def __getstate__(self):
         state = {}
-        for name in ['k', 'zeff', 'ells', 'power']:
+        for name in ['k', 'zeff', 'ells', 'power', 'growth_rate']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -54,6 +54,8 @@ class EffectAP(BaseCalculator):
 
     def __init__(self, zeff=1., fiducial=None, mode=None):
         self.zeff = float(zeff)
+        if fiducial is None:
+            raise ValueError('Provide fiducial cosmology')
         fiducial = get_cosmo(fiducial)
         self.efunc_fid = fiducial.efunc(self.zeff)
         self.comoving_angular_distance_fid = fiducial.comoving_angular_distance(self.zeff)
@@ -71,7 +73,7 @@ class EffectAP(BaseCalculator):
         elif self.mode == 'qparqper':
             self.params = self.params.select(name=['qpar', 'qper'])
         elif self.mode == 'distances':
-            self.params = self.clear()
+            self.params = self.params.clear()
         else:
             raise ValueError('mode must be one of ["qiso", "qparqper", "distances"]')
 

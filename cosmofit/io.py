@@ -211,6 +211,11 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         import copy
         return copy.deepcopy(self)
 
+    def update(self, *args, **kwargs):
+        super(BaseConfig, self).update(*args, **kwargs)
+        if len(args) == 1 and isinstance(args[0], self.__class__):
+            self.__dict__.update({name: value for name, value in args[0].__dict__.items() if name != 'data'})
+
     def clone(self, *args, **kwargs):
         new = self.copy()
         new.update(*args, **kwargs)

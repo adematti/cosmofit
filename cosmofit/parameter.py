@@ -829,12 +829,13 @@ class ParameterConfig(BaseConfig):
                 self[name] = other[name]
 
         def update_order(d1, d2):
+            toret = {name: value for name, value in d1.items() if name not in d2}
             for name, value in d2.items():
-                d1[name] = value
-            return d1
+                toret[name] = value
+            return toret
 
-        update_order(self.fixed, other.fixed)
-        update_order(self.namespace, other.namespace)
+        self.fixed = update_order(self.fixed, other.fixed)
+        self.namespace = update_order(self.namespace, other.namespace)
         for meta_name in ['fixed', 'namespace']:
             meta = getattr(self, meta_name)
             for name in self:

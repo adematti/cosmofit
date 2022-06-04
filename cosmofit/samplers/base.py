@@ -1,10 +1,11 @@
+import sys
 import numbers
 
 import numpy as np
 import mpytools as mpy
-from mpytools import CurrentMPIComm
 
 from cosmofit import utils
+from cosmofit.io import ConfigError
 from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
 from cosmofit.samples import diagnostics, Chain
@@ -20,9 +21,41 @@ class SamplerConfig(SectionConfig):
         super(SamplerConfig, self).__init__(*args, **kwargs)
         self['class'] = import_cls(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseSampler._registry)
 
-    def init(self, *args, **kwargs):
-        kwargs = {**self['init'], **kwargs}
-        return self['class'](*args, **kwargs)
+    def run(self, likelihood):
+        sampler = self['class'](likelihood, **self['init'])
+        save_fn = self.get('save_fn', None)
+        check = self.get('check', {})
+        run_check = bool(check)
+        if isinstance(check, bool): check = {}
+        min_iterations = self['run'].get('min_iterations', 0)
+        max_iterations = self['run'].get('max_iterations', int(1e5) if run_check else sys.maxsize)
+        check_every = self['run'].get('check_every', 200)
+
+        run_kwargs = {}
+        for name in ['thin_by']:
+            if name in self['run']: run_kwargs = self['run'].get(name)
+
+        if save_fn is not None:
+            if isinstance(save_fn, str):
+                save_fn = [save_fn.replace('*', '{}').format(i) for i in range(sampler.nchains)]
+            else:
+                if len(save_fn) != sampler.nchains:
+                    raise ConfigError('Provide {:d} chain file names'.format(sampler.nchains))
+
+        count_iterations = 0
+        is_converged = False
+        while not is_converged:
+            niter = min(max_iterations - count_iterations, check_every)
+            count_iterations += niter
+            sampler.run(niterations=niter, **run_kwargs)
+            if save_fn is not None and sampler.mpicomm.rank == 0:
+                for ichain in range(sampler.nchains):
+                    sampler.chains[ichain].save(save_fn[ichain])
+            is_converged = sampler.check(**check) if run_check else False
+            if count_iterations < min_iterations:
+                is_converged = False
+            if count_iterations >= max_iterations:
+                is_converged = True
 
 
 class RegisteredSampler(type(BaseClass)):
@@ -39,8 +72,9 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
 
     nwalkers = 1
 
-    @CurrentMPIComm.enable
     def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, chains=None, mpicomm=None):
+        if mpicomm is None:
+            mpicomm = likelihood.mpicomm
         self.mpicomm = mpicomm
         self.likelihood = likelihood
         self.varied = self.likelihood.params.select(varied=True)

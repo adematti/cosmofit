@@ -1,6 +1,5 @@
 import numpy as np
 import mpytools as mpy
-from mpytools import CurrentMPIComm
 
 from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
@@ -16,9 +15,15 @@ class ProfilerConfig(SectionConfig):
         super(ProfilerConfig, self).__init__(*args, **kwargs)
         self['class'] = import_cls(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseProfiler._registry)
 
-    def init(self, *args, **kwargs):
-        kwargs = {**self['init'], **kwargs}
-        return self['class'](*args, **kwargs)
+    def run(self, likelihood):
+        profiler = self['class'](likelihood, **self['init'])
+        save_fn = self.get('save_fn', None)
+
+        profiler.run(**self['run'])
+        if save_fn is not None and profiler.mpicomm.rank == 0:
+            profiler.profiles.save(save_fn)
+
+        return profiler
 
 
 class RegisteredProfiler(type(BaseClass)):
@@ -33,8 +38,9 @@ class RegisteredProfiler(type(BaseClass)):
 
 class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
-    @CurrentMPIComm.enable
     def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, profiles=None, mpicomm=None):
+        if mpicomm is None:
+            mpicomm = likelihood.mpicomm
         self.mpicomm = mpicomm
         self.likelihood = likelihood
         self.varied = self.likelihood.params.select(varied=True)
