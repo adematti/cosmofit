@@ -8,13 +8,17 @@ from cosmofit import plotting, utils
 
 class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
 
-    def __init__(self, covariance=None, data=None, klim=None, krebin=1, zeff=None, fiducial=None, wmatrix=None):
+    def __init__(self, covariance=None, data=None, klim=None, kstep=None, krebin=None, zeff=None, fiducial=None, wmatrix=None):
 
         def load_data(fn):
             from pypower import PowerSpectrumStatistics
             return PowerSpectrumStatistics.load(fn)
 
-        def lim_data(power, klim=klim):
+        def lim_data(power, klim=klim, kstep=kstep, krebin=krebin):
+            if krebin is None:
+                krebin = 1
+                if kstep is not None:
+                    krebin = int(np.rint(kstep / np.diff(power.kedges).mean()))
             power = power[:(power.shape[0] // krebin) * krebin:krebin]
             data = power.get_power(complex=False)
             nells = len(power.ells)
@@ -65,7 +69,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
 
         super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=np.concatenate(poles, axis=0) if poles is not None else None, nobs=nobs)
-        self.requires['theory'] = ('WindowedPowerSpectrumMultipoles', {'kout': self.k, 'ellsout': self.ells, 'zeff': zeff, 'fiducial': fiducial, 'wmatrix': wmatrix})
+        self.requires['theory'] = ('WindowedPowerSpectrumMultipoles', {'k': self.k, 'ellsout': self.ells, 'zeff': zeff, 'fiducial': fiducial, 'wmatrix': wmatrix})
 
     def plot(self, fn=None, kw_save=None):
         from matplotlib import pyplot as plt

@@ -9,11 +9,28 @@ pipeline:
         klim:
           0: [0.05, 0.2]
           2: [0.05, 0.2]
-        krebin: 2
+          4: [0.05, 0.2]
+        kstep: 0.01
         zeff: 2.0
         fiducial: DESI
+      save_fn: f'{output_dir}/QSO.like.npy'
+      load_fn: True
     theory:
       class: cosmofit.theories.full_shape.LPTGalaxyPowerSpectrum
+    lpt:
+      class: cosmofit.theories.full_shape.LPTPowerSpectrum
+      load_fn: f'{output_dir}/emulator.npy'
+      emulator:
+        save_fn: f'{output_dir}/emulator.npy'
+      params:
+        fsigma8:
+          value: 0.5
+          prior:
+            dist: uniform
+            limits: [0.2, 0.8]
+          latex: 'f\sigma_{8}'
+    shapefit:
+      class: cosmofit.theories.linear_power.ShapeFitPrimordialPowerSpectrum
     effectap:
       class: cosmofit.theories.base.EffectAP
       init:
@@ -25,7 +42,28 @@ pipeline:
     params:
       fixed: '*'
 
-sampler:
+emulate:
+  class: TaylorEmulatorEngine
+  fit:
+    order: 1
+
+summarize:
+  chain:
+    fn: f'{output_dir}/samples_0.npy'
+    burnin: 0.3
+  plot_triangle: f'{output_dir}/triangle.png'
+  plot_trace: f'{output_dir}/trace.png'
+  plot_autocorrelation_time: f'{output_dir}/autocorrelation_time.png'
+  plot_gelman_rubin:
+    fn: f'{output_dir}/gelman_rubin.png'
+    nsplits: 4
+  plot_geweke: f'{output_dir}/geweke.png'
+
+#summarize:
+#   profiles: f'{output_dir}/profiles.npy'
+#   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
+
+sample:
   class: cosmofit.samplers.DynestySampler
   init:
     mode: static
@@ -35,7 +73,7 @@ sampler:
   check: True
   save_fn: f'{output_dir}/samples_*.npy'
 
-sampler:
+sample:
   class: cosmofit.samplers.EmceeSampler
   init:
     nwalkers: 40
@@ -45,7 +83,7 @@ sampler:
   check: True
   save_fn: f'{output_dir}/samples_*.npy'
 
-profiler:
+profile:
   class: cosmofit.profilers.MinuitProfiler
   save_fn: f'{output_dir}/profiles.npy'
 

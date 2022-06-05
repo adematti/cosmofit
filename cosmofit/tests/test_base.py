@@ -85,30 +85,30 @@ def test_likelihood():
     assert len(pipeline.loglikelihood) == 2
 
 
-def test_sample():
+def test_sample(config_fn='bao_pipeline.yaml'):
     from cosmofit.main import sample_from_config
-    sample_from_config('bao_pipeline.yaml')
+    sample_from_config(config_fn)
 
 
-def test_profile():
+def test_profile(config_fn='bao_pipeline.yaml'):
     from cosmofit.main import profile_from_config
-    profiler = profile_from_config('bao_pipeline.yaml')
+    profiler = profile_from_config(config_fn)
     assert profiler.likelihood.loglikelihood < 0.
 
 
-def test_do():
+def test_do(config_fn='bao_pipeline.yaml'):
     from cosmofit.main import do_from_config
-    do_from_config('bao_pipeline.yaml')
+    do_from_config(config_fn)
 
 
-def test_summarize():
+def test_summarize(config_fn='bao_pipeline.yaml'):
     from cosmofit.main import summarize_from_config
-    summarize_from_config('bao_pipeline.yaml')
+    summarize_from_config(config_fn)
 
 
-def test_emulate():
+def test_emulate(config_fn='bao_pipeline.yaml'):
     from cosmofit.main import emulate_from_config
-    emulate_from_config('bao_pipeline.yaml')
+    emulate_from_config(config_fn)
 
 
 if __name__ == '__main__':
@@ -122,5 +122,9 @@ if __name__ == '__main__':
     # test_sample()
     # test_profile()
     # test_do()
-    test_summarize()
+    # test_summarize()
     # test_emulate()
+    # test_emulate(config_fn='full_shape_pipeline.yaml')
+    # test_profile(config_fn='full_shape_pipeline.yaml')
+    # test_sample(config_fn='full_shape_pipeline.yaml')
+    test_summarize(config_fn='full_shape_pipeline.yaml')

@@ -1,0 +1,32 @@
+class: ShapeFitPrimordialPowerSpectrum
+
+info:
+  version: 0.0.1
+  date: 05/04/2021
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Shapefit-parametrized linear power spectrum
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description:
+
+init:
+  a: 0.6
+  kpivot: 0.03
+
+params:
+  m:
+    value: 0.
+    prior:
+      dist: uniform
+      limits: [-3., 3.]
+    latex: m
+  n:
+    value: 0.
+    fixed: True
+    prior:
+      dist: uniform
+      limits: [-0.5, 0.5]
+    latex: n

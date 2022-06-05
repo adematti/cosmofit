@@ -77,7 +77,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         for calculator_name in allstates[0]: break
         fixed, varied = {}, {}
         for name in allstates[0][calculator_name]:
-            values = [s[calculator_name][name] for s in allstates]
+            values = np.asarray([s[calculator_name][name] for s in allstates])
             if all(np.all(value == values[0]) for value in values):
                 fixed[name] = values[0]
             else:

@@ -46,11 +46,15 @@ params:
   alpha[0:7:2]:
     value: 0.
     prior:
-      dist:  norm
+      dist: norm
       loc: 0.
       scale: 50.
     latex: \alpha_[]
   sn[:5:2]:
     value: 0.
     fixed: False
+    prior:
+      dist: norm
+      loc: 0.
+      scale: 1000.
     latex: s_{n, []}

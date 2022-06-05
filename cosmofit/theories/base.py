@@ -16,7 +16,7 @@ class BaseTheoryPowerSpectrumMultipoles(BaseCalculator):
 
     def __getstate__(self):
         state = {}
-        for name in ['k', 'zeff', 'ells', 'power', 'growth_rate']:
+        for name in ['k', 'zeff', 'ells', 'power']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -101,23 +101,23 @@ class EffectAP(BaseCalculator):
 
 class WindowedPowerSpectrumMultipoles(BaseCalculator):
 
-    def __init__(self, kout=None, ellsout=(0, 2, 4), zeff=None, fiducial=None, wmatrix=None):
-        if kout is None: kout = np.linspace(0.01, 0.2, 20)
-        if np.ndim(kout[0]) == 0:
-            kout = [kout] * len(ellsout)
-        self.kout = [np.array(kk, dtype='f8') for kk in kout]
+    def __init__(self, k=None, ellsout=(0, 2, 4), zeff=None, fiducial=None, wmatrix=None):
+        if k is None: k = np.linspace(0.01, 0.2, 20)
+        if np.ndim(k[0]) == 0:
+            k = [k] * len(ellsout)
+        self.k = [np.array(kk, dtype='f8') for kk in k]
         self.zeff = float(zeff)
         self.ellsout = tuple(ellsout)
         self.wmatrix = wmatrix
         if wmatrix is None:
             self.ellsin = tuple(self.ellsout)
-            self.kin = np.unique(np.concatenate(self.kout, axis=0))
-            if all(np.allclose(kk, self.kin) for kk in self.kout):
+            self.kin = np.unique(np.concatenate(self.k, axis=0))
+            if all(np.allclose(kk, self.kin) for kk in self.k):
                 self.kmask = None
             else:
-                self.kmask = [np.searchsorted(self.kin, kk, side='left') for kk in self.kout]
-                assert all(kmask.min() >= 0 and kmask.max() < kk.size for kk, kmask in zip(self.kout, self.kmask))
-                self.kmask = np.concatenate([np.searchsorted(self.kin, kk, side='left') for kk in self.kout], axis=0)
+                self.kmask = [np.searchsorted(self.kin, kk, side='left') for kk in self.k]
+                assert all(kmask.min() >= 0 and kmask.max() < kk.size for kk, kmask in zip(self.k, self.kmask))
+                self.kmask = np.concatenate([np.searchsorted(self.kin, kk, side='left') for kk in self.k], axis=0)
         else:
             if isinstance(wmatrix, str):
                 from pypower import BaseMatrix
@@ -130,7 +130,7 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
             self.kin = wmatrix.xin[0]
             assert all(np.allclose(xin, self.kin) for xin in wmatrix.xin)
             # TODO: implement best match BaseMatrix method
-            for iout, (projout, kk) in enumerate(zip(wmatrix.projsout, self.kout)):
+            for iout, (projout, kk) in enumerate(zip(wmatrix.projsout, self.k)):
                 nmk = np.sum((wmatrix.xout[iout] >= 2 * kk[0] - kk[1]) & (wmatrix.xout[iout] <= 2 * kk[-1] - kk[-2]))
                 factorout = nmk // kk.size
                 wmatrix.slice_x(sliceout=slice(0, wmatrix.xout[iout].size // factorout * factorout), projsout=projout)
@@ -161,15 +161,15 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
     def power(self):
         toret = []
         nout = 0
-        for k in self.kout:
-            sl = slice(nout, nout + len(k))
+        for kk in self.k:
+            sl = slice(nout, nout + len(kk))
             toret.append(self.flatpower[sl])
             nout = sl.stop
         return toret
 
     def __getstate__(self):
         state = {}
-        for name in ['kin', 'kout', 'zeff', 'ells', 'fiducial', 'wmatrix', 'kmask', 'flatpower']:
+        for name in ['kin', 'k', 'zeff', 'ells', 'fiducial', 'wmatrix', 'kmask', 'flatpower']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state

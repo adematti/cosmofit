@@ -403,6 +403,7 @@ class BasePipeline(BaseClass):
                 for requirementbasename, config in getattr(new, 'requires', {}).items():
                     # Search for parameter
                     config = CalculatorConfig(config)
+                    key_requires = requirementbasename
 
                     requirementnamespace = namespace
                     match_first, match_name = None, None
@@ -431,7 +432,7 @@ class BasePipeline(BaseClass):
                         requirement.runtime_info.required_by.add(new)
                     else:
                         requirement = callback_instantiate(requirementnamespace, requirementbasename, config, required_by={new})
-                    new.runtime_info.requires[requirementbasename] = requirement
+                    new.runtime_info.requires[key_requires] = requirement
 
                 return new
 

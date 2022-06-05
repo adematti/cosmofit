@@ -1056,7 +1056,7 @@ class ParameterPrior(BaseClass):
     def __call__(self, x):
         """Return probability density at ``x``."""
         if not self.is_proper():
-            toret = - np.inf * np.ones_like(x)
+            toret = np.full_like(x, -np.inf)
             toret[self.isin(x)] = 0.
             return toret
         return self.logpdf(x)
