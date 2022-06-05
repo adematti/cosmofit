@@ -12,13 +12,13 @@ def test_taylor(plot=False):
     pipeline['cosmo'] = {'class': 'cosmofit.theories.primordial_cosmology.Cosmoprimo', 'params': {'fixed': '*'}}
     pipeline = BasePipeline(pipeline)
     power_bak = pipeline.end_calculators[0].power.copy()
-    emulator = TaylorEmulatorEngine(pipeline, order=3)
+    emulator = TaylorEmulatorEngine(pipeline, order=1)
 
     calculator = emulator.to_calculator()
     calculator.run(**{str(param): param.value for param in calculator.params if param.varied})
     assert np.allclose(calculator.power, power_bak)
     calculator.run(**{str(param): param.value * 1.1 for param in calculator.params if param.varied})
-    calculator.__getstate__()
+    assert not np.allclose(calculator.power, power_bak)
 
     if plot:
         from matplotlib import pyplot as plt

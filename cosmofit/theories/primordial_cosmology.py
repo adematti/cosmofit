@@ -32,5 +32,7 @@ class Cosmoprimo(BasePrimordialCosmology):
     def __getattr__(self, name):
         try:
             return super(Cosmoprimo, self).__getattr__(name)
-        except AttributeError:
-            return getattr(self.cosmo, name)
+        except AttributeError as exc:
+            if 'cosmo' in self.__dict__:
+                return getattr(self.cosmo, name)
+            raise exc

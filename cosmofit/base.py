@@ -183,34 +183,33 @@ class CalculatorConfig(SectionConfig):
         self['load_fn'], self['save_fn'] = load_fn, save_fn
 
     def init(self, namespace=None, params=None, **kwargs):
-        new = self['class'].__new__(self['class'])
         initparams = self['params']
         if params is not None:
             if isinstance(params, ParameterCollection):
                 initparams = initparams.init(namespace=namespace)
                 initparams.update(params)
-                params.update(initparams)
             else:
                 initparams = initparams.with_namespace(namespace)
                 initparams.update(params)
-                params.update(initparams)
                 initparams = initparams.init()
         else:
             initparams = initparams.init(namespace=namespace)
-        params = ParameterCollection(getattr(new, 'params', None)).clone(namespace=self['params'].namespace, name=self['params'].namespace)
-        params.update(initparams)
-        base_params = params.clone(namespace=None)
-        info = self['info']
         if self['load_fn'] is not None:
             new = self._loaded.copy()
-            if hasattr(new, 'params'):
-                params = new.params
-            new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=params, **kwargs)
-            new.params = params.clone(namespace=None)
-            new.info = info
         else:
-            new.params = base_params
-            new.info = info
+            new = self['class'].__new__(self['class'])
+        params = ParameterCollection(getattr(new, 'params', None)).clone(namespace=namespace, name=[name for name, value in self['params'].namespace.items() if value])
+        this_params = getattr(new, 'this_params', None)
+        if this_params is not None:
+            for iparam, param in enumerate(params):
+                if param.basename not in this_params:
+                    params[iparam].namespace = None
+        params.update(initparams)
+        new.params = params.clone(namespace=None)
+        new.info = self['info']
+        if self['load_fn'] is not None:
+            new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=params, **kwargs)
+        else:
             try:
                 new.__init__(**self['init'])
             except TypeError as exc:
@@ -319,118 +318,152 @@ class BasePipeline(BaseClass):
 
     @CurrentMPIComm.enable
     def __init__(self, calculators, params=None, mpicomm=None):
-        self.params = params
-        calculators = BaseConfig(copy.deepcopy(calculators))
 
-        instantiated = []
+        if isinstance(calculators, BaseCalculator):
+            calculators = [calculators]
+        is_config = True
+        if utils.is_sequence(calculators):
+            if not len(calculators):
+                raise PipelineError('Need at least one calculator')
+            is_config = not isinstance(calculators[0], BaseCalculator)
 
-        def callback_namespace(calculators_in_namespace, todo, namespace=None, replace=False):
+        if is_config:
+            self.params = params
+            calculators = BaseConfig(copy.deepcopy(calculators))
 
-            if namespace is not None and namespace_delimiter in namespace:
-                raise PipelineError('Do not use {} in namespace'.format(namespace_delimiter))
+            instantiated = []
 
-            for basename, calcdict in calculators_in_namespace.items():
-                if 'class' in calcdict:
-                    tmp = todo(namespace, basename, calcdict)
-                    if replace:
-                        calculators_in_namespace[basename] = tmp
-                else:  # check for another namespace
-                    if namespace is None:
-                        newnamespace = basename
-                    else:
-                        newnamespace = namespace_delimiter.join([namespace, basename])
-                    callback_namespace(calcdict, todo, namespace=newnamespace, replace=replace)
+            def callback_namespace(calculators_in_namespace, todo, namespace=None, replace=False):
 
-        def search_parent_namespace(calculators, namespace):
-            # First in this namespace, then go back
-            if namespace is None:
-                splitnamespace = None
-            else:
-                splitnamespace = namespace.split(namespace_delimiter)
+                if namespace is not None and namespace_delimiter in namespace:
+                    raise PipelineError('Do not use {} in namespace'.format(namespace_delimiter))
 
-            toret = []
-            def callback_parent(tmpnamespace, basename, calcdict):
-                if tmpnamespace is None:
-                    toret.append((tmpnamespace, basename, calcdict))
+                for basename, calcdict in calculators_in_namespace.items():
+                    if 'class' in calcdict:
+                        tmp = todo(namespace, basename, calcdict)
+                        if replace:
+                            calculators_in_namespace[basename] = tmp
+                    else:  # check for another namespace
+                        if namespace is None:
+                            newnamespace = basename
+                        else:
+                            newnamespace = namespace_delimiter.join([namespace, basename])
+                        callback_namespace(calcdict, todo, namespace=newnamespace, replace=replace)
+
+            def search_parent_namespace(calculators, namespace):
+                # First in this namespace, then go back
+                if namespace is None:
+                    splitnamespace = None
                 else:
-                    tmpsplitnamespace = tmpnamespace.split(namespace_delimiter)
-                    if tmpsplitnamespace == splitnamespace[:len(tmpsplitnamespace)]:
+                    splitnamespace = namespace.split(namespace_delimiter)
+
+                toret = []
+                def callback_parent(tmpnamespace, basename, calcdict):
+                    if tmpnamespace is None:
                         toret.append((tmpnamespace, basename, calcdict))
-
-            callback_namespace(calculators, callback_parent, namespace=None)
-            return toret
-
-        def callback_config(namespace, basename, calcdict):
-            return CalculatorConfig(calcdict)
-
-        callback_namespace(calculators, callback_config, replace=True)
-
-        def callback_instantiate(namespace, basename, config, required_by=None):
-            if required_by is None and any((inst.runtime_info.namespace, inst.runtime_info.basename) == (namespace, basename) for inst in instantiated):
-                return
-
-            def update_from_config_fn(config, cls, config_fn=None):
-                default_config_fn = cls.config_fn
-                if config_fn is None and os.path.isfile(default_config_fn):
-                    config_fn = default_config_fn
-                if config_fn is not None:
-                    if self.mpicomm.rank == 0:
-                        self.log_info('Loading config file {}'.format(config_fn))
-                    try:
-                        tmpconfig = CalculatorConfig(config_fn, index={'class': cls.__name__})
-                    except IndexError:  # no config for this class in config_fn
-                        self.log_info('No config for {} found in config file {}'.format(cls.__name__, config_fn))
-                        config = config.deepcopy()
                     else:
-                        config = tmpconfig.clone(config)
-                else:
-                    config = config.deepcopy()
-                return config
+                        tmpsplitnamespace = tmpnamespace.split(namespace_delimiter)
+                        if tmpsplitnamespace == splitnamespace[:len(tmpsplitnamespace)]:
+                            toret.append((tmpnamespace, basename, calcdict))
 
-            if required_by is None:
-                config = update_from_config_fn(config, config['class'], config_fn=config.get('config_fn', None)).clone(config)
-            new = config.init(namespace=namespace, params=self.params, requires={}, required_by=required_by, basename=basename)
-            instantiated.append(new)
-            for requirementbasename, config in getattr(new, 'requires', {}).items():
-                # Search for parameter
-                config = CalculatorConfig(config)
+                callback_namespace(calculators, callback_parent, namespace=None)
+                return toret
 
-                requirementnamespace = namespace
-                match_first, match_name = None, None
-                for tmpnamespace, tmpbasename, tmpconfig in search_parent_namespace(calculators, namespace):
-                    if issubclass(tmpconfig['class'], config['class']):
-                        tmpconfig = update_from_config_fn(config, tmpconfig['class'], config_fn=tmpconfig.get('config_fn', None)).clone(tmpconfig)
-                        tmp = (tmpnamespace, tmpbasename, config.clone(tmpconfig))
-                        if match_first is None:
-                            match_first = tmp
-                        if tmpbasename == requirementbasename:
-                            match_name = tmp
-                            break
-                if match_name:
-                    requirementnamespace, requirementbasename, config = match_name
-                elif match_first:
-                    requirementnamespace, requirementbasename, config = match_first
-                else:
-                    config = update_from_config_fn(config, config['class'], config_fn=config.get('config_fn', None))
-                already_instantiated = False
-                for inst in instantiated:
-                    already_instantiated = inst.__class__ == config['class'] and inst.runtime_info.namespace == requirementnamespace\
-                                           and inst.runtime_info.basename == requirementbasename and inst.runtime_info.config == config
-                    if already_instantiated: break
-                if already_instantiated:
-                    requirement = inst
-                    requirement.runtime_info.required_by.add(new)
-                else:
-                    requirement = callback_instantiate(requirementnamespace, requirementbasename, config, required_by={new})
-                new.runtime_info.requires[requirementbasename] = requirement
+            def callback_config(namespace, basename, calcdict):
+                return CalculatorConfig(calcdict)
 
-            return new
+            callback_namespace(calculators, callback_config, replace=True)
 
-        callback_namespace(calculators, callback_instantiate)
+            def callback_instantiate(namespace, basename, config, required_by=None):
+                if required_by is None and any((inst.runtime_info.namespace, inst.runtime_info.basename) == (namespace, basename) for inst in instantiated):
+                    return
+
+                def update_from_config_fn(config, cls, config_fn=None):
+                    default_config_fn = cls.config_fn
+                    if config_fn is None and os.path.isfile(default_config_fn):
+                        config_fn = default_config_fn
+                    if config_fn is not None:
+                        if self.mpicomm.rank == 0:
+                            self.log_info('Loading config file {}'.format(config_fn))
+                        try:
+                            tmpconfig = CalculatorConfig(config_fn, index={'class': cls.__name__})
+                        except IndexError:  # no config for this class in config_fn
+                            self.log_info('No config for {} found in config file {}'.format(cls.__name__, config_fn))
+                            config = config.deepcopy()
+                        else:
+                            config = tmpconfig.clone(config)
+                    else:
+                        config = config.deepcopy()
+                    return config
+
+                if required_by is None:
+                    config = update_from_config_fn(config, config['class'], config_fn=config.get('config_fn', None)).clone(config)
+                new = config.init(namespace=namespace, params=self.params, requires={}, required_by=required_by, basename=basename)
+                instantiated.append(new)
+                for requirementbasename, config in getattr(new, 'requires', {}).items():
+                    # Search for parameter
+                    config = CalculatorConfig(config)
+
+                    requirementnamespace = namespace
+                    match_first, match_name = None, None
+                    for tmpnamespace, tmpbasename, tmpconfig in search_parent_namespace(calculators, namespace):
+                        if issubclass(tmpconfig['class'], config['class']):
+                            tmpconfig = update_from_config_fn(config, tmpconfig['class'], config_fn=tmpconfig.get('config_fn', None)).clone(tmpconfig)
+                            tmp = (tmpnamespace, tmpbasename, config.clone(tmpconfig))
+                            if match_first is None:
+                                match_first = tmp
+                            if tmpbasename == requirementbasename:
+                                match_name = tmp
+                                break
+                    if match_name:
+                        requirementnamespace, requirementbasename, config = match_name
+                    elif match_first:
+                        requirementnamespace, requirementbasename, config = match_first
+                    else:
+                        config = update_from_config_fn(config, config['class'], config_fn=config.get('config_fn', None))
+                    already_instantiated = False
+                    for inst in instantiated:
+                        already_instantiated = inst.__class__ == config['class'] and inst.runtime_info.namespace == requirementnamespace\
+                                               and inst.runtime_info.basename == requirementbasename and inst.runtime_info.config == config
+                        if already_instantiated: break
+                    if already_instantiated:
+                        requirement = inst
+                        requirement.runtime_info.required_by.add(new)
+                    else:
+                        requirement = callback_instantiate(requirementnamespace, requirementbasename, config, required_by={new})
+                    new.runtime_info.requires[requirementbasename] = requirement
+
+                return new
+
+            callback_namespace(calculators, callback_instantiate)
+            self.calculators = instantiated
+
         self.params = ParameterCollection()
         self.end_calculators = []
-        self.calculators = instantiated
+
         for calculator in self.calculators:
+            namespace, full_params = calculator.runtime_info.namespace, calculator.runtime_info.full_params
+            namespaces = []
+            if namespace is not None:
+                namespaces = namespace.split(namespace_delimiter)
+                namespaces = [namespace_delimiter.join(namespaces[:stop]) for stop in range(1, len(namespaces) + 1)][::-1]
+            namespaces += [None]
+            for namespace in namespaces:
+                for calc in self.calculators:
+                    if calc.runtime_info.namespace == namespace:
+                        calc_base_params = [param.basename for param in calc.runtime_info.full_params]
+                        for iparam, param in enumerate(full_params):
+                            if param.basename in calc_base_params:
+                                calc_iparam = calc_base_params.index(param.basename)
+                                calc_param = calc.runtime_info.full_params[calc_iparam]
+                                if param.namespace is None:
+                                    full_params[iparam].namespace = calc_param.namespace
+                                elif param.namespace == calc_param.namespace:
+                                    full_params[iparam].update(calc_param)
+                                calc.runtime_info.full_params[calc_iparam].update(full_params[iparam])
+
+        for calculator in self.calculators:
+            calculator.runtime_info.params = {param.basename: param.value for param in calculator.runtime_info.full_params}
             self.params.update(calculator.runtime_info.full_params)
             if not calculator.runtime_info.required_by:
                 self.end_calculators.append(calculator)
@@ -440,14 +473,14 @@ class BasePipeline(BaseClass):
             if not any(param in calculator.runtime_info.full_params for calculator in self.calculators):
                 raise PipelineError('Parameter {} is not used by any calculator'.format(param))
 
-        def callback(calculator, required_by):
+        def callback_dependency(calculator, required_by):
             for calc in required_by:
                 if calc is calculator:
                     raise PipelineError('Circular dependency for calculator {}'.format(calc))
-                callback(calculator, calc.runtime_info.required_by)
+                callback_dependency(calculator, calc.runtime_info.required_by)
 
         for calculator in self.calculators:
-            callback(calculator, calculator.runtime_info.required_by)
+            callback_dependency(calculator, calculator.runtime_info.required_by)
 
         self.mpicomm = mpicomm
         # Init run, e.g. for fixed parameters
@@ -460,6 +493,7 @@ class BasePipeline(BaseClass):
     def run(self, **params):  # params with namespace
         for calculator in self.calculators:
             calculator.runtime_info.torun = False
+        for calculator in self.calculators:
             for param in calculator.runtime_info.full_params:
                 value = params.get(param.name, None)
                 if value is not None and value != calculator.runtime_info.params[param.basename]:
@@ -487,6 +521,20 @@ class BasePipeline(BaseClass):
         for calculator in self.calculators:
             calculator.mpicomm = mpicomm
 
+    def __copy__(self):
+        new = super(BasePipeline, self).__copy__()
+        new.calculators = []
+        for calculator in self.calculators:
+            calculator = calculator.copy()
+            calculator.runtime_info = calculator.runtime_info.copy()
+            new.calculators.append(calculator)
+        for calculator in new.calculators:
+            calculator.runtime_info.required_by = set([new.calculators[self.calculators.index(calc)] for calc in calculator.runtime_info.required_by])
+            calculator.runtime_info.requires = {name: new.calculators[self.calculators.index(calc)] for name, calc in calculator.runtime_info.requires.items()}
+        new.end_calculators = [new.calculators[self.calculators.index(calc)] for calc in self.end_calculators]
+        new.params = self.params.copy()
+        return new
+
     def select(self, end_calculators, remove_namespace=False):
 
         if not utils.is_sequence(end_calculators):
@@ -502,8 +550,8 @@ class BasePipeline(BaseClass):
 
         new = self.copy()
         new.params = ParameterCollection()
-        new.end_calculators = end_calculators
-        new.calculators = new.end_calculators.copy()
+        new.end_calculators = [new.calculators[self.calculators.index(calc)] for calc in end_calculators]
+        new.calculators = []
 
         def callback(calculator):
             for name, calc in calculator.runtime_info.requires.items():
@@ -511,9 +559,10 @@ class BasePipeline(BaseClass):
                     new.calculators.append(calc)
                     callback(calc)
 
-        for end_calculator in end_calculators:
+        for end_calculator in new.end_calculators:
+            end_calculator.runtime_info.required_by = set([])
+            new.calculators.append(end_calculator)
             callback(end_calculator)
-        new.calculators = new.calculators[::-1]
 
         for calculator in new.calculators:
             new.params.update(calculator.runtime_info.full_params)
@@ -525,10 +574,8 @@ class BasePipeline(BaseClass):
             if duplicates:
                 raise PipelineError('Cannot remove namespace, as following duplicates found: {}'.format(duplicates))
             new.params = ParameterCollection()
-            for icalc, calculator in enumerate(new.calculators):
-                calculator = calculator.copy()
+            for calculator in new.calculators:
                 calculator.runtime_info = calculator.runtime_info.clone(full_params=calculator.runtime_info.full_params.clone(namespace=None))
-                new.calculators[icalc] = calculator
                 new.params.update(calculator.runtime_info.full_params)
 
         return new

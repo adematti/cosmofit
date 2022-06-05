@@ -52,6 +52,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         self.pipeline.mpicomm = mpicomm
         self.centers, self.limits = {}, {}
         self.params = self.pipeline.params
+        self.this_params = self.pipeline.end_calculators[0].runtime_info.full_params
         self.varied = self.params.select(varied=True)
         self.varied_names = self.varied.names()
         for param in self.varied:
@@ -96,7 +97,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
 
     def __getstate__(self):
         state = {}
-        for name in ['params', 'centers', 'varied_names', 'varied_values', 'fixed_values', '_engine_cls']:
+        for name in ['params', 'this_params', 'centers', 'varied_names', 'varied_values', 'fixed_values', '_engine_cls']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state

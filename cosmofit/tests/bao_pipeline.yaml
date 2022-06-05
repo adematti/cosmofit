@@ -5,7 +5,7 @@ pipeline:
       init:
         data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
-        wmatrix: f'{data_dir}/window.npy'
+        #wmatrix: f'{data_dir}/window.npy'
         klim:
           0: [0.05, 0.2]
           2: [0.05, 0.2]
@@ -18,12 +18,12 @@ pipeline:
     theory:
       class: cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum
       params:
-        fixed: ['al*']
+        fixed: ['al0*', 'al2*']
         sigmar:
           value: .inf
         al[:3:2]_[0:2]:
           fixed: False
-      load_fn: f'{output_dir}/emulator.npy'
+      #load_fn: f'{output_dir}/emulator.npy'
       emulator:
         save_fn: f'{output_dir}/emulator.npy'
     effectap:
@@ -58,9 +58,9 @@ summarize:
     nsplits: 4
   plot_geweke: f'{output_dir}/geweke.png'
 
-# summarize:
-#   profiles: f'{output_dir}/profiles.npy'
-#   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
+summarize:
+   profiles: f'{output_dir}/profiles.npy'
+   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
 
 sample:
   class: cosmofit.samplers.DynestySampler

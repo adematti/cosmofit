@@ -4,6 +4,7 @@ import numpy as np
 
 from cosmoprimo import PowerSpectrumBAOFilter
 
+from cosmofit.parameter import ParameterCollection
 from cosmofit.base import BaseCalculator
 from .base import BaseTheoryPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles
 
@@ -24,19 +25,34 @@ class BaseBAOPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, **kwargs):
         super(BaseBAOPowerSpectrum, self).__init__(*args, **kwargs)
+        params = ParameterCollection()
+        for param in self.params:
+            ellpow = self.decode_broadband_param(param)
+            if ellpow is not None and ellpow[0] not in self.ells:
+                continue
+            params.set(param)
+        self.params = params
         self.set_broadband_coeffs()
         self.requires = {'effectap': ('EffectAP', {'zeff': self.zeff, 'fiducial': self.fiducial}), 'powernowiggles': ('PowerSpectrumNoWiggles', {'zeff': self.zeff})}
+
+    @staticmethod
+    def decode_broadband_param(param):
+        match = re.match('al(.*)_(.*)', str(param))
+        if match:
+            ell = int(match.group(1))
+            pow = int(match.group(2))
+            return ell, pow
+        return None
 
     def set_broadband_coeffs(self):
         self.broadband_coeffs = {}
         for ell in self.ells:
             self.broadband_coeffs[ell] = {}
-            for param in self.params:
-                name = param.basename
-                match = re.match('al{:d}_(.*)'.format(ell), name)
-                if match:
-                    pow = int(match.group(1))
-                    self.broadband_coeffs[ell][name] = pow
+        for param in self.params:
+            name = param.basename
+            ellpow = self.decode_broadband_param(param)
+            if ellpow is not None:
+                self.broadband_coeffs[ellpow[0]][name] = ellpow[1]
 
     def broadband_poles(self, **params):
         toret = []

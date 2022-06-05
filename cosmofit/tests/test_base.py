@@ -61,8 +61,9 @@ def test_pipeline():
     varied = pipeline.params.select(varied=True)
     assert len(varied) == 7
     assert pipeline.params['QSO.sigmar'].latex() == r'\Sigma_{r}'
-    assert len(pipeline.params.select(fixed=True)) == 26
-    assert pipeline.params.names() == ['QSO.bias', 'QSO.sigmar', 'QSO.sigmas', 'QSO.sigmapar', 'QSO.sigmaper', 'QSO.al0_-3', 'QSO.al0_-2', 'QSO.al0_-1', 'QSO.al0_0', 'QSO.al0_1', 'QSO.al2_-3', 'QSO.al2_-2', 'QSO.al2_-1', 'QSO.al2_0', 'QSO.al2_1', 'QSO.al4_-3', 'QSO.al4_-2', 'QSO.al4_-1', 'QSO.al4_0', 'QSO.al4_1',
+    assert len(pipeline.params.select(fixed=True)) == 21
+    print(pipeline.params.names())
+    assert pipeline.params.names() == ['QSO.bias', 'QSO.sigmar', 'QSO.sigmas', 'QSO.sigmapar', 'QSO.sigmaper', 'QSO.al0_-3', 'QSO.al0_-2', 'QSO.al0_-1', 'QSO.al0_0', 'QSO.al0_1', 'QSO.al2_-3', 'QSO.al2_-2', 'QSO.al2_-1', 'QSO.al2_0', 'QSO.al2_1',
                                        'QSO.qpar', 'QSO.qper', 'h', 'omega_cdm', 'omega_b', 'A_s', 'k_pivot', 'n_s', 'omega_ncdm', 'N_ur', 'tau_reio', 'w0_fld', 'wa_fld']
     pipeline.run()
 
@@ -75,7 +76,11 @@ def test_likelihood():
 
     config = BaseConfig('bao_pipeline.yaml')
     pipeline = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
-    pipeline.run(**{'QSO.sigmar': 2.})
+    print(pipeline.params.select(varied=True))
+    pipeline.run(**{'QSO.qpar': 1.2})
+    likelihood = pipeline.loglikelihood
+    pipeline.run(**{'QSO.qpar': 1.})
+    assert not np.allclose(pipeline.loglikelihood, likelihood)
     pipeline.mpirun(**{'QSO.sigmar': [1., 2.]})
     assert len(pipeline.loglikelihood) == 2
 
@@ -115,7 +120,7 @@ if __name__ == '__main__':
     # test_pipeline()
     # test_likelihood()
     # test_sample()
-    test_profile()
+    # test_profile()
     # test_do()
-    # test_summarize()
+    test_summarize()
     # test_emulate()
