@@ -58,12 +58,10 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         for param in self.varied:
             name = str(param)
             self.centers[name] = param.value
-            if hasattr(param.ref, 'scale'):
-                self.limits[name] = (param.value - param.ref.scale, param.value + param.ref.scale)
-            elif param.ref.is_proper():
-                self.limits[name] = list(param.ref.limits)
+            if param.ref.is_proper():
+                self.limits[name] = (param.value - param.proposal, param.value + param.proposal)
             else:
-                raise ParameterPriorError('Provide parameter limits')
+                raise ParameterPriorError('Provide parameter limits or proposal')
 
         def serialize_cls(self):
             return ('.'.join([self.__module__, self.__class__.__name__]), os.path.dirname(sys.modules[self.__module__].__file__))

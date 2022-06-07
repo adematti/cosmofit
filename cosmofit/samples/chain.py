@@ -25,10 +25,8 @@ class Chain(ParameterValues):
         self._fweight = fweight
         self._weight = weight
         super(Chain, self).__init__(data=data, params=params, **kwargs)
-
-    @property
-    def _metrics(self):
-        return [self._logposterior, self._aweight, self._fweight, self._weight]
+        for name in [self._logposterior, self._aweight, self._fweight, self._weight]:
+            self.metrics.add(name)
 
     @property
     def aweight(self):
@@ -225,7 +223,7 @@ class Chain(ParameterValues):
         if params is None: params = self.names()
         columns = list([str(param) for param in params])
         metrics_columns = [self._weight, self._logposterior]
-        for column in self._metrics:
+        for column in self.metrics:
             if column in columns: del columns[columns.index(column)]
         data = self.to_array(params=metrics_columns + columns, struct=False).reshape(-1, self.size)
         data[1] *= -1

@@ -1,4 +1,4 @@
-from cosmoprimo import Cosmology
+from cosmoprimo import Cosmology, CosmologyError
 
 from cosmofit.base import BaseCalculator
 from .base import get_cosmo
@@ -34,5 +34,8 @@ class Cosmoprimo(BasePrimordialCosmology):
             return super(Cosmoprimo, self).__getattr__(name)
         except AttributeError as exc:
             if 'cosmo' in self.__dict__:
-                return getattr(self.cosmo, name)
+                try:
+                    return getattr(self.cosmo, name)
+                except CosmologyError as exc:  # TODO: remove once cosmoprimo is updated
+                    raise AttributeError from exc
             raise exc

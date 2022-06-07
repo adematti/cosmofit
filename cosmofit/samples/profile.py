@@ -16,11 +16,12 @@ class ParameterValues(BaseParameterCollection):
     """Class that holds samples drawn from likelihood."""
 
     _type = ParameterArray
-    _attrs = ['_enforce']
-    _metrics = []
+    _attrs = ['_enforce', 'metrics']
 
-    def __init__(self, data=None, params=None, enforce=None):
+    def __init__(self, data=None, params=None, enforce=None, metrics=None):
         self.data = []
+        metrics = list(metrics or [])
+        self.metrics = set([str(name) for name in metrics])
         self._enforce = enforce or {'ndmin': 1}
         if params is not None:
             if len(params) != len(data):
@@ -51,7 +52,7 @@ class ParameterValues(BaseParameterCollection):
     def params(self, include_metrics=True, **kwargs):
         params = super(ParameterValues, self).params(**kwargs)
         if not include_metrics:
-            params = [param for param in params if str(param) not in self._metrics]
+            params = [param for param in params if str(param) not in self.metrics]
         return params
 
     @classmethod
@@ -70,7 +71,7 @@ class ParameterValues(BaseParameterCollection):
             if new_names and other_names and set(other_names) != set(new_names):
                 raise ValueError('Cannot concatenate values as parameters do not match: {} != {}.'.format(other_names, new_names))
         for param in new.params():
-            new[param] = np.concatenate([other[param] for other in others], axis=0)
+            new[param] = np.concatenate([np.atleast_1d(other[param]) for other in others], axis=0)
         return new
 
     def __setitem__(self, name, item):
@@ -89,7 +90,8 @@ class ParameterValues(BaseParameterCollection):
             Parameter.
         """
         if not isinstance(item, self._type):
-            param = Parameter(name, latex=metrics_to_latex(name) if name in self._metrics else None)
+            is_metrics = str(name) in self.metrics
+            param = Parameter(name, latex=metrics_to_latex(str(name)) if is_metrics else None, derived=is_metrics)
             if param in self:
                 param = self[param].param.clone(param)
             item = ParameterArray(item, param, **self._enforce)
@@ -196,6 +198,15 @@ class ParameterValues(BaseParameterCollection):
             toret = cls.recv(source=source, tag=tag, mpicomm=mpicomm)
         return toret
 
+    def match(self, other, eps=1e-8, **kwargs):
+        names = self.names(**kwargs)
+        from scipy import spatial
+        kdtree = spatial.cKDTree(np.array([self[name].ravel() for name in names]).T, leafsize=16, compact_nodes=True, copy_data=False, balanced_tree=True, boxsize=None)
+        array = np.array([other[name].ravel() for name in names]).T
+        dist, indices = kdtree.query(array, k=1, eps=0, p=2, distance_upper_bound=eps)
+        mask = indices < self.size
+        return np.unravel_index(np.flatnonzero(mask), shape=other.shape), np.unravel_index(indices[mask], shape=self.shape)
+
 
 class ParameterBestFit(ParameterValues):
 
@@ -204,10 +215,7 @@ class ParameterBestFit(ParameterValues):
     def __init__(self, *args, logposterior='logposterior', **kwargs):
         self._logposterior = logposterior
         super(ParameterBestFit, self).__init__(*args, **kwargs)
-
-    @property
-    def _metrics(self):
-        return [self._logposterior]
+        self.metrics.add(self._logposterior)
 
     @property
     def logposterior(self):

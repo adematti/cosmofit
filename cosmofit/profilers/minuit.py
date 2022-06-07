@@ -24,10 +24,8 @@ class MinuitProfiler(BaseProfiler):
         self.minuit.errordef = 1.0
         for param in self.varied:
             self.minuit.limits[str(param)] = tuple(None if np.isinf(lim) else lim for lim in param.prior.limits)
-            if hasattr(param.ref, 'scale'):
-                self.minuit.errors[str(param)] = param.ref.scale
-            elif param.ref.is_proper():
-                self.minuit.errors[str(param)] = (param.ref.limits[1] - param.ref.limits[0]) / 2.
+            if param.ref.is_proper():
+                self.minuit.errors[str(param)] = param.proposal
 
     def _run_one(self, start, algorithms=('migrad',)):
         if not utils.is_sequence(algorithms): algorithms = [algorithms]

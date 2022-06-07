@@ -285,9 +285,9 @@ class Parameter(BaseClass):
     latex : string, default=None
         Latex for parameter.
     """
-    _attrs = ['basename', 'namespace', 'value', 'fixed', 'prior', 'ref', 'proposal', '_latex']
+    _attrs = ['basename', 'namespace', 'value', 'fixed', 'derived', 'prior', 'ref', 'proposal', '_latex']
 
-    def __init__(self, basename, namespace=None, value=None, fixed=None, prior=None, ref=None, proposal=None, latex=None):
+    def __init__(self, basename, namespace=None, value=None, fixed=None, derived=False, prior=None, ref=None, proposal=None, latex=None):
         """
         Initialize :class:`Parameter`.
 
@@ -346,8 +346,9 @@ class Parameter(BaseClass):
                 elif self.ref.is_proper():
                     self.value = (self.ref.limits[1] - self.ref.limits[0]) / 2.
         self.latex = latex
+        self.derived = bool(derived)
         if fixed is None:
-            fixed = prior is None and ref is None
+            fixed = not self.derived or (prior is None and ref is None)
         self.fixed = bool(fixed)
         self.proposal = proposal
         if proposal is None:

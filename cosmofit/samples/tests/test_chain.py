@@ -51,10 +51,11 @@ def test_misc():
     assert chain2.size == size
     assert chain == chain
     chain.bcast(chain)
-    chain.sendrecv(source=0, dest=0)
+    chain.sendrecv(chain, source=0, dest=0)
     chain['like.a'].param.fixed = False
     assert not chain[4:10]['like.a'].param.fixed
     assert not chain.concatenate(chain, chain)['like.a'].param.fixed
+    assert np.all(chain.match(chain) == np.arange(len(chain)))
 
 
 def test_stats():
@@ -108,6 +109,6 @@ if __name__ == '__main__':
     setup_logging()
 
     # test_bcast()
-    # test_misc()
+    test_misc()
     # test_stats()
-    test_plot()
+    # test_plot()

@@ -8,7 +8,7 @@ from cosmofit import utils
 from cosmofit.io import ConfigError
 from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
-from cosmofit.samples import diagnostics, Chain
+from cosmofit.samples import diagnostics, Chain, ParameterValues
 from cosmofit.parameter import ParameterPriorError
 
 
@@ -89,31 +89,29 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
         self._set_rng(rng=rng, seed=seed)
         self.diagnostics = {}
 
-    def mpiloglikelihood(self, values):
+    def loglikelihood(self, values):
+        values = np.asarray(values)
+        isscalar = values.ndim == 1
         values = np.atleast_2d(values)
-        self.likelihood.mpirun(**{str(param): [value[iparam] for value in values] for iparam, param in enumerate(self.varied)})
-        return self.likelihood.loglikelihood
+        di = {str(param): [value[iparam] for value in values] for iparam, param in enumerate(self.varied)}
+        self.likelihood.mpirun(**di)
+        if self.derived is None:
+            self.derived = [self.likelihood.derived, di]
+        else:
+            self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: self.derived[1][name] + di[name] for name in di}]
+        toret = self.likelihood.loglikelihood
+        if isscalar: toret = toret[0]
+        return toret
 
-    def mpilogposterior(self, values):
+    def logposterior(self, values):
+        values = np.asarray(values)
+        isscalar = values.ndim == 1
         values = np.atleast_2d(values)
         params = {str(param): np.array([value[iparam] for value in values]) for iparam, param in enumerate(self.varied)}
         toret = self.likelihood.logprior(**params)
         mask = ~np.isinf(toret)
-        self.likelihood.mpirun(**{param: value[mask] for param, value in params.items()})
-        toret[mask] += self.likelihood.loglikelihood
-        return toret
-
-    def loglikelihood(self, values):
-        self.likelihood.run(**{str(param): value for param, value in zip(self.varied, values)})
-        return self.likelihood.loglikelihood
-
-    def logposterior(self, values):
-        params = {str(param): value for param, value in zip(self.varied, values)}
-        toret = self.likelihood.logprior(**params)
-        if np.isinf(toret):
-            return toret
-        self.likelihood.run(**params)
-        toret += self.likelihood.loglikelihood
+        toret[mask] += self.loglikelihood(values[mask])
+        if isscalar: toret = toret[0]
         return toret
 
     def __getstate__(self):
@@ -168,7 +166,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             mask = ~mask
             values = get_start(size=mask.sum())
             start[mask] = values
-            logposterior[mask] = self.mpilogposterior(values)
+            logposterior[mask] = self.logposterior(values)
 
         if not np.isfinite(logposterior).all():
             raise ValueError('Could not find finite log posterior after {:d} tries'.format(itry))
@@ -182,6 +180,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
         pass
 
     def run(self, niterations=300, thin_by=1, **kwargs):
+        self.derived = None
         if niterations <= 0:
             return
         if getattr(self, 'sampler', None) is None:
@@ -196,7 +195,15 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
         with TaskManager(nprocs_per_task=nprocs_per_chain, use_all_nprocs=True, mpicomm=self.mpicomm) as tm:
             self.likelihood.mpicomm = tm.mpicomm
             for ichain in tm.iterate(range(self.nchains)):
-                chains[ichain] = self._run_one(start[ichain], niterations=niterations, thin_by=thin_by, **kwargs)
+                self.derived = None
+                chain = self._run_one(start[ichain], niterations=niterations, thin_by=thin_by, **kwargs)
+                indices_in_chain, indices = ParameterValues(self.derived[1]).match(chain, name=self.varied.names())
+                assert indices_in_chain[0].size == chain.size
+                for array in self.derived[0]:
+                    chain.set(array[indices].reshape(chain.shape))
+                    if array.param.basename == 'loglikelihood':
+                        chain.metrics.add(array.param.name)
+                chains[ichain] = chain
         for ichain, chain in enumerate(chains):
             mpiroot_worker = self.mpicomm.rank if chain is not None else None
             for mpiroot_worker in self.mpicomm.allgather(mpiroot_worker):

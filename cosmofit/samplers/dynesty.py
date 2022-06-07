@@ -42,7 +42,7 @@ class DynestySampler(BaseSampler):
         if self.mode == 'static':
             self.sampler = dynesty.NestedSampler(self.loglikelihood, self.mpiprior_transform, ndim, nlive=self.nlive, bound=self.bound, sample=self.sample, update_interval=self.update_interval, pool=self.pool, use_pool=use_pool)
         else:
-            self.sampler = dynesty.DynamicNestedSampler(self.mpiloglikelihood, self.mpiprior_transform, ndim, bound=self.bound, sample=self.sample, update_interval=self.update_interval, pool=self.pool, use_pool=use_pool)
+            self.sampler = dynesty.DynamicNestedSampler(self.loglikelihood, self.mpiprior_transform, ndim, bound=self.bound, sample=self.sample, update_interval=self.update_interval, pool=self.pool, use_pool=use_pool)
 
     def _run_one(self, start, niterations=300, thin_by=1):
         if self.mode == 'static':

@@ -85,6 +85,8 @@ sample:
 profile:
   class: cosmofit.profilers.MinuitProfiler
   save_fn: f'{output_dir}/profiles.npy'
+  run:
+    niterations: 2
 
 data_dir: pk
 output_dir: tmp

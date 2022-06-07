@@ -41,7 +41,7 @@ def nsigmas_to_deltachi2(nsigmas, ddof=1):
 def metrics_to_latex(name):
     """Turn metrics ``name`` to latex string."""
     toret = txt_to_latex(name)
-    for full, symbol in [('loglkl', 'L'), ('logposterior', '\\mathcal{L}'), ('logprior', 'p')]:
+    for full, symbol in [('loglikelihood', 'L'), ('logposterior', '\\mathcal{L}'), ('logprior', 'p')]:
         toret = toret.replace(full, symbol)
     return toret
 

@@ -3,7 +3,7 @@ import mpytools as mpy
 
 from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
-from cosmofit.samples import Profiles
+from cosmofit.samples import Profiles,ParameterValues
 
 
 class ProfilerConfig(SectionConfig):
@@ -51,29 +51,29 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         self._set_rng(rng=rng, seed=seed)
         self._set_profiler()
 
-    def mpiloglikelihood(self, values):
-        self.likelihood.mpirun(**{str(param): [value[iparam] for value in values] for iparam, param in enumerate(self.varied)})
-        return self.likelihood.loglikelihood
+    def loglikelihood(self, values):
+        values = np.asarray(values)
+        isscalar = values.ndim == 1
+        values = np.atleast_2d(values)
+        di = {str(param): [value[iparam] for value in values] for iparam, param in enumerate(self.varied)}
+        self.likelihood.mpirun(**di)
+        if self.derived is None:
+            self.derived = [self.likelihood.derived, di]
+        else:
+            self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: self.derived[1][name] + di[name] for name in di}]
+        toret = self.likelihood.loglikelihood
+        if isscalar: toret = toret[0]
+        return toret
 
-    def mpilogposterior(self, values):
+    def logposterior(self, values):
+        values = np.asarray(values)
+        isscalar = values.ndim == 1
+        values = np.atleast_2d(values)
         params = {str(param): np.array([value[iparam] for value in values]) for iparam, param in enumerate(self.varied)}
         toret = self.likelihood.logprior(**params)
         mask = ~np.isinf(toret)
-        self.likelihood.mpirun(**{param: value[mask] for param, value in params.items()})
-        toret[mask] += self.likelihood.loglikelihood
-        return toret
-
-    def loglikelihood(self, values):
-        self.likelihood.run(**{str(param): value for param, value in zip(self.varied, values)})
-        return self.likelihood.loglikelihood
-
-    def logposterior(self, values):
-        params = {str(param): value for param, value in zip(self.varied, values)}
-        toret = self.likelihood.logprior(**params)
-        if np.isinf(toret):
-            return toret
-        self.likelihood.run(**params)
-        toret += self.likelihood.loglikelihood
+        toret[mask] += self.loglikelihood(values[mask])
+        if isscalar: toret = toret[0]
         return toret
 
     def chi2(self, values):
@@ -124,6 +124,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         pass
 
     def run(self, niterations=10, **kwargs):
+        self.derived = None
         if niterations is None: niterations = max(self.mpicomm.size - 1, 1)
         niterations = int(niterations)
         nprocs_per_iteration = max((self.mpicomm.size - 1) // niterations, 1)
@@ -132,7 +133,16 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             self.likelihood.mpicomm = tm.mpicomm
             for ii in tm.iterate(range(niterations)):
                 start = self._get_start()
-                profiles[ii] = self._run_one(start, **kwargs)
+                self.derived = None
+                profile = self._run_one(start, **kwargs)
+                if profile.has('bestfit'):
+                    index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, name=self.varied.names())
+                    assert index_in_profile[0].size == 1
+                    for array in self.derived[0]:
+                        profile.set(array[index])
+                        if array.param.basename == 'loglikelihood':
+                            profile.bestfit.metrics.add(array.param.name)
+                profiles[ii] = profile
         for iprofile, profile in enumerate(profiles):
             mpiroot_worker = self.mpicomm.rank if profile is not None else None
             for mpiroot_worker in self.mpicomm.allgather(mpiroot_worker):

@@ -3,7 +3,7 @@
 import glob
 
 from .chain import Chain
-from .profile import Profiles
+from .profile import ParameterValues, Profiles
 from . import diagnostics
 
 __all__ = ['Chain', 'Profiles', 'diagnostics']

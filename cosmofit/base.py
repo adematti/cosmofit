@@ -9,7 +9,7 @@ from mpytools import CurrentMPIComm, COMM_SELF
 
 from . import utils
 from .utils import BaseClass
-from .parameter import ParameterCollection, ParameterConfig
+from .parameter import Parameter, ParameterArray, ParameterCollection, ParameterConfig
 from .io import BaseConfig
 
 
@@ -276,8 +276,13 @@ class RuntimeInfo(BaseClass):
             for name, clsdict in calculator.requires.items():
                 self.requires[name] = CalculatorConfig(clsdict).init(namespace=namespace)
         self.full_params = full_params if full_params is not None else calculator.params
-        self.params = {param.basename: param.value for param in self.full_params}
         self.torun = True
+
+    @property
+    def base_params(self):
+        if getattr(self, '_base_params', None) is None:
+            self._base_params = {param.basename: param for param in self.full_params}
+        return self._base_params
 
     @property
     def torun(self):
@@ -292,6 +297,8 @@ class RuntimeInfo(BaseClass):
 
     @property
     def params(self):
+        if getattr(self, '_params', None) is None:
+            self._params = {param.basename: param.value for param in self.full_params if not param.derived}
         return self._params
 
     @params.setter
@@ -464,7 +471,6 @@ class BasePipeline(BaseClass):
                                 calc.runtime_info.full_params[calc_iparam].update(full_params[iparam])
 
         for calculator in self.calculators:
-            calculator.runtime_info.params = {param.basename: param.value for param in calculator.runtime_info.full_params}
             self.params.update(calculator.runtime_info.full_params)
             if not calculator.runtime_info.required_by:
                 self.end_calculators.append(calculator)
@@ -608,19 +614,35 @@ class LikelihoodPipeline(BasePipeline):
 
     def run(self, **params):
         super(LikelihoodPipeline, self).run(**params)
-        self.loglikelihoods = {}
+        from .samples import ParameterValues
+        from .samples.utils import metrics_to_latex
+        self.derived = ParameterValues()
+        for calculator in self.calculators:
+            if hasattr(calculator, 'derived'):
+                for name, value in calculator.derived().items():
+                    param = calculator.runtime_info.base_params.get(name, None)
+                    if param is not None:
+                        value = ParameterArray(value, param)
+                        self.derived.set(value)
+        self.loglikelihood = 0.
         for calculator in self.end_calculators:
-            self.loglikelihoods[calculator.runtime_info.name] = calculator.loglikelihood
-        self.loglikelihood = sum(loglike for loglike in self.loglikelihoods.values())
+            param = Parameter('loglikelihood', namespace=calculator.runtime_info.namespace, latex=metrics_to_latex('loglikelihood'), derived=True)
+            if param in self.derived:
+                raise PipelineError('loglikelihood is a reserved derived parameter name, do not use it!')
+            self.derived.set(ParameterArray(calculator.loglikelihood, param))
+            self.loglikelihood += calculator.loglikelihood
+        param = Parameter('loglikelihood', namespace=None, latex=metrics_to_latex('loglikelihood'), derived=True)
+        self.derived.set(ParameterArray(self.loglikelihood, param))
 
     def mpirun(self, **params):
         BaseCalculator.mpirun(self, **params)
-        self.loglikelihoods = {calculator.runtime_info.name: np.array([state['loglikelihoods'][calculator.runtime_info.name] for state in self.allstates]) for calculator in self.end_calculators}
+        from .samples import ParameterValues
+        self.derived = ParameterValues.concatenate([state['derived'] for state in self.allstates])
         self.loglikelihood = np.array([state['loglikelihood'] for state in self.allstates])
 
     def __getstate__(self):
         state = {}
-        for name in ['loglikelihoods', 'loglikelihood']:
+        for name in ['loglikelihood', 'derived']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
