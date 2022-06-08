@@ -348,7 +348,7 @@ class Parameter(BaseClass):
         self.latex = latex
         self.derived = bool(derived)
         if fixed is None:
-            fixed = not self.derived or (prior is None and ref is None)
+            fixed = self.derived or (prior is None and ref is None)
         self.fixed = bool(fixed)
         self.proposal = proposal
         if proposal is None:

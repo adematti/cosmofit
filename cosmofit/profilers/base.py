@@ -43,7 +43,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             mpicomm = likelihood.mpicomm
         self.mpicomm = mpicomm
         self.likelihood = likelihood
-        self.varied = self.likelihood.params.select(varied=True)
+        self.varied = self.likelihood.params.select(varied=True, derived=False)
         self.max_tries = int(max_tries)
         self.profiles = profiles
         if profiles is not None and not isinstance(profiles, Profiles):
@@ -62,6 +62,9 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         else:
             self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: self.derived[1][name] + di[name] for name in di}]
         toret = self.likelihood.loglikelihood
+        for array in self.likelihood.derived:
+            if array.param.varied:
+                toret += array.param.prior(array)
         if isscalar: toret = toret[0]
         return toret
 

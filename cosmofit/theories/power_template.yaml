@@ -1,11 +1,11 @@
-class: ShapeFitPrimordialPowerSpectrum
+class: ShapeFitPowerSpectrumTemplate
 
 info:
   version: 0.0.1
   date: 05/04/2021
   author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
-  description: Shapefit-parametrized linear power spectrum
+  description: Shapefit-parametrized template power spectrum
   url:
   licence:
   bibtex: []
@@ -14,7 +14,7 @@ info:
 
 init:
   a: 0.6
-  kpivot: 0.03
+  k_pivot: 0.03
 
 params:
   m:
@@ -30,3 +30,12 @@ params:
       dist: uniform
       limits: [-0.5, 0.5]
     latex: n
+  A_p_ref:
+    derived: True
+    latex: 'A_{p, \mathrm{ref}}'
+  m_ref:
+    derived: True
+    latex: 'm_{\mathrm{ref}}'
+  n_s_ref:
+    derived: True
+    latex: 'n_{s, \mathrm{ref}}'

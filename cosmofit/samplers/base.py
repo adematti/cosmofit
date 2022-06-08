@@ -100,6 +100,9 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
         else:
             self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: self.derived[1][name] + di[name] for name in di}]
         toret = self.likelihood.loglikelihood
+        for array in self.likelihood.derived:
+            if array.param.varied:
+                toret += array.param.prior(array)
         if isscalar: toret = toret[0]
         return toret
 

@@ -2,23 +2,9 @@ import re
 
 import numpy as np
 
-from cosmoprimo import PowerSpectrumBAOFilter
-
 from cosmofit.parameter import ParameterCollection
-from cosmofit.base import BaseCalculator
+from .power_template import PowerSpectrumNoWiggles
 from .base import BaseTheoryPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles
-
-
-class PowerSpectrumNoWiggles(BaseCalculator):
-
-    def __init__(self, zeff=1., engine='wallish2018'):
-        self.engine = engine
-        self.zeff = float(zeff)
-        self.requires = {'cosmo': ('BasePrimordialCosmology', {})}
-
-    def run(self):
-        self.power = self.cosmo.get_fourier().pk_interpolator().to_1d(z=self.zeff)
-        self.power_now = PowerSpectrumBAOFilter(self.power, engine=self.engine).smooth_pk_interpolator()
 
 
 class BaseBAOPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):

@@ -68,7 +68,10 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
         if self.mpicomm.rank == 0:
             self.log_info('Saving {}.'.format(filename))
             utils.mkdir(os.path.dirname(filename))
-            np.save(filename, {'requires': self.requires, **self.__getstate__()}, allow_pickle=True)
+            state = {}
+            for name in ['requires']:
+                state[name] = getattr(self, name)
+            np.save(filename, {**state, **self.__getstate__()}, allow_pickle=True)
 
     def mpirun(self, **params):
         self.allstates = []
@@ -474,7 +477,6 @@ class BasePipeline(BaseClass):
             self.params.update(calculator.runtime_info.full_params)
             if not calculator.runtime_info.required_by:
                 self.end_calculators.append(calculator)
-
         # Checks
         for param in self.params:
             if not any(param in calculator.runtime_info.full_params for calculator in self.calculators):
@@ -618,8 +620,8 @@ class LikelihoodPipeline(BasePipeline):
         from .samples.utils import metrics_to_latex
         self.derived = ParameterValues()
         for calculator in self.calculators:
-            if hasattr(calculator, 'derived'):
-                for name, value in calculator.derived().items():
+            if getattr(calculator, 'derived', None) is not None:
+                for name, value in calculator.derived(**calculator.runtime_info.params).items():
                     param = calculator.runtime_info.base_params.get(name, None)
                     if param is not None:
                         value = ParameterArray(value, param)

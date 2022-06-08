@@ -3,14 +3,14 @@ import numpy as np
 from velocileptors.LPT.lpt_rsd_fftw import LPT_RSD
 
 from .bao import BaseTheoryPowerSpectrumMultipoles
-from .linear_power import BasePrimordialPowerSpectrum  # to add calculator in the registry
+from .power_template import BasePowerSpectrumTemplate  # to add calculator in the registry
 
 
 class BasePTPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, **kwargs):
         super(BasePTPowerSpectrum, self).__init__(*args, **kwargs)
-        self.requires = {'effectap': ('EffectAP', {'zeff': self.zeff, 'fiducial': self.fiducial}), 'pklin': ('BasePrimordialPowerSpectrum', {'k': self.kin})}
+        self.requires = {'effectap': ('EffectAP', {'zeff': self.zeff, 'fiducial': self.fiducial}), 'pklin': ('BasePowerSpectrumTemplate', {'k': self.kin})}
 
 
 class LPTPowerSpectrum(BasePTPowerSpectrum):
@@ -23,7 +23,7 @@ class LPTPowerSpectrum(BasePTPowerSpectrum):
             growth_rate = params['fsigma8'] / self.sigma8
         else:
             growth_rate = self.pklin.growth_rate
-        self.lpt = LPT_RSD(self.kin, self.pklin.pkdd, kIR=0.2, cutoff=10, extrap_min=-4, extrap_max=3, N=2000, threads=1, jn=5)
+        self.lpt = LPT_RSD(self.kin, self.pklin.power_dd, kIR=0.2, cutoff=10, extrap_min=-4, extrap_max=3, N=2000, threads=1, jn=5)
         self.lpt.make_pltable(growth_rate, kv=self.k, apar=self.effectap.qpar, aperp=self.effectap.qper, ngauss=3)
         self.lpttable = [self.lpt.p0ktable, self.lpt.p2ktable, self.lpt.p4ktable]
 

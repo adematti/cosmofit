@@ -19,7 +19,7 @@ pipeline:
       class: cosmofit.theories.full_shape.LPTGalaxyPowerSpectrum
     lpt:
       class: cosmofit.theories.full_shape.LPTPowerSpectrum
-      load_fn: f'{output_dir}/emulator.npy'
+      #load_fn: f'{output_dir}/emulator.npy'
       emulator:
         save_fn: f'{output_dir}/emulator.npy'
       params:
@@ -30,7 +30,7 @@ pipeline:
             limits: [0.2, 0.8]
           latex: 'f\sigma_{8}'
     shapefit:
-      class: cosmofit.theories.linear_power.ShapeFitPrimordialPowerSpectrum
+      class: cosmofit.theories.power_template.ShapeFitPowerSpectrumTemplate
     effectap:
       class: cosmofit.theories.base.EffectAP
       init:
