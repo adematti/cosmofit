@@ -188,7 +188,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             return
         if getattr(self, 'sampler', None) is None:
             self._set_sampler()
-        nprocs_per_chain = max((self.mpicomm.size - 1) // niterations, 1)
+        nprocs_per_chain = max((self.mpicomm.size - 1) // self.nchains, 1)
         chains = [None] * self.nchains
         if self.mpicomm.bcast(self.chains[0] is not None, root=0):
             start = self.mpicomm.bcast([np.array([chain[param][-1] for param in self.varied]).T for chain in self.chains] if self.mpicomm.rank == 0 else None, root=0)
@@ -294,7 +294,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             # source: https://github.com/JohannesBuchner/autoemcee/blob/38feff48ae524280c8ea235def1f29e1649bb1b6/autoemcee.py#L337
             geweke = diagnostics.geweke(split_samples, self.varied, first=0.25, last=0.75)
             geweke_max = np.max(geweke)
-            msg = '{}Max Geweke is {:.3g}'.format(item, geweke_max)
+            msg = '{}max Geweke is {:.3g}'.format(item, geweke_max)
             if geweke_stop is not None:
                 test = geweke_max < geweke_stop
                 self.log_info('{} {} {:.3g}.'.format(msg, '<' if test else '>', geweke_stop))

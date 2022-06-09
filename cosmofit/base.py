@@ -399,7 +399,8 @@ class BasePipeline(BaseClass):
                         try:
                             tmpconfig = CalculatorConfig(config_fn, index={'class': cls.__name__})
                         except IndexError:  # no config for this class in config_fn
-                            self.log_info('No config for {} found in config file {}'.format(cls.__name__, config_fn))
+                            if self.mpicomm.rank == 0:
+                                self.log_info('No config for {} found in config file {}'.format(cls.__name__, config_fn))
                             config = config.deepcopy()
                         else:
                             config = tmpconfig.clone(config)
@@ -609,7 +610,8 @@ class LikelihoodPipeline(BasePipeline):
             likelihood_name = 'loglikelihood'
             if hasattr(calculator, likelihood_name):
                 end_calculators.append(calculator)
-                self.log_info('Found likelihood {}.'.format(calculator.runtime_info.name))
+                if self.mpicomm.rank == 0:
+                    self.log_info('Found likelihood {}.'.format(calculator.runtime_info.name))
                 loglikelihood = getattr(calculator, likelihood_name)
                 if not np.ndim(loglikelihood) == 0:
                     raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, likelihood_name))

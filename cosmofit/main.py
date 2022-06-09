@@ -32,7 +32,7 @@ def read_args(args=None, mpicomm=None, parser=None, section='sample'):
         parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('config_fn', type=str, help='Name of configuration file')
     parser.add_argument('--verbose', '-v', type=str, choices=['warning', 'info', 'debug'], default='info', help='Verbosity level')
-    parser.add_argument('--update', nargs='*', type=str, default=[], help='List of namespace1....name.key=value to update config file')
+    parser.add_argument('--update', nargs='*', type=str, default=[], help='List of namespace1.....key=value to update config file')
     args = parser.parse_args(args=args)
     if mpicomm.rank == 0:
         print(ascii_art(section))
