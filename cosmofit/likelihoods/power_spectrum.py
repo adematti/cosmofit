@@ -11,8 +11,11 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
     def __init__(self, covariance=None, data=None, klim=None, kstep=None, krebin=None, zeff=None, fiducial=None, wmatrix=None):
 
         def load_data(fn):
-            from pypower import PowerSpectrumStatistics
-            return PowerSpectrumStatistics.load(fn)
+            from pypower import MeshFFTPower, PowerSpectrumMultipoles
+            toret = MeshFFTPower.load(fn)
+            if hasattr(toret, 'poles'):
+                return toret.poles
+            return PowerSpectrumMultipoles.load(fn)
 
         def lim_data(power, klim=klim, kstep=kstep, krebin=krebin):
             if krebin is None:

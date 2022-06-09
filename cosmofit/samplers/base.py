@@ -77,7 +77,7 @@ class BaseSampler(BaseClass, metaclass=RegisteredSampler):
             mpicomm = likelihood.mpicomm
         self.mpicomm = mpicomm
         self.likelihood = likelihood
-        self.varied = self.likelihood.params.select(varied=True)
+        self.varied = self.likelihood.params.select(varied=True, derived=False)
         if chains is None: chains = max(self.mpicomm.size - 1, 1)
         if isinstance(chains, numbers.Number):
             self.chains = [None] * int(chains)

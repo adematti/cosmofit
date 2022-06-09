@@ -120,8 +120,12 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
                 self.kmask = np.concatenate([np.searchsorted(self.kin, kk, side='left') for kk in self.k], axis=0)
         else:
             if isinstance(wmatrix, str):
-                from pypower import BaseMatrix
-                wmatrix = BaseMatrix.load(wmatrix)
+                from pypower import MeshFFTWindow, BaseMatrix
+                wmatrix = MeshFFTWindow.load(wmatrix)
+                if hasattr(wmatrix, 'poles'):
+                    wmatrix = wmatrix.poles
+                else:
+                    wmatrix = BaseMatrix.load(wmatrix)
             wmatrix.select_proj(projsout=[(ellout, None) for ellout in self.ellsout])
             self.ellsin = []
             for proj in wmatrix.projsin:

@@ -28,4 +28,5 @@ setup(name=package_basename,
       install_requires=['numpy', 'scipy'],
       extras_require={'extras': ['cosmoprimo']},
       packages=[package_basename],
-      package_data={'cosmofit': list(get_yaml_files())})
+      package_data={'cosmofit': list(get_yaml_files())},
+      entry_points={'console_scripts': ['cosmofit=cosmofit.__main__:main']})

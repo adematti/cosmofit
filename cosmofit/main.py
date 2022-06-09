@@ -20,8 +20,8 @@ def ascii_art(section):
   / __/ _ \/ __| '_ ` _ \ / _ \|  _| | __|
  | (_| (_) \__ \ | | | | | (_) | | | | |_
   \___\___/|___/_| |_| |_|\___/|_| |_|\__|
-                                          """ + "\n"
-    + "{}\n".format(section)
+                                          """ + """\n"""\
+    + """{}\n""".format(section)\
     + """version: {}               date: {}\n""".format(__version__, datetime.date.today())
     return ascii_art
 
@@ -30,9 +30,9 @@ def ascii_art(section):
 def read_args(args=None, mpicomm=None, parser=None, section='sample'):
     if parser is None:
         parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('config_fn', action='store', type=str, help='Name of configuration file')
-    parser.add_argument('--verbose', '-v', action='verbosity', type=str, choices=['warning', 'info', 'debug'], default='info', help='Verbosity level')
-    parser.add_argument('--update', nargs='*', type=str, help='List of namespace1....name.key=value to update config file')
+    parser.add_argument('config_fn', type=str, help='Name of configuration file')
+    parser.add_argument('--verbose', '-v', type=str, choices=['warning', 'info', 'debug'], default='info', help='Verbosity level')
+    parser.add_argument('--update', nargs='*', type=str, default=[], help='List of namespace1....name.key=value to update config file')
     args = parser.parse_args(args=args)
     if mpicomm.rank == 0:
         print(ascii_art(section))

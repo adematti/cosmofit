@@ -8,10 +8,12 @@ commands['profile'] = ['main', 'profile_from_args']
 commands['summarize'] = ['main', 'summarize_from_args']
 commands['do'] = ['main', 'do_from_args']
 
-help_msg = ('Add one of the following commands and its arguments '
-            '(`<command> -h` for help): {}' % list(commands))
 
-if __name__ == '__main__':
+help_msg = ('Add one of the following commands and its arguments (`<command> -h` for help): {}'.format(list(commands)))
+
+
+def main():
+
     try:
         command_or_input = sys.argv[1].lower()
     except IndexError:  # no command
@@ -32,3 +34,8 @@ if __name__ == '__main__':
                 # no command --> assume run with input file as 1st arg (don't pop!)
                 module, func = commands['sample']
                 getattr(importlib.import_module('cosmofit.' + module), func)()
+
+
+if __name__ == '__main__':
+    
+    main()

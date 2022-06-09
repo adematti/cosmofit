@@ -5,7 +5,8 @@ import inspect
 import copy
 
 import numpy as np
-from mpytools import CurrentMPIComm, COMM_SELF
+from mpytools import CurrentMPIComm
+from mpi4py.MPI import COMM_SELF
 
 from . import utils
 from .utils import BaseClass

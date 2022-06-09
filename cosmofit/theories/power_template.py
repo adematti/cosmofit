@@ -63,7 +63,7 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         self.m = (np.diff(np.log(self.powernowiggles.power_now(k) / pk_prim)) / np.diff(np.log(k)))[0]
 
     def derived(self, m=0., n=0.):
-        return {'A_p_ref': self.A_p, 'm_ref': m + self.m, 'n_s_ref': n + self.ns}
+        return {'A_p_ref': self.A_p, 'm_ref': m + self.m, 'n_s_ref': n + self.n_s}
 
     def __getstate__(self):
         state = super(ShapeFitPowerSpectrumTemplate, self).__getstate__()

@@ -12,19 +12,22 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
         self.order = int(order)
         self.step_frac = float(step_frac)
         super(TaylorEmulatorEngine, self).__init__(pipeline=pipeline, **kwargs)
-
-    def fit(self):
+    
+    def sample(self):
         delta = [(self.limits[param][1] - self.limits[param][0]) / 2. * self.step_frac for param in self.centers]
         grid = [self.centers[param] + delta[iparam] * np.arange(-self.order, self.order + 1) for iparam, param in enumerate(self.centers)]
-        shape = tuple(value.size for value in grid)
         try:
             grid = [value.ravel() for value in np.meshgrid(*grid, indexing='ij')]
         except np.core._exceptions._ArrayMemoryError as exc:
             raise ValueError('Memory error: try decreasing the number of varied parameters or the order of the Taylor expansion') from exc
-        varied_values, self.fixed_values = self.mpirun_pipeline(**{str(param): values for param, values in zip(self.varied, grid)})
+        self.varied_X = grid
+        self.varied_Y, self.fixed_Y = self.mpirun_pipeline(**{str(param): values for param, values in zip(self.varied, self.varied_X)})
+
+    def fit(self):
+        shape = (2 * self.order + 1,) * len(self.varied_X) 
         ndim = len(shape)
         self.derivatives = {}
-        for name, values in varied_values.items():
+        for name, values in self.varied_Y.items():
             values = values.reshape(shape + values.shape[1:])
             center_index = (self.order,) * ndim
             self.derivatives[name] = [values[center_index]]  # F(x=center)
@@ -38,7 +41,7 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
     def predict(self, **params):
         diff = [params[param] - self.centers[param] for param in self.varied_names]
         ndim = len(diff)
-        toret = self.fixed_values.copy()
+        toret = self.fixed_Y.copy()
         for name in self.derivatives:
             toret[name] = self.derivatives[name][0].copy()
             prefactor = 1

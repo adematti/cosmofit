@@ -53,7 +53,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         self.centers, self.limits = {}, {}
         self.params = self.pipeline.params
         self.this_params = self.pipeline.end_calculators[0].runtime_info.full_params
-        self.varied = self.params.select(varied=True)
+        self.varied = self.params.select(varied=True, derived=False)
         self.varied_names = self.varied.names()
         for param in self.varied:
             name = str(param)
@@ -67,7 +67,13 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             return ('.'.join([self.__module__, self.__class__.__name__]), os.path.dirname(sys.modules[self.__module__].__file__))
 
         self._engine_cls = {'emulator': serialize_cls(self), 'calculator': serialize_cls(self.pipeline.end_calculators[0])}
+        self.sample()
         self.fit()
+    
+    def sample(self):
+        # Dumb sampling
+        self.varied_X = self.centers
+        self.varied_Y, self.fixed_Y = self.mpirun_pipeline(**self.varied_X)
 
     def mpirun_pipeline(self, **params):
         self.pipeline.mpirun(**params)
@@ -84,18 +90,17 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
                 if not np.issubdtype(dtype, np.inexact):
                     raise ValueError('Attribute {} is of type {}, which is not supported (only float and complex supported)'.format(name, dtype))
         return varied, fixed
-
+    
     def fit(self):
-        # Dumb fit
-        self.varied_values, self.fixed_values = self.mpirun_pipeline(**self.centers)
+        pass
 
     def predict(self, **params):
         # Dumb prediction
-        return {**self.fixed_values, **self.varied_values}
+        return {**self.fixed_Y, **self.varied_Y}
 
     def __getstate__(self):
         state = {}
-        for name in ['params', 'this_params', 'centers', 'varied_names', 'varied_values', 'fixed_values', '_engine_cls']:
+        for name in ['params', 'this_params', 'centers', 'varied_names', 'varied_X', 'varied_Y', 'fixed_Y', '_engine_cls']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
