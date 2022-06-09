@@ -9,7 +9,7 @@ from cosmofit.base import BaseConfig, BasePipeline, PipelineError, LikelihoodPip
 def test_config():
 
     config = BaseConfig('test_config.yaml')
-    assert config['pipeline']['namespace1']['like1']['init']['answer'] == '42is42{test}'
+    assert config['pipeline']['namespace1']['like1']['init']['answer'] == '42 or 42.00 is 42? {test}'
     assert np.allclose(config['pipeline']['namespace1']['theory1']['init']['k'], np.linspace(0., 10., 11))
 
 
@@ -115,7 +115,7 @@ if __name__ == '__main__':
 
     setup_logging('info')
 
-    # test_config()
+    test_config()
     # test_params()
     # test_pipeline()
     # test_likelihood()
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     # test_do()
     # test_summarize()
     # test_emulate()
-    test_emulate(config_fn='full_shape_pipeline.yaml')
+    # test_emulate(config_fn='full_shape_pipeline.yaml')
     # test_profile(config_fn='full_shape_pipeline.yaml')
     # test_sample(config_fn='full_shape_pipeline.yaml')
     # test_summarize(config_fn='full_shape_pipeline.yaml')

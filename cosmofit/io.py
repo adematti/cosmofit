@@ -159,10 +159,14 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
                     if placeholder.startswith('{{'):
                         word = word.replace(placeholder, placeholder[1:-1])
                     else:
-                        replace = self.search(placeholder[1:-1])
-                        freplace = decode_format(replace)
-                        if freplace is None: freplace = replace
-                        word = word.replace(placeholder, replace)
+                        keyfmt = placeholder[1:-1].split(':', 2)
+                        if len(keyfmt) == 2: key, fmt = keyfmt[0], ':' + keyfmt[1]
+                        else: key, fmt = keyfmt[0], ''
+                        freplace = replace = self.search(key)
+                        if isinstance(replace, str):
+                            freplace = decode_format(replace)
+                            if freplace is None: freplace = replace
+                        word = word.replace(placeholder, ('{' + fmt + '}').format(freplace))
                 return word
             return None
 

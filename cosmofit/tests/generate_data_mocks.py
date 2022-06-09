@@ -35,7 +35,7 @@ def run_box_mock(save_fn, pklin, unitary_amplitude=False, seed=42):
 def run_box_window(save_fn, poles_fn):
 
     edgesin = np.linspace(0., 0.5, 100)
-    window = MeshFFTWindow(edgesin=edgesin, power_ref=PowerSpectrumStatistics.load(poles_fn), los=los, periodic=True).poles
+    window = MeshFFTWindow(edgesin=edgesin, power_ref=PowerSpectrumStatistics.load(poles_fn), periodic=True).poles
     window.save(save_fn)
 
 
