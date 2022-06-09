@@ -13,7 +13,7 @@ pipeline:
         zeff: 2.0
         fiducial: DESI
       save_fn: f'{output_dir}/QSO.like.npy'
-      load_fn: True
+      #load_fn: True
       plot: f'{output_dir}/power.png'
     theory:
       class: cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum

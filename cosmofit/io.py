@@ -146,8 +146,23 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         def decode_eval(word):
             m = re.match(eval_re_pattern, word)
             if m:
-                return eval(m.group(1), {'np': np}, {})
-            return word
+                word = m.group(1)
+                placeholders = re.finditer(r'\{.*?\}', word)
+                word_letters = re.sub(r'[^a-zA-Z]', '', word)
+                di = {}
+                for placeholder in placeholders:
+                    placeholder = placeholder.group()
+                    key = placeholder[1:-1]
+                    freplace = replace = self.search(key)
+                    if isinstance(replace, str):
+                        freplace = decode_eval(replace)
+                        if freplace is None: freplace = replace
+                    key = '__variable_of_{}_{:d}__'.format(word_letters, len(di) + 1)
+                    assert key not in word
+                    di[key] = freplace
+                    word = word.replace(placeholder, key)
+                return eval(word, {'np': np}, di)
+            return None
 
         def decode_format(word):
             m = re.match(format_re_pattern, word)
@@ -196,12 +211,12 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         if delimiter is None:
             from .base import namespace_delimiter as delimiter
         namespaces = string.split(delimiter)
-        namespaces, name = namespaces[:-1], namespaces[-1]
+        namespaces, basename = namespaces[:-1], namespaces[-1]
         d = self.search(namespaces)
-        if inherit_type and name in d:
-            d[name] = type(d[name])(value)
+        if inherit_type and basename in d:
+            d[basename] = type(d[basename])(value)
         else:
-            d[name] = value
+            d[basename] = value
 
     def __copy__(self):
         import copy

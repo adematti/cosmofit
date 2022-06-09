@@ -121,11 +121,12 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
         else:
             if isinstance(wmatrix, str):
                 from pypower import MeshFFTWindow, BaseMatrix
-                wmatrix = MeshFFTWindow.load(wmatrix)
+                fn = wmatrix
+                wmatrix = MeshFFTWindow.load(fn)
                 if hasattr(wmatrix, 'poles'):
                     wmatrix = wmatrix.poles
                 else:
-                    wmatrix = BaseMatrix.load(wmatrix)
+                    wmatrix = BaseMatrix.load(fn)
             wmatrix.select_proj(projsout=[(ellout, None) for ellout in self.ellsout])
             self.ellsin = []
             for proj in wmatrix.projsin:

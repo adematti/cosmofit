@@ -10,7 +10,9 @@ pipeline:
           value: 1
           namespace: True  # by default
       init:
-        answer: f'{filesystem.answer_str} or {filesystem.answer_dig:.2f} is 42? {{test}}'
+        answer_str: f'{filesystem.answer_str} or {filesystem.answer_dig:.2f} is 42? {{test}}'
+        answer_int: e'{filesystem.answer_dig}'
+        answer_int_p2: e'{filesystem.answer_dig} + 2'
     theory1:
       class:
       params:

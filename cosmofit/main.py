@@ -37,12 +37,13 @@ def read_args(args=None, mpicomm=None, parser=None, section='sample'):
     if mpicomm.rank == 0:
         print(ascii_art(section))
     setup_logging(args.verbose)
-    config = BaseConfig(args.config_fn)
+    config = BaseConfig(args.config_fn, decode=False)
     for string in args.update:
         keyvalue = string.split('=')
         if len(keyvalue) != 2:
             raise ValueError('Provide updates as namespace1....name.key=value format')
         config.update_from_namespace(keyvalue[0], keyvalue[1], inherit_type=True)
+    config.decode()
     config['output'] = config.get('output', './')
     return config, args.config_fn
 
