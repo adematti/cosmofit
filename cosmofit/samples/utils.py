@@ -38,8 +38,8 @@ def nsigmas_to_deltachi2(nsigmas, ddof=1):
     return stats.chi2.ppf(quantile, ddof)  # inverse of cdf
 
 
-def metrics_to_latex(name):
-    """Turn metrics ``name`` to latex string."""
+def outputs_to_latex(name):
+    """Turn outputs ``name`` to latex string."""
     toret = txt_to_latex(name)
     for full, symbol in [('loglikelihood', 'L'), ('logposterior', '\\mathcal{L}'), ('logprior', 'p')]:
         toret = toret.replace(full, symbol)

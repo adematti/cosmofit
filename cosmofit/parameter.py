@@ -466,7 +466,7 @@ class BaseParameterCollection(BaseClass):
     """Class holding a collection of parameters."""
 
     _type = Parameter
-    _attrs = []
+    _attrs = ['attrs']
 
     @classmethod
     def _get_name(cls, item):
@@ -482,7 +482,7 @@ class BaseParameterCollection(BaseClass):
     def _get_param(cls, item):
         return item
 
-    def __init__(self, data=None):
+    def __init__(self, data=None, attrs=None):
         """
         Initialize :class:`ParameterCollection`.
 
@@ -508,13 +508,14 @@ class BaseParameterCollection(BaseClass):
             return
 
         if is_sequence(data):
-            data_ = data
+            data_ = datanew.data = self.data.copy()
             data = {}
             for item in data_:
                 data[self._get_name(item)] = item  # only name is provided
 
         for name, item in data.items():
             self[name] = item
+        self.attrs = dict(attrs or {})
 
     def __setitem__(self, name, item):
         """
@@ -745,7 +746,9 @@ class BaseParameterCollection(BaseClass):
 
     def __copy__(self):
         new = super(BaseParameterCollection, self).__copy__()
-        new.data = self.data.copy()
+        import copy
+        for name in ['data'] + self._attrs:
+            setattr(new, name, copy.copy(getattr(new, name)))
         return new
 
     def clear(self):

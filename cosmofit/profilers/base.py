@@ -43,7 +43,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             mpicomm = likelihood.mpicomm
         self.mpicomm = mpicomm
         self.likelihood = likelihood
-        self.varied = self.likelihood.params.select(varied=True, derived=False)
+        self.varied_params = self.likelihood.params.select(varied=True, derived=False)
         self.max_tries = int(max_tries)
         self.profiles = profiles
         if profiles is not None and not isinstance(profiles, Profiles):
@@ -55,7 +55,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         values = np.asarray(values)
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
-        di = {str(param): [value[iparam] for value in values] for iparam, param in enumerate(self.varied)}
+        di = {str(param): [value[iparam] for value in values] for iparam, param in enumerate(self.varied_params)}
         self.likelihood.mpirun(**di)
         if self.derived is None:
             self.derived = [self.likelihood.derived, di]
@@ -72,7 +72,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         values = np.asarray(values)
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
-        params = {str(param): np.array([value[iparam] for value in values]) for iparam, param in enumerate(self.varied)}
+        params = {str(param): np.array([value[iparam] for value in values]) for iparam, param in enumerate(self.varied_params)}
         toret = self.likelihood.logprior(**params)
         mask = ~np.isinf(toret)
         toret[mask] += self.loglikelihood(values[mask])
@@ -103,7 +103,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
         def get_start(size=1):
             toret = []
-            for param in self.varied:
+            for param in self.varied_params:
                 if param.ref.is_proper():
                     toret.append(param.ref.sample(size=size, random_state=self.rng))
                 else:
@@ -139,7 +139,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
                 self.derived = None
                 profile = self._run_one(start, **kwargs)
                 if profile.has('bestfit'):
-                    index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, name=self.varied.names())
+                    index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, name=self.varied_params.names())
                     assert index_in_profile[0].size == 1
                     for array in self.derived[0]:
                         profile.set(array[index])

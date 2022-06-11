@@ -34,8 +34,8 @@ def _make_list(obj, length=None, default=None):
     return obj
 
 
-def _get_default_chain_params(chains, varied=True, include_metrics=False, **kwargs):
-    list_params = [chain.names(varied=varied, include_metrics=include_metrics, **kwargs) for chain in chains]
+def _get_default_chain_params(chains, varied=True, outputs=False, **kwargs):
+    list_params = [chain.names(varied=varied, outputs=outputs, **kwargs) for chain in chains]
     return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]
 
 
@@ -297,8 +297,8 @@ def plot_triangle(chains, params=None, labels=None, fn=None, kw_save=None, **kwa
     return lax
 
 
-def _get_default_profiles_params(profiles, varied=True, include_metrics=False, **kwargs):
-    list_params = [profile.bestfit.names(varied=varied, include_metrics=include_metrics, **kwargs) for profile in profiles]
+def _get_default_profiles_params(profiles, varied=True, outputs=False, **kwargs):
+    list_params = [profile.bestfit.names(varied=varied, outputs=outputs, **kwargs) for profile in profiles]
     return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]
 
 

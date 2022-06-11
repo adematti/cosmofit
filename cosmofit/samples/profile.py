@@ -7,7 +7,7 @@ from mpi4py import MPI
 
 from cosmofit.utils import BaseClass, is_sequence
 from cosmofit.parameter import Parameter, ParameterArray, ParameterCollection, BaseParameterCollection
-from .utils import metrics_to_latex
+from .utils import outputs_to_latex
 from . import utils
 
 
@@ -16,12 +16,12 @@ class ParameterValues(BaseParameterCollection):
     """Class that holds samples drawn from likelihood."""
 
     _type = ParameterArray
-    _attrs = ['_enforce', 'metrics']
+    _attrs = BaseParameterCollection._attrs + ['_enforce', 'outputs']
 
-    def __init__(self, data=None, params=None, enforce=None, metrics=None):
+    def __init__(self, data=None, params=None, enforce=None, outputs=None, attrs=None):
         self.data = []
-        metrics = list(metrics or [])
-        self.metrics = set([str(name) for name in metrics])
+        outputs = list(outputs or [])
+        self.outputs = set([str(name) for name in outputs])
         self._enforce = enforce or {'ndmin': 1}
         if params is not None:
             if len(params) != len(data):
@@ -29,7 +29,11 @@ class ParameterValues(BaseParameterCollection):
             for param, value in zip(params, data):
                 self[param] = value
         else:
-            super(ParameterValues, self).__init__(data=data)
+            super(ParameterValues, self).__init__(data=data, attrs=attrs)
+
+    @property
+    def intputs(self):
+        return [name for name in self.names() if name not in self.outputs]
 
     @staticmethod
     def _get_param(item):
@@ -38,7 +42,7 @@ class ParameterValues(BaseParameterCollection):
     @property
     def shape(self):
         if len(self.data):
-            return self.data[0].shape
+            return self.data[self.inputs[0]].shape
         return ()
 
     @property
@@ -49,10 +53,13 @@ class ParameterValues(BaseParameterCollection):
     def __len__(self):
         return self.shape[0]
 
-    def params(self, include_metrics=True, **kwargs):
+    def params(self, outputs=None, **kwargs):
         params = super(ParameterValues, self).params(**kwargs)
-        if not include_metrics:
-            params = [param for param in params if str(param) not in self.metrics]
+        if outputs is not None:
+            if outputs:
+                params = [param for param in params if str(param) in self.outputs]
+            else:
+                params = [param for param in params if str(param) not in self.outputs]
         return params
 
     @classmethod
@@ -90,8 +97,8 @@ class ParameterValues(BaseParameterCollection):
             Parameter.
         """
         if not isinstance(item, self._type):
-            is_metrics = str(name) in self.metrics
-            param = Parameter(name, latex=metrics_to_latex(str(name)) if is_metrics else None, derived=is_metrics)
+            is_outputs = str(name) in self.outputs
+            param = Parameter(name, latex=outputs_to_latex(str(name)) if is_outputs else None, derived=is_outputs)
             if param in self:
                 param = self[param].param.clone(param)
             item = ParameterArray(item, param, **self._enforce)
@@ -149,6 +156,11 @@ class ParameterValues(BaseParameterCollection):
             for name in names: toret[name] = self[name]
             return toret
         return np.array([self[name] for name in names])
+
+    def to_dict(self, params=None):
+        if params is None:
+            params = self.params()
+        return {str(param): self[param] for param in params}
 
     @classmethod
     def bcast(cls, value, mpicomm=None, mpiroot=0):
@@ -215,7 +227,7 @@ class ParameterBestFit(ParameterValues):
     def __init__(self, *args, logposterior='logposterior', **kwargs):
         self._logposterior = logposterior
         super(ParameterBestFit, self).__init__(*args, **kwargs)
-        self.metrics.add(self._logposterior)
+        self.outputs.add(self._logposterior)
 
     @property
     def logposterior(self):

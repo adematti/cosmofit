@@ -10,7 +10,7 @@ from cosmofit.parameter import ParameterPriorError
 
 class EmulatorConfig(SectionConfig):
 
-    _sections = ['source', 'fit']
+    _sections = ['source', 'sample', 'fit']
 
     def run(self, pipeline):
         for calculator in pipeline.calculators:
@@ -53,9 +53,9 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         self.centers, self.limits = {}, {}
         self.params = self.pipeline.params
         self.this_params = self.pipeline.end_calculators[0].runtime_info.full_params
-        self.varied = self.params.select(varied=True, derived=False)
-        self.varied_names = self.varied.names()
-        for param in self.varied:
+        self.varied_params = self.params.select(varied=True, derived=False)
+        self.varied_names = self.varied_params.names()
+        for param in self.varied_params:
             name = str(param)
             self.centers[name] = param.value
             if param.ref.is_proper():
@@ -67,30 +67,30 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             return ('.'.join([self.__module__, self.__class__.__name__]), os.path.dirname(sys.modules[self.__module__].__file__))
 
         self._engine_cls = {'emulator': serialize_cls(self), 'calculator': serialize_cls(self.pipeline.end_calculators[0])}
-        self.sample()
-        self.fit()
-    
+
     def sample(self):
         # Dumb sampling
-        self.varied_X = self.centers
-        self.varied_Y, self.fixed_Y = self.mpirun_pipeline(**self.varied_X)
+        self.samples = self._mpirun_pipeline(self.centers)
 
-    def mpirun_pipeline(self, **params):
-        self.pipeline.mpirun(**params)
+    def _mpirun_pipeline(self, values):
+        samples = ParameterValues(values, params=self.varied_params)
+        self.pipeline.mpirun(**samples.to_dict())
         allstates = self.pipeline.allstates
         for calculator_name in allstates[0]: break
-        fixed, varied = {}, {}
         for name in allstates[0][calculator_name]:
+            param = Parameter(name)
+            if param in samples:
+                raise ValueError('Name {} already in samples'.format(param))
             values = np.asarray([s[calculator_name][name] for s in allstates])
             if all(np.all(value == values[0]) for value in values):
-                fixed[name] = values[0]
+                samples.attrs[name] = values[0]
             else:
-                varied[name] = np.asarray(values)
-                dtype = varied[name].dtype
+                samples[name] = values = np.asarray(values)
+                dtype = values.dtype
                 if not np.issubdtype(dtype, np.inexact):
                     raise ValueError('Attribute {} is of type {}, which is not supported (only float and complex supported)'.format(name, dtype))
-        return varied, fixed
-    
+        return samples
+
     def fit(self):
         pass
 

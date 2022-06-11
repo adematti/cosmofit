@@ -26,7 +26,7 @@ class Chain(ParameterValues):
         self._weight = weight
         super(Chain, self).__init__(data=data, params=params, **kwargs)
         for name in [self._logposterior, self._aweight, self._fweight, self._weight]:
-            self.metrics.add(name)
+            self.outputs.add(name)
 
     @property
     def aweight(self):
@@ -60,7 +60,7 @@ class Chain(ParameterValues):
 
     @property
     def weight(self):
-        return ParameterArray(self.aweight * self.fweight, Parameter(self._weight, latex=utils.metrics_to_latex(self._weight)))
+        return ParameterArray(self.aweight * self.fweight, Parameter(self._weight, latex=utils.outputs_to_latex(self._weight)))
 
     def ravel(self):
         new = self.copy()
@@ -222,10 +222,10 @@ class Chain(ParameterValues):
         """
         if params is None: params = self.names()
         columns = list([str(param) for param in params])
-        metrics_columns = [self._weight, self._logposterior]
-        for column in self.metrics:
+        outputs_columns = [self._weight, self._logposterior]
+        for column in self.outputs:
             if column in columns: del columns[columns.index(column)]
-        data = self.to_array(params=metrics_columns + columns, struct=False).reshape(-1, self.size)
+        data = self.to_array(params=outputs_columns + columns, struct=False).reshape(-1, self.size)
         data[1] *= -1
         data = data.T
         utils.mkdir(os.path.dirname(base_filename))
