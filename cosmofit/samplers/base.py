@@ -19,43 +19,52 @@ class SamplerConfig(SectionConfig):
     def __init__(self, *args, **kwargs):
         # cls, init kwargs
         super(SamplerConfig, self).__init__(*args, **kwargs)
-        self['class'] = import_cls(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseSampler._registry)
+        self['class'] = import_cls(self['class'], pythonpath=self.pop('pythonpath', None), registry=BasePosteriorSampler._registry)
+        self.is_posterior_sampler = issubclass(self['class'], BasePosteriorSampler)
 
-    def run(self, likelihood):
-        sampler = self['class'](likelihood, **self['init'])
+    def run(self, pipeline):
+        sampler = self['class'](pipeline, **self['init'])
         save_fn = self.get('save_fn', None)
-        check = self.get('check', {})
-        run_check = bool(check)
-        if isinstance(check, bool): check = {}
-        min_iterations = self['run'].get('min_iterations', 0)
-        max_iterations = self['run'].get('max_iterations', int(1e5) if run_check else sys.maxsize)
-        check_every = self['run'].get('check_every', 200)
 
-        run_kwargs = {}
-        for name in ['thin_by']:
-            if name in self['run']: run_kwargs = self['run'].get(name)
+        if self.is_posterior_sampler:
+            check = self.get('check', {})
+            run_check = bool(check)
+            if isinstance(check, bool): check = {}
+            min_iterations = self['run'].get('min_iterations', 0)
+            max_iterations = self['run'].get('max_iterations', sys.maxsize if run_check else int(1e5))
+            check_every = self['run'].get('check_every', 200)
 
-        if save_fn is not None:
-            if isinstance(save_fn, str):
-                save_fn = [save_fn.replace('*', '{}').format(i) for i in range(sampler.nchains)]
-            else:
-                if len(save_fn) != sampler.nchains:
-                    raise ConfigError('Provide {:d} chain file names'.format(sampler.nchains))
+            run_kwargs = {}
+            for name in ['thin_by']:
+                if name in self['run']: run_kwargs = self['run'].get(name)
 
-        count_iterations = 0
-        is_converged = False
-        while not is_converged:
-            niter = min(max_iterations - count_iterations, check_every)
-            count_iterations += niter
-            sampler.run(niterations=niter, **run_kwargs)
+            if save_fn is not None:
+                if isinstance(save_fn, str):
+                    save_fn = [save_fn.replace('*', '{}').format(i) for i in range(sampler.nchains)]
+                else:
+                    if len(save_fn) != sampler.nchains:
+                        raise ConfigError('Provide {:d} chain file names'.format(sampler.nchains))
+
+            count_iterations = 0
+            is_converged = False
+            while not is_converged:
+                niter = min(max_iterations - count_iterations, check_every)
+                count_iterations += niter
+                sampler.run(niterations=niter, **run_kwargs)
+                if save_fn is not None and sampler.mpicomm.rank == 0:
+                    for ichain in range(sampler.nchains):
+                        sampler.chains[ichain].save(save_fn[ichain])
+                is_converged = sampler.check(**check) if run_check else False
+                if count_iterations < min_iterations:
+                    is_converged = False
+                if count_iterations >= max_iterations:
+                    is_converged = True
+        else:
+            sampler.run(**self['run'])
             if save_fn is not None and sampler.mpicomm.rank == 0:
-                for ichain in range(sampler.nchains):
-                    sampler.chains[ichain].save(save_fn[ichain])
-            is_converged = sampler.check(**check) if run_check else False
-            if count_iterations < min_iterations:
-                is_converged = False
-            if count_iterations >= max_iterations:
-                is_converged = True
+                sampler.samples.save(save_fn)
+
+        return sampler
 
 
 class RegisteredSampler(type(BaseClass)):
@@ -107,7 +116,7 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
                 self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: self.derived[1][name] + di[name] for name in di}]
             toret = self.likelihood.loglikelihood
             for array in self.likelihood.derived:
-                if array.param.varied_params:
+                if array.param.varied:
                     toret += array.param.prior(array)
             if isscalar: toret = toret[0]
         return self.likelihood.mpicomm.bcast(toret, root=0)

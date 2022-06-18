@@ -74,7 +74,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=np.concatenate(poles, axis=0) if poles is not None else None, nobs=nobs)
         self.requires['theory'] = ('WindowedPowerSpectrumMultipoles', {'k': self.k, 'ellsout': self.ells, 'zeff': zeff, 'fiducial': fiducial, 'wmatrix': wmatrix})
 
-    def plot(self, fn=None, kw_save=None):
+    def plot(self, fn=None, labelsize=14, kw_save=None):
         from matplotlib import pyplot as plt
         height_ratios = [max(len(self.ells), 3)] + [1] * len(self.ells)
         figsize = (6, 1.5 * sum(height_ratios))
@@ -82,18 +82,18 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         fig.subplots_adjust(hspace=0)
         data, model, std = self.data, self.model, self.std
         for ill, ell in enumerate(self.ells):
-            lax[0].errorbar(self.k[ill], self.k[ill] * data[ill], yerr=self.k[ill] * std[ill], color='C{:d}'.format(ill), label=r'$\ell = {:d}$'.format(ell))
+            lax[0].errorbar(self.k[ill], self.k[ill] * data[ill], yerr=self.k[ill] * std[ill], color='C{:d}'.format(ill), linestyle='none', marker='o', label=r'$\ell = {:d}$'.format(ell))
         for ill, ell in enumerate(self.ells):
             lax[0].plot(self.k[ill], self.k[ill] * model[ill], color='C{:d}'.format(ill))
         for ill, ell in enumerate(self.ells):
             lax[ill + 1].plot(self.k[ill], (data[ill] - model[ill]) / std[ill], color='C{:d}'.format(ill))
             lax[ill + 1].set_ylim(-4, 4)
             for offset in [-2., 2.]: lax[ill + 1].axhline(offset, color='k', linestyle='--')
-            lax[ill + 1].set_ylabel(r'$\Delta P_{{{0:d}}} / \sigma_{{ P_{{{0:d}}} }}$'.format(ell))
+            lax[ill + 1].set_ylabel(r'$\Delta P_{{{0:d}}} / \sigma_{{ P_{{{0:d}}} }}$'.format(ell), fontsize=labelsize)
         for ax in lax: ax.grid(True)
         lax[0].legend()
-        lax[0].set_ylabel(r'$k P_{\ell}(k)$ [$(\mathrm{Mpc}/h)^{2}$]')
-        lax[-1].set_xlabel(r'$k$ [$h/\mathrm{Mpc}$]')
+        lax[0].set_ylabel(r'$k P_{\ell}(k)$ [$(\mathrm{Mpc}/h)^{2}$]', fontsize=labelsize)
+        lax[-1].set_xlabel(r'$k$ [$h/\mathrm{Mpc}$]', fontsize=labelsize)
         if fn is not None:
             plotting.savefig(fn, fig=fig, **(kw_save or {}))
         return lax

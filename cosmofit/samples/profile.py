@@ -19,6 +19,7 @@ class ParameterValues(BaseParameterCollection):
     _attrs = BaseParameterCollection._attrs + ['_enforce', 'outputs']
 
     def __init__(self, data=None, params=None, enforce=None, outputs=None, attrs=None):
+        self.attrs = dict(attrs or {})
         self.data = []
         outputs = list(outputs or [])
         self.outputs = set([str(name) for name in outputs])
@@ -32,7 +33,7 @@ class ParameterValues(BaseParameterCollection):
             super(ParameterValues, self).__init__(data=data, attrs=attrs)
 
     @property
-    def intputs(self):
+    def inputs(self):
         return [name for name in self.names() if name not in self.outputs]
 
     @staticmethod
@@ -42,7 +43,7 @@ class ParameterValues(BaseParameterCollection):
     @property
     def shape(self):
         if len(self.data):
-            return self.data[self.inputs[0]].shape
+            return self[self.inputs[0]].shape
         return ()
 
     @property

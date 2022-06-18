@@ -3,14 +3,15 @@ import sys
 
 import numpy as np
 
+from cosmofit.samples import ParameterValues
 from cosmofit.base import PipelineError, SectionConfig, import_cls
 from cosmofit.utils import BaseClass
-from cosmofit.parameter import ParameterPriorError
+from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError
 
 
 class EmulatorConfig(SectionConfig):
 
-    _sections = ['source', 'sample', 'fit']
+    _sections = ['source', 'init', 'fit']
 
     def run(self, pipeline):
         for calculator in pipeline.calculators:
@@ -19,13 +20,19 @@ class EmulatorConfig(SectionConfig):
                 emudict = calcdict['emulator']
                 if not isinstance(emudict, dict):
                     emudict = {'save_fn': emudict}
-                emudict = {**self, **emudict}
-                fitdict = {**self['fit'], **emudict.get('fit', {})}
-                save_fn = emudict.get('save_fn', self.get('save_fn', None))
-                if save_fn is None:
-                    save_fn = calcdict.get('save_fn', None)
-                cls = import_cls(emudict.get('class', None), pythonpath=emudict.get('pythonpath', None), registry=BaseEmulatorEngine._registry)
-                emulator = cls(pipeline.select(calculator, remove_namespace=True), **fitdict)
+                emudict = self.clone(EmulatorConfig(emudict))
+                save_fn = emudict.get('save_fn', calcdict.get('save_fn', None))
+                cls = import_cls(emudict['class'], pythonpath=emudict.get('pythonpath', None), registry=BaseEmulatorEngine._registry)
+                emulator = cls(pipeline.select(calculator), **emudict['init'])
+                sample = emudict.get('sample', {})
+                if not isinstance(sample, dict):
+                    sample = {'samples': sample}
+                elif 'class' in sample:
+                    from cosmofit.samplers import SamplerConfig
+                    config_sampler = SamplerConfig(sample)
+                    sample = {'samples': config_sampler.run(emulator.pipeline).samples}
+                emulator.set_samples(**sample)
+                emulator.fit(**emudict['fit'])
                 if save_fn is not None and emulator.mpicomm.rank == 0:
                     emulator.save(save_fn)
 
@@ -52,17 +59,16 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             raise PipelineError('For emulator, pipeline must have a single end calculator; use pipeline.select()')
         calculator = self.pipeline.end_calculators[0]
 
-        states = None
+        states = {}
         rng = np.random.RandomState(seed=42)
         for ii in range(3):
-            params = {str(param): param.ref.sample(random_state=rng) for param in self.pipeline.params}
+            params = {str(param): param.ref.sample(random_state=rng) for param in self.pipeline.params.select(varied=True)}
             self.pipeline.run(**params)
             for name, value in calculator.__getstate__().items():
                 states[name] = states.get(name, []) + [value]
 
-        self.fixed = {}
-        self.varied = []
-        for name in states:
+        self.fixed, self.varied = {}, []
+        for name, values in states.items():
             if all(np.all(value == values[0]) for value in values):
                 self.fixed[name] = values[0]
             else:
@@ -73,22 +79,30 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
 
         self.params = self.pipeline.params.clone(namespace=None)
         self.varied_params = self.params.select(varied=True, derived=False)
-        self.this_params = self.pipeline.end_calculators[0].runtime_info.full_params.clone(namespace=None)
+        self.this_params = calculator.runtime_info.full_params.clone(namespace=None)
+
+        for name in self.varied:
+            if name not in calculator.runtime_info.base_params:
+                param = Parameter(name, namespace=calculator.runtime_info.namespace, derived=True)
+                calculator.runtime_info.full_params.set(param)
+                calculator.runtime_info.full_params = calculator.runtime_info.full_params
 
         def serialize_cls(self):
             return ('.'.join([self.__module__, self.__class__.__name__]), os.path.dirname(sys.modules[self.__module__].__file__))
 
-        self._engine_cls = {'emulator': serialize_cls(self), 'calculator': serialize_cls(calculator[0])}
+        self._engine_cls = {'emulator': serialize_cls(self), 'calculator': serialize_cls(calculator)}
 
     def set_samples(self, samples=None, **kwargs):
         if self.mpicomm.bcast(samples is None, root=0):
             samples = self.get_default_samples(**kwargs)
+        elif self.mpicomm.rank == 0:
+            samples if isinstance(samples, ParameterValues) else ParameterValues.load(samples)
         if self.mpicomm.rank == 0:
             self.samples = ParameterValues()
             for param in self.pipeline.params.select(varied=True, derived=False):
                 self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)))
             for name in self.varied:
-                param = calculator.runtime_info.base_params[name]
+                param = self.pipeline.end_calculators[0].runtime_info.base_params[name]
                 self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)), output=True)
 
     def get_default_samples(self):

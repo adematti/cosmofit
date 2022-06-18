@@ -1,7 +1,6 @@
 import itertools
 
 import numpy as np
-from findiff import FinDiff
 
 from .base import BaseEmulatorEngine
 
@@ -10,16 +9,16 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
 
     def __init__(self, pipeline, order=4, **kwargs):
         self.order = int(order)
-        self.step_frac = float(step_frac)
         super(TaylorEmulatorEngine, self).__init__(pipeline=pipeline, **kwargs)
 
     def get_default_samples(self, scale=1e-2):
-        from cosmofit.samples import GridSampler
+        from cosmofit.samplers import GridSampler
         sampler = GridSampler(self.pipeline, ngrid=2 * self.order + 1, scale=scale)
         sampler.run()
         return sampler.samples
 
     def fit(self):
+        from findiff import FinDiff
         self.derivatives = {}
         ndim = len(self.varied_params)
         shape = tuple(self.samples.attrs['ngrid'])

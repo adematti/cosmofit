@@ -64,9 +64,11 @@ def sample_from_config(config, mpicomm=None):
 
     if 'pipeline' not in config:
         raise ConfigError('Provide pipeline')
-    likelihood = LikelihoodPipeline(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
 
-    return config_sampler.run(likelihood)
+    cls = LikelihoodPipeline if config_sampler.is_posterior_sampler else BasePipeline
+    pipeline = cls(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
+
+    return config_sampler.run(pipeline)
 
 
 @CurrentMPIComm.enable

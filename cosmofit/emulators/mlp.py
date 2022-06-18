@@ -2,7 +2,6 @@ import numpy as np
 import scipy as sp
 
 from .base import BaseEmulatorEngine
-from .qmc_engine import get_qmc_engine
 
 
 class MLPEmulatorEngine(BaseEmulatorEngine):
@@ -20,7 +19,7 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
         self.ytransform = str(ytransform)
 
     def get_default_samples(self, engine='rqrs', niterations=300):
-        from cosmofit.samples import QMCSampler
+        from cosmofit.samplers import QMCSampler
         sampler = QMCSampler(self.pipeline, engine=engine)
         sampler.run(niterations=niterations)
         return sampler.samples

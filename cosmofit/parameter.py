@@ -503,6 +503,7 @@ class BaseParameterCollection(BaseClass):
             self.__dict__.update(data.copy().__dict__)
             return
 
+        self.attrs = dict(attrs or {})
         self.data = []
         if data is None:
             return
@@ -515,7 +516,6 @@ class BaseParameterCollection(BaseClass):
 
         for name, item in data.items():
             self[name] = item
-        self.attrs = dict(attrs or {})
 
     def __setitem__(self, name, item):
         """
@@ -735,8 +735,8 @@ class BaseParameterCollection(BaseClass):
         """Return this class state dictionary."""
         state = {'data': [item.__getstate__() for item in self]}
         for name in self._attrs:
-            if hasattr(self, name):
-                state[name] = getattr(self, name)
+            #if hasattr(self, name):
+            state[name] = getattr(self, name)
         return state
 
     def __setstate__(self, state):
@@ -748,6 +748,7 @@ class BaseParameterCollection(BaseClass):
         new = super(BaseParameterCollection, self).__copy__()
         import copy
         for name in ['data'] + self._attrs:
+            # if hasattr(self, name):
             setattr(new, name, copy.copy(getattr(new, name)))
         return new
 
@@ -872,7 +873,7 @@ class ParameterCollection(BaseParameterCollection):
 
     """Class holding a collection of parameters."""
 
-    def __init__(self, data=None):
+    def __init__(self, data=None, attrs=None):
         """
         Initialize :class:`ParameterCollection`.
 
@@ -893,6 +894,7 @@ class ParameterCollection(BaseParameterCollection):
             self.__dict__.update(data.copy().__dict__)
             return
 
+        self.attrs = dict(attrs or {})
         self.data = []
         if data is None:
             return

@@ -13,6 +13,8 @@ from . import utils
 from .utils import BaseClass
 from .parameter import Parameter, ParameterArray, ParameterCollection, ParameterConfig
 from .io import BaseConfig
+from .samples import ParameterValues
+from .samples.utils import outputs_to_latex
 
 
 namespace_delimiter = '.'
@@ -80,7 +82,8 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
         names = self.mpicomm.bcast(params.keys() if self.mpicomm.rank == 0 else None, root=0)
         for name in names:
             params[name] = value = mpy.scatter(np.ravel(params[name]) if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0)
-        cumsize = np.cumsum([0] + self.mpicomm.allgather(len(value)))
+        size = len(value)
+        cumsize = np.cumsum([0] + self.mpicomm.allgather(size))
         if not cumsize[-1]: return
         mpicomm = self.mpicomm
         states = {}
@@ -95,7 +98,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             derived = {}
             for st in states:
                 derived.update(state)
-            derived = ParameterValues.concatenate([derived[i] for i in range(csize)])
+            derived = ParameterValues.concatenate([derived[i] for i in range(cumsize[-1])])
         self.runtime_info.derived = derived
 
     def __getstate__(self):
@@ -295,7 +298,7 @@ class RuntimeInfo(BaseClass):
             self._full_params = self.calculator.params
         return self._full_params
 
-    @property
+    @full_params.setter
     def full_params(self, full_params):
         self._full_params = full_params
         self._base_params = self._derived_params = self._params = None
@@ -319,7 +322,7 @@ class RuntimeInfo(BaseClass):
             if self.derived_params:
                 state = self.calculator.__getstate__()
                 for param in self.derived_params:
-                    name = str(param)
+                    name = param.basename
                     if name in state: value = state[name]
                     else: value = getattr(self.calculator, name)
                     self._derived.set(ParameterArray(value, param=param))
@@ -556,8 +559,6 @@ class BasePipeline(BaseClass):
                     calculator.runtime_info.torun = True
         for calculator in self.end_calculators:
             calculator.run(**calculator.runtime_info.params)
-        from .samples import ParameterValues
-        from .samples.utils import metrics_to_latex
         self.derived = ParameterValues()
         for calculator in self.calculators:
             self.derived.update(calculator.runtime_info.derived)
@@ -567,7 +568,8 @@ class BasePipeline(BaseClass):
         for name, value in params.items():
             value = mpy.scatter(np.ravel(value) if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0)
             params[name] = value
-        cumsize = np.cumsum([0] + self.mpicomm.allgather(len(value)))
+        size = len(value)
+        cumsize = np.cumsum([0] + self.mpicomm.allgather(size))
         if not cumsize[-1]: return
         mpicomm = self.mpicomm
         states = {}
@@ -580,9 +582,9 @@ class BasePipeline(BaseClass):
         states = self.mpicomm.gather(states, root=0)
         if self.mpicomm.rank == 0:
             derived = {}
-            for st in states:
+            for state in states:
                 derived.update(state)
-            derived = ParameterValues.concatenate([derived[i] for i in range(csize)])
+            derived = ParameterValues.concatenate([derived[i] for i in range(cumsize[-1])])
         self.derived = derived
 
     @property
@@ -666,9 +668,9 @@ class LikelihoodPipeline(BasePipeline):
         #     if not np.ndim(loglikelihood) == 0:
         #         raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, likelihood_name))
         # Select end_calculators with loglikelihood
+        likelihood_name = 'loglikelihood'
         end_calculators = []
         for calculator in self.end_calculators:
-            likelihood_name = 'loglikelihood'
             if hasattr(calculator, likelihood_name):
                 end_calculators.append(calculator)
                 if self.mpicomm.rank == 0:
@@ -677,19 +679,23 @@ class LikelihoodPipeline(BasePipeline):
                 if not np.ndim(loglikelihood) == 0:
                     raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, likelihood_name))
         self.__dict__.update(self.select(end_calculators).__dict__)
+        from .samples.utils import outputs_to_latex
         for calculator in self.end_calculators:
-            param = Parameter('loglikelihood', namespace=calculator.runtime_info.namespace, latex=metrics_to_latex('loglikelihood'), derived=True)
-            calculator.runtime_info.derived_params.set(param)
+            if likelihood_name not in calculator.runtime_info.base_params:
+                param = Parameter('loglikelihood', namespace=calculator.runtime_info.namespace, latex=outputs_to_latex('loglikelihood'), derived=True)
+                calculator.runtime_info.full_params.set(param)
+                calculator.runtime_info.full_params = calculator.runtime_info.full_params
+                self.params.set(param)
 
     def run(self, **params):
         super(LikelihoodPipeline, self).run(**params)
-        from .samples.utils import metrics_to_latex
+        from .samples.utils import outputs_to_latex
         loglikelihood = 0.
         for calculator in self.end_calculators:
-            loglikelihood += calculator.runtime_info.derived['loglikelihood']
-        param = Parameter('loglikelihood', namespace=None, latex=metrics_to_latex('loglikelihood'), derived=True)
+            loglikelihood += calculator.runtime_info.derived[calculator.runtime_info.base_params['loglikelihood']]
+        param = Parameter('loglikelihood', namespace=None, latex=outputs_to_latex('loglikelihood'), derived=True)
         if param in self.derived: raise PipelineError('loglikelihood is a reserved parameter name, do not use it!')
-        self.derived.set(ParameterArray(self.loglikelihood, param))
+        self.derived.set(ParameterArray(loglikelihood, param))
 
     @property
     def loglikelihood(self):

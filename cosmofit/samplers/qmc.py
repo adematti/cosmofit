@@ -1,6 +1,9 @@
+import numpy as np
+
 from scipy.stats import qmc
 from scipy.stats.qmc import Sobol, Halton, LatinHypercube
 
+from cosmofit.samples import ParameterValues
 from cosmofit.utils import BaseClass
 from .base import RegisteredSampler
 
@@ -12,6 +15,7 @@ class RQuasiRandomSequence(qmc.QMCEngine):
         self.seed = float(seed)
         phi = 1.0
         # This is the Newton's method, solving phi**(d+1) - phi - 1 = 0
+        eq_check = phi**(self.d + 1) - phi - 1
         while (np.abs(eq_check) > 1e-15):
             phi -= (phi**(self.d + 1) - phi - 1) / ((self.d + 1) * phi**self.d - 1)
             eq_check = phi**(self.d + 1) - phi - 1
@@ -44,7 +48,9 @@ class QMCSampler(BaseClass, metaclass=RegisteredSampler):
         self.pipeline = pipeline
         self.varied_params = self.pipeline.params.select(varied=True, derived=False)
         self.engine = get_qmc_engine(engine)(d=len(self.varied_params), **kwargs)
-        self.samples = samples
+        self.samples = None
+        if self.mpicomm.rank == 0 and samples is not None:
+            self.samples = samples if isinstance(samples, ParameterValues) else ParameterValues.load(samples)
 
     def run(self, niterations=300):
         lower, upper = [], []
