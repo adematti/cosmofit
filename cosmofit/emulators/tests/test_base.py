@@ -12,7 +12,7 @@ def test_base():
     pipeline['effectap'] = {'class': 'cosmofit.theories.base.EffectAP', 'init': {'mode': 'qparqper', 'fiducial': 'DESI'}}
     pipeline['cosmo'] = {'class': 'cosmofit.theories.primordial_cosmology.Cosmoprimo', 'params': {'fixed': '*'}}
     pipeline = BasePipeline(pipeline)
-    emulator = BaseEmulatorEngine(pipeline)
+    emulator = PointEmulatorEngine(pipeline)
     assert 'power' in emulator.predict()
     fn = os.path.join(emulator_dir, 'emu.npy')
     emulator.save(fn)

@@ -16,7 +16,7 @@ def get_chain(params, nwalkers=4, size=4000, seed=42):
     diff = array - mean
     logposterior = -0.5 * np.sum(diff.dot(invcov) * diff, axis=-1)
     chain = Chain(list(array.T) + [logposterior], params=params + ['logposterior'])
-    for iparam, param in enumerate(chain.params(include_metrics=False)):
+    for iparam, param in enumerate(chain.params(outputs=False)):
         param.fixed = False
         param.value = mean[iparam]
     return mean, cov, chain

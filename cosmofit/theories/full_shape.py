@@ -37,7 +37,11 @@ class LPTPowerSpectrum(BasePTPowerSpectrum):
         return np.array([np.sum(self.lpttable[[0, 2, 4].index(ell)] * bias_monomials, axis=-1) for ell in self.ells])
 
     def __getstate__(self):
-        return {'k': self.k, 'zeff': self.zeff, 'ells': self.ells, 'lpttable': self.lpttable}
+        state = {}
+        for name in ['k', 'zeff', 'ells', 'lpttable']:
+            if hasattr(self, name):
+                state[name] = getattr(self, name)
+        return state
 
 
 class LPTGalaxyPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
@@ -50,6 +54,3 @@ class LPTGalaxyPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
         if 'b1sigma8' in params:
             params['b1'] = params.pop('b1sigma8') / self.pt.sigma8
         self.power = self.pt.combine_bias_terms_power_poles(**params)
-        #print(params)
-        #if np.isnan(self.power).any():
-        #    exit()

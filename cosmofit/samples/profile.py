@@ -81,6 +81,11 @@ class ParameterValues(BaseParameterCollection):
             new[param] = np.concatenate([np.atleast_1d(other[param]) for other in others], axis=0)
         return new
 
+    def set(self, item, output=False):
+        super(ParameterValues, self).set(item)
+        if output:
+            self.outputs.add(self._get_name(item))
+
     def __setitem__(self, name, item):
         """
         Update parameter in collection (a parameter with same name must already exist).

@@ -46,61 +46,89 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         if mpicomm is None:
             mpicomm = pipeline.mpicomm
         self.mpicomm = mpicomm
-        self.pipeline = pipeline
-        if len(self.pipeline.end_calculators) > 1:
-            raise PipelineError('For emulator, pipeline must have a single end calculator')
+        self.pipeline = pipeline.copy()
         self.pipeline.mpicomm = mpicomm
-        self.centers, self.limits = {}, {}
-        self.params = self.pipeline.params
-        self.this_params = self.pipeline.end_calculators[0].runtime_info.full_params
-        self.varied_params = self.params.select(varied=True, derived=False)
-        self.varied_names = self.varied_params.names()
-        for param in self.varied_params:
-            name = str(param)
-            self.centers[name] = param.value
-            if param.ref.is_proper():
-                self.limits[name] = (param.value - param.proposal, param.value + param.proposal)
+        if len(self.pipeline.end_calculators) > 1:
+            raise PipelineError('For emulator, pipeline must have a single end calculator; use pipeline.select()')
+        calculator = self.pipeline.end_calculators[0]
+
+        states = None
+        rng = np.random.RandomState(seed=42)
+        for ii in range(3):
+            params = {str(param): param.ref.sample(random_state=rng) for param in self.pipeline.params}
+            self.pipeline.run(**params)
+            for name, value in calculator.__getstate__().items():
+                states[name] = states.get(name, []) + [value]
+
+        self.fixed = {}
+        self.varied = []
+        for name in states:
+            if all(np.all(value == values[0]) for value in values):
+                self.fixed[name] = values[0]
             else:
-                raise ParameterPriorError('Provide parameter limits or proposal')
+                self.varied.append(name)
+                dtype = np.asarray(values[0]).dtype
+                if not np.issubdtype(dtype, np.inexact):
+                    raise ValueError('Attribute {} is of type {}, which is not supported (only float and complex supported)'.format(name, dtype))
+
+        self.params = self.pipeline.params.clone(namespace=None)
+        self.varied_params = self.params.select(varied=True, derived=False)
+        self.this_params = self.pipeline.end_calculators[0].runtime_info.full_params.clone(namespace=None)
 
         def serialize_cls(self):
             return ('.'.join([self.__module__, self.__class__.__name__]), os.path.dirname(sys.modules[self.__module__].__file__))
 
-        self._engine_cls = {'emulator': serialize_cls(self), 'calculator': serialize_cls(self.pipeline.end_calculators[0])}
+        self._engine_cls = {'emulator': serialize_cls(self), 'calculator': serialize_cls(calculator[0])}
 
-    def sample(self):
-        # Dumb sampling
-        self.samples = self._mpirun_pipeline(self.centers)
+    def set_samples(self, samples=None, **kwargs):
+        if self.mpicomm.bcast(samples is None, root=0):
+            samples = self.get_default_samples(**kwargs)
+        if self.mpicomm.rank == 0:
+            self.samples = ParameterValues()
+            for param in self.pipeline.params.select(varied=True, derived=False):
+                self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)))
+            for name in self.varied:
+                param = calculator.runtime_info.base_params[name]
+                self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)), output=True)
 
-    def _mpirun_pipeline(self, values):
-        samples = ParameterValues(values, params=self.varied_params)
-        self.pipeline.mpirun(**samples.to_dict())
-        allstates = self.pipeline.allstates
-        for calculator_name in allstates[0]: break
-        for name in allstates[0][calculator_name]:
-            param = Parameter(name)
-            if param in samples:
-                raise ValueError('Name {} already in samples'.format(param))
-            values = np.asarray([s[calculator_name][name] for s in allstates])
-            if all(np.all(value == values[0]) for value in values):
-                samples.attrs[name] = values[0]
-            else:
-                samples[name] = values = np.asarray(values)
-                dtype = values.dtype
-                if not np.issubdtype(dtype, np.inexact):
-                    raise ValueError('Attribute {} is of type {}, which is not supported (only float and complex supported)'.format(name, dtype))
-        return samples
+    def get_default_samples(self):
+        raise NotImplementedError
 
     def fit(self):
-        pass
+        raise NotImplementedError
 
     def predict(self, **params):
-        # Dumb prediction
-        return {**self.fixed_Y, **self.varied_Y}
+        raise NotImplementedError
 
     def __getstate__(self):
         state = {}
-        for name in ['params', 'this_params', 'centers', 'varied_names', 'varied_X', 'varied_Y', 'fixed_Y', '_engine_cls']:
+        for name in ['params', 'this_params', 'fixed', 'varied', '_engine_cls']:
+            if hasattr(self, name):
+                state[name] = getattr(self, name)
+        return state
+
+    def to_calculator(self):
+        return BaseEmulator.from_state(self.__getstate__())
+
+
+
+class PointEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
+
+    def get_default_samples(self):
+        from cosmofit.samples import GridSampler
+        sampler = GridSampler(self.pipeline, ngrid=1).run()
+        return sampler.samples
+
+    def fit(self):
+        self.point = {name: np.asarray(self.samples[name][0]) for name in self.samples.outputs}
+
+    def predict(self, **params):
+        # Dumb prediction
+        return {**self.fixed, **self.point}
+
+    def __getstate__(self):
+        state = super(PointEmulatorEngine, self).__getstate__()
+        for name in ['varied']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -120,7 +148,7 @@ class BaseEmulator(BaseClass):
         clsdict = {}
 
         def new_run(self, **params):
-            self.__dict__.update(EmulatorEngine.predict(self, **params))
+            Calculator.__setstate__(self, EmulatorEngine.predict(self, **params))
 
         clsdict = {'run': new_run}
 

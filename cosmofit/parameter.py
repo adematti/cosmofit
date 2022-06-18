@@ -956,6 +956,11 @@ class ParameterCollection(BaseParameterCollection):
                 indices = [self.index(name) for name in list_update]
                 for index in indices:
                     self.data[index] = self.data[index].clone(namespace=namespace)
+                names = {}
+                for param in self.data: names[param.name] = names.get(param.name, 0) + 1
+                duplicates = {name: multiplicity for basename, multiplicity in names.items() if multiplicity > 1}
+                if duplicates:
+                    raise ValueError('Cannot update namespace, as following duplicates found: {}'.format(duplicates))
         else:
             raise ValueError('Unrecognized arguments {}'.format(args))
 

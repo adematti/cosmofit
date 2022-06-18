@@ -34,7 +34,7 @@ class BasePowerSpectrumTemplate(BaseCalculator):
 
     def __getstate__(self):
         state = {}
-        for name in ['k', 'zeff', 'growth_rate', 'sigma8', 'pkdd']:
+        for name in ['k', 'zeff', 'growth_rate', 'sigma8', 'power_dd']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -52,21 +52,18 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         super(ShapeFitPowerSpectrumTemplate, self).run()
         factor = m / self.a * np.tanh(self.a * np.log(self.k / self.k_pivot)) + n * np.log(self.k / self.k_pivot)
         self.power_dd *= np.exp(factor)
-        self.A_p = self.powernowiggles.power_now(self.k_pivot)
-        self.n_s = self.cosmo.n_s
+        self.A_p_ref = self.powernowiggles.power_now(self.k_pivot)
+        self.n_s_ref = n + self.cosmo.n_s
         dk = 1e-3
         k = self.k_pivot * np.array([1. - dk, 1. + dk])
         if self.params['n'].varied:
             pk_prim = self.cosmo.get_primordial().pk_interpolator()(k)
         else:
             pk_prim = 1.
-        self.m = (np.diff(np.log(self.powernowiggles.power_now(k) / pk_prim)) / np.diff(np.log(k)))[0]
-
-    def derived(self, m=0., n=0.):
-        return {'A_p_ref': self.A_p, 'm_ref': m + self.m, 'n_s_ref': n + self.n_s}
+        self.m_ref = m + (np.diff(np.log(self.powernowiggles.power_now(k) / pk_prim)) / np.diff(np.log(k)))[0]
 
     def __getstate__(self):
         state = super(ShapeFitPowerSpectrumTemplate, self).__getstate__()
-        for name in ['A_p', 'n_s', 'm']:
+        for name in ['A_p_ref', 'n_s_ref', 'm_ref']:
             state[name] = getattr(self, name)
         return state

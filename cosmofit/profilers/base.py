@@ -57,16 +57,18 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         values = np.atleast_2d(values)
         di = {str(param): [value[iparam] for value in values] for iparam, param in enumerate(self.varied_params)}
         self.likelihood.mpirun(**di)
-        if self.derived is None:
-            self.derived = [self.likelihood.derived, di]
-        else:
-            self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: self.derived[1][name] + di[name] for name in di}]
-        toret = self.likelihood.loglikelihood
-        for array in self.likelihood.derived:
-            if array.param.varied:
-                toret += array.param.prior(array)
-        if isscalar: toret = toret[0]
-        return toret
+        toret = None
+        if self.likelihood.mpicomm.rank == 0:
+            if self.derived is None:
+                self.derived = [self.likelihood.derived, di]
+            else:
+                self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: self.derived[1][name] + di[name] for name in di}]
+            toret = self.likelihood.loglikelihood
+            for array in self.likelihood.derived:
+                if array.param.varied:
+                    toret += array.param.prior(array)
+            if isscalar: toret = toret[0]
+        return self.likelihood.mpicomm.bcast(toret, root=0)
 
     def logposterior(self, values):
         values = np.asarray(values)
@@ -138,13 +140,14 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
                 start = self._get_start()
                 self.derived = None
                 profile = self._run_one(start, **kwargs)
-                if profile.has('bestfit'):
-                    index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, name=self.varied_params.names())
-                    assert index_in_profile[0].size == 1
-                    for array in self.derived[0]:
-                        profile.set(array[index])
-                        if array.param.basename == 'loglikelihood':
-                            profile.bestfit.metrics.add(array.param.name)
+                if self.likelihood.mpicomm.rank == 0:
+                    if profile.has('bestfit'):
+                        index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, name=self.varied_params.names())
+                        assert index_in_profile[0].size == 1
+                        for array in self.derived[0]:
+                            profile.set(array[index], output=True)
+                else:
+                    profile = None
                 profiles[ii] = profile
         for iprofile, profile in enumerate(profiles):
             mpiroot_worker = self.mpicomm.rank if profile is not None else None

@@ -5,6 +5,7 @@ import inspect
 import copy
 
 import numpy as np
+import mpytools as mpy
 from mpytools import CurrentMPIComm
 from mpi4py.MPI import COMM_SELF
 
@@ -75,23 +76,27 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             np.save(filename, {**state, **self.__getstate__()}, allow_pickle=True)
 
     def mpirun(self, **params):
-        self.allstates = []
         value = []
-        for name, value in params.items():
-            value = np.ravel(value)
-            params[name] = value
-        csize = len(value)
-        if not csize: return
+        names = self.mpicomm.bcast(params.keys() if self.mpicomm.rank == 0 else None, root=0)
+        for name in names:
+            params[name] = value = mpy.scatter(np.ravel(params[name]) if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0)
+        cumsize = np.cumsum([0] + self.mpicomm.allgather(len(value)))
+        if not cumsize[-1]: return
         mpicomm = self.mpicomm
         states = {}
-        for ivalue in range(self.mpicomm.rank * csize // self.mpicomm.size, (self.mpicomm.rank + 1) * csize // self.mpicomm.size):
+        for ivalue in range(size):
             self.mpicomm = COMM_SELF
             self.run(**{name: value[ivalue] for name, value in params.items()})
-            states[ivalue] = self.__getstate__()
+            states[ivalue + cumsize[mpicomm.rank]] = self.runtime_info.derived
         self.mpicomm = mpicomm
-        allstates = {}
-        for state in self.mpicomm.allgather(states): allstates.update(state)
-        self.allstates = [allstates[i] for i in range(csize)]
+        derived = None
+        states = self.mpicomm.gather(states, root=0)
+        if self.mpicomm.rank == 0:
+            derived = {}
+            for st in states:
+                derived.update(state)
+            derived = ParameterValues.concatenate([derived[i] for i in range(csize)])
+        self.runtime_info.derived = derived
 
     def __getstate__(self):
         return {}
@@ -279,14 +284,50 @@ class RuntimeInfo(BaseClass):
             self.requires = {}
             for name, clsdict in calculator.requires.items():
                 self.requires[name] = CalculatorConfig(clsdict).init(namespace=namespace)
-        self.full_params = full_params if full_params is not None else calculator.params
+        if full_params is not None:
+            self.full_params = full_params
         self.torun = True
+        self.calculator = calculator
+
+    @property
+    def full_params(self):
+        if getattr(self, '_full_params', None) is None:
+            self._full_params = self.calculator.params
+        return self._full_params
+
+    @property
+    def full_params(self, full_params):
+        self._full_params = full_params
+        self._base_params = self._derived_params = self._params = None
 
     @property
     def base_params(self):
         if getattr(self, '_base_params', None) is None:
             self._base_params = {param.basename: param for param in self.full_params}
         return self._base_params
+
+    @property
+    def derived_params(self):
+        if getattr(self, '_derived_params', None) is None:
+            self._derived_params = self.full_params.select(derived=True)
+        return self._derived_params
+
+    @property
+    def derived(self):
+        if self.torun or getattr(self, '_derived', None) is None:
+            self._derived = ParameterValues()
+            if self.derived_params:
+                state = self.calculator.__getstate__()
+                for param in self.derived_params:
+                    name = str(param)
+                    if name in state: value = state[name]
+                    else: value = getattr(self.calculator, name)
+                    self._derived.set(ParameterArray(value, param=param))
+        return self._derived
+
+    @derived.setter
+    def derived(self, derived):
+        self._derived = derived
 
     @property
     def torun(self):
@@ -317,7 +358,10 @@ class RuntimeInfo(BaseClass):
         return self.basename
 
     def update(self, *args, **kwargs):
-        self.__dict__.update(*args, **kwargs)
+        state = {}
+        state.update(*args, **kwargs)
+        for name, value in state.items():
+            setattr(self, name, value)
 
     def clone(self, *args, **kwargs):
         new = self.copy()
@@ -512,12 +556,34 @@ class BasePipeline(BaseClass):
                     calculator.runtime_info.torun = True
         for calculator in self.end_calculators:
             calculator.run(**calculator.runtime_info.params)
+        from .samples import ParameterValues
+        from .samples.utils import metrics_to_latex
+        self.derived = ParameterValues()
+        for calculator in self.calculators:
+            self.derived.update(calculator.runtime_info.derived)
 
     def mpirun(self, **params):
-        BaseCalculator.mpirun(self, **params)
-
-    def __getstate__(self):
-        return {calculator.runtime_info.name: calculator.__getstate__() for calculator in self.end_calculators}
+        value = []
+        for name, value in params.items():
+            value = mpy.scatter(np.ravel(value) if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0)
+            params[name] = value
+        cumsize = np.cumsum([0] + self.mpicomm.allgather(len(value)))
+        if not cumsize[-1]: return
+        mpicomm = self.mpicomm
+        states = {}
+        for ivalue in range(size):
+            self.mpicomm = COMM_SELF
+            self.run(**{name: value[ivalue] for name, value in params.items()})
+            states[ivalue + cumsize[mpicomm.rank]] = self.derived
+        self.mpicomm = mpicomm
+        derived = None
+        states = self.mpicomm.gather(states, root=0)
+        if self.mpicomm.rank == 0:
+            derived = {}
+            for st in states:
+                derived.update(state)
+            derived = ParameterValues.concatenate([derived[i] for i in range(csize)])
+        self.derived = derived
 
     @property
     def mpicomm(self):
@@ -542,6 +608,7 @@ class BasePipeline(BaseClass):
         for calculator in new.calculators:
             calculator.runtime_info.required_by = set([new.calculators[self.calculators.index(calc)] for calc in calculator.runtime_info.required_by])
             calculator.runtime_info.requires = {name: new.calculators[self.calculators.index(calc)] for name, calc in calculator.runtime_info.requires.items()}
+            calculator.runtime_info.calculator = calculator
         new.end_calculators = [new.calculators[self.calculators.index(calc)] for calc in self.end_calculators]
         new.params = self.params.copy()
         return new
@@ -578,18 +645,12 @@ class BasePipeline(BaseClass):
         for calculator in new.calculators:
             new.params.update(calculator.runtime_info.full_params)
 
-        if remove_namespace:
-            basenames = {}
-            for param in new.params: basenames[param.basename] = basenames.get(param.basename, 0) + 1
-            duplicates = {basename: multiplicity for basename, multiplicity in basenames.items() if multiplicity > 1}
-            if duplicates:
-                raise PipelineError('Cannot remove namespace, as following duplicates found: {}'.format(duplicates))
-            new.params = ParameterCollection()
-            for calculator in new.calculators:
-                calculator.runtime_info = calculator.runtime_info.clone(full_params=calculator.runtime_info.full_params.clone(namespace=None))
-                new.params.update(calculator.runtime_info.full_params)
-
         return new
+
+    def remove_namespace(self):
+        self.params = self.params.clone(namespace=None)
+        for calculator in self.calculators:
+            calculator.runtime_info = calculator.runtime_info.clone(full_params=calculator.runtime_info.full_params.clone(namespace=None))
 
 
 class LikelihoodPipeline(BasePipeline):
@@ -616,41 +677,23 @@ class LikelihoodPipeline(BasePipeline):
                 if not np.ndim(loglikelihood) == 0:
                     raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, likelihood_name))
         self.__dict__.update(self.select(end_calculators).__dict__)
+        for calculator in self.end_calculators:
+            param = Parameter('loglikelihood', namespace=calculator.runtime_info.namespace, latex=metrics_to_latex('loglikelihood'), derived=True)
+            calculator.runtime_info.derived_params.set(param)
 
     def run(self, **params):
         super(LikelihoodPipeline, self).run(**params)
-        from .samples import ParameterValues
         from .samples.utils import metrics_to_latex
-        self.derived = ParameterValues()
-        for calculator in self.calculators:
-            if getattr(calculator, 'derived', None) is not None:
-                for name, value in calculator.derived(**calculator.runtime_info.params).items():
-                    param = calculator.runtime_info.base_params.get(name, None)
-                    if param is not None:
-                        value = ParameterArray(value, param)
-                        self.derived.set(value)
-        self.loglikelihood = 0.
+        loglikelihood = 0.
         for calculator in self.end_calculators:
-            param = Parameter('loglikelihood', namespace=calculator.runtime_info.namespace, latex=metrics_to_latex('loglikelihood'), derived=True)
-            if param in self.derived:
-                raise PipelineError('loglikelihood is a reserved derived parameter name, do not use it!')
-            self.derived.set(ParameterArray(calculator.loglikelihood, param))
-            self.loglikelihood += calculator.loglikelihood
+            loglikelihood += calculator.runtime_info.derived['loglikelihood']
         param = Parameter('loglikelihood', namespace=None, latex=metrics_to_latex('loglikelihood'), derived=True)
+        if param in self.derived: raise PipelineError('loglikelihood is a reserved parameter name, do not use it!')
         self.derived.set(ParameterArray(self.loglikelihood, param))
 
-    def mpirun(self, **params):
-        BaseCalculator.mpirun(self, **params)
-        from .samples import ParameterValues
-        self.derived = ParameterValues.concatenate([state['derived'] for state in self.allstates])
-        self.loglikelihood = np.array([state['loglikelihood'] for state in self.allstates])
-
-    def __getstate__(self):
-        state = {}
-        for name in ['loglikelihood', 'derived']:
-            if hasattr(self, name):
-                state[name] = getattr(self, name)
-        return state
+    @property
+    def loglikelihood(self):
+        return self.derived['loglikelihood']
 
     def logprior(self, **params):
         logprior = 0.
