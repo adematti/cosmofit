@@ -19,40 +19,45 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
 
     def fit(self):
         from findiff import FinDiff
-        self.derivatives = {}
-        ndim = len(self.varied_params)
-        shape = tuple(self.samples.attrs['ngrid'])
-        center_index = tuple([s // 2 for s in shape])
-        axes, delta, self.centers = [], [], {}
-        for param in self.varied_params:
-            values = samples[param]
-            values = values.reshape(shape)
-            for axis in range(len(shape)):
-                if shape[axis] > 1:
-                    dd = np.take(values, 1, axis=axis) - np.take(values, 0, axis=axis)
-                    found = dd > 0
-                    if found:
-                        delta.append(dd)
-                        axes.append(axis)
-            if found and shape[axis] < 2 * self.order + 1:
-                raise ValueError('Grid is not large enough ({:d}) for parameter {} (axis {:d}) to estimate {:d}-nth order derivative'.format(shape[axis], param, axis, self.order))
-            if not found and self.order > 0:
-                raise ValueError('Parameter {} has not been sampled, hence impossible to estimate {:d}-nth order derivative'.format(param, self.order))
-            self.centers[str(param)] = values[center_index]
+        self.centers, self.derivatives = {}, {}
+        if self.mpicomm.rank == 0:
+            ndim = len(self.varied_params)
+            shape = tuple(self.samples.attrs['ngrid'])
+            center_index = tuple([s // 2 for s in shape])
+            axes, delta = [], []
+            for param in self.varied_params:
+                values = self.samples[param]
+                values = values.reshape(shape)
+                for axis in range(len(shape)):
+                    if shape[axis] > 1:
+                        dd = (np.take(values, 1, axis=axis) - np.take(values, 0, axis=axis)).flat[0]
+                        found = dd > 0
+                        if found:
+                            delta.append(dd)
+                            axes.append(axis)
+                            break
+                if found and shape[axis] < 2 * self.order + 1:
+                    raise ValueError('Grid is not large enough ({:d}) for parameter {} (axis {:d}) to estimate {:d}-nth order derivative'.format(shape[axis], param, axis, self.order))
+                if not found and self.order > 0:
+                    raise ValueError('Parameter {} has not been sampled, hence impossible to estimate {:d}-nth order derivative'.format(param, self.order))
+                self.centers[str(param)] = values[center_index]
 
-        for name in self.varied:
-            values = samples[param]
-            values = values.reshape(shape + values.shape[1:])
-            self.derivatives[name] = [values[center_index]]  # F(x=center)
-            for order in range(1, self.order + 1):
-                deriv = []
-                for indices in itertools.product(np.arange(ndim), repeat=order):
-                    dx = FinDiff(*[(axes[ii], delta[ii], 1) for ii in indices])
-                    deriv.append(dx(values)[center_index])
-                self.derivatives[name].append(deriv)
+            for name in self.varied:
+                values = self.samples[name]
+                values = values.reshape(shape + values.shape[1:])
+                self.derivatives[name] = [values[center_index]]  # F(x=center)
+                for order in range(1, self.order + 1):
+                    deriv = []
+                    for indices in itertools.product(np.arange(ndim), repeat=order):
+                        dx = FinDiff(*[(axes[ii], delta[ii], 1) for ii in indices])
+                        deriv.append(dx(values)[center_index])
+                    self.derivatives[name].append(deriv)
+
+        self.derivatives = self.mpicomm.bcast(self.derivatives, root=0)
+        self.centers = self.mpicomm.bcast(self.centers, root=0)
 
     def predict(self, **params):
-        diff = [params[param] - self.centers[param] for param in self.varied_names]
+        diff = [params[param] - self.centers[param] for param in self.varied_params]
         ndim = len(diff)
         toret = self.fixed.copy()
         for name in self.derivatives:

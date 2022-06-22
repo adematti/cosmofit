@@ -785,7 +785,7 @@ class BaseParameterCollection(BaseClass):
 
 class ParameterConfig(BaseConfig):
 
-    _attrs = BaseConfig._attrs + ['fixed', 'namespace']
+    _attrs = BaseConfig._attrs + ['fixed', 'derived', 'namespace']
 
     def __init__(self, data=None, **kwargs):
         if isinstance(data, self.__class__):
@@ -793,12 +793,12 @@ class ParameterConfig(BaseConfig):
             return
         super(ParameterConfig, self).__init__(data=data, **kwargs)
         data = self.copy()
-        self.namespace, self.fixed = {}, {}
-        for meta_name, meta_default in zip(['fixed', 'varied', 'namespace'], [[], [], '*']):
+        self.fixed, self.derived, self.namespace = {}, {}, {}
+        for meta_name, meta_default in zip(['fixed', 'varied', 'derived', 'namespace'], [[], [], [], '*']):
             meta = data.pop(meta_name, meta_default)
             if not is_sequence(meta): meta = [meta]
-            if meta_name == 'namespace':
-                self.namespace.update({name: True for name in meta})
+            if meta_name in ['derived', 'namespace']:
+                getattr(self, meta_name).update({name: True for name in meta})
             else:
                 self.fixed.update({name: meta_name == 'fixed' for name in meta})
         self.data = {}
@@ -813,7 +813,7 @@ class ParameterConfig(BaseConfig):
                     name = base.namespace_delimiter.join([namespace, name])
                     tmp['namespace'] = False
                 self[name] = tmp
-                for meta_name in ['fixed', 'namespace']:
+                for meta_name in ['fixed', 'derived', 'namespace']:
                     meta = getattr(self, meta_name)
                     found = meta_name in tmp
                     param_meta = tmp.pop(meta_name, None)
@@ -839,9 +839,8 @@ class ParameterConfig(BaseConfig):
                 toret[name] = value
             return toret
 
-        self.fixed = update_order(self.fixed, other.fixed)
-        self.namespace = update_order(self.namespace, other.namespace)
-        for meta_name in ['fixed', 'namespace']:
+        for meta_name in ['fixed', 'derived', 'namespace']:
+            setattr(self, meta_name, update_order(getattr(self, meta_name), getattr(other, meta_name)))
             meta = getattr(self, meta_name)
             for name in self:
                 for tmpname in meta:
@@ -861,7 +860,7 @@ class ParameterConfig(BaseConfig):
             if param['namespace']:
                 name = base.namespace_delimiter.join([namespace, name])
             new[name] = newparam
-        for meta_name in ['fixed', 'namespace']:
+        for meta_name in ['fixed', 'derived', 'namespace']:
             setattr(new, meta_name, {base.namespace_delimiter.join([namespace, name]): value for name, value in getattr(self, meta_name).items()})
         return new
 

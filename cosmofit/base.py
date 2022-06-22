@@ -98,7 +98,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             derived = {}
             for st in states:
                 derived.update(state)
-            derived = ParameterValues.concatenate([derived[i] for i in range(cumsize[-1])])
+            derived = ParameterValues.concatenate([derived[i][None, ...] for i in range(cumsize[-1])])
         self.runtime_info.derived = derived
 
     def __getstate__(self):
@@ -217,24 +217,22 @@ class CalculatorConfig(SectionConfig):
                 if param.basename not in this_params:
                     params[iparam].namespace = None
         params.update(initparams)
-        new.params = params.clone(namespace=None)
         new.info = self['info']
-        if self['load_fn'] is not None:
-            new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=params, **kwargs)
-        else:
+        if self['load_fn'] is None:
+            new.params = params.clone(namespace=None)
             try:
                 new.__init__(**self['init'])
             except TypeError as exc:
                 raise PipelineError('Error in {}'.format(new.__class__)) from exc
-            # Propagate possible update to params by __init__
-            full_params = ParameterCollection()
-            for param in new.params:
-                this_namespace = namespace
-                for full_param in params:
-                    if full_param.basename == param.basename:
-                        this_namespace = full_param.namespace
-                full_params.set(param.clone(namespace=this_namespace))
-            new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=full_params, **kwargs)
+        # Propagate possible update to params by __init__
+        full_params = ParameterCollection()
+        for param in new.params:
+            this_namespace = namespace
+            for full_param in params:
+                if full_param.basename == param.basename:
+                    this_namespace = full_param.namespace
+            full_params.set(param.clone(namespace=this_namespace))
+        new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=full_params, **kwargs)
         save_fn = self['save_fn']
         if save_fn is not None:
             new.save(save_fn)
@@ -584,7 +582,7 @@ class BasePipeline(BaseClass):
             derived = {}
             for state in states:
                 derived.update(state)
-            derived = ParameterValues.concatenate([derived[i] for i in range(cumsize[-1])])
+            derived = ParameterValues.concatenate([derived[i][None, ...] for i in range(cumsize[-1])])
         self.derived = derived
 
     @property

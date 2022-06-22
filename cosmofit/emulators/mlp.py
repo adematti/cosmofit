@@ -132,7 +132,7 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
         self.yshapes = self.mpicomm.bcast(self.yshapes, root=0)
 
     def predict(self, **params):
-        x = [params[param] for param in self.varied_names]
+        x = [params[param] for param in self.varied_params]
         for operation in self.operations:
             x = eval(transform['eval'], {'np': np, 'sp': sp}, {'x': x, **transform['locals']})
         cumsize, toret = 0, {}

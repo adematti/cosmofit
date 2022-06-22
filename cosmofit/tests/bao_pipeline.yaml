@@ -23,7 +23,7 @@ pipeline:
           value: .inf
         al[:3:2]_[0:2]:
           fixed: False
-      #load_fn: f'{output_dir}/emulator.npy'
+      load_fn: f'{output_dir}/emulator.npy'
       emulator:
         save_fn: f'{output_dir}/emulator.npy'
     effectap:
@@ -38,12 +38,12 @@ pipeline:
       fixed: '*'
 
 emulate:
+  class: MLPEmulatorEngine
+
+emulate:
   class: TaylorEmulatorEngine
   init:
     order: 1
-
-emulate:
-  class: MLPEmulatorEngine
 
 do:
   source:
@@ -52,7 +52,9 @@ do:
   do: plot
 
 summarize:
-  chain: f'{output_dir}/samples_0.npy'
+  chain:
+    fn: f'{output_dir}/chain_0.npy'
+    burnin: 0.3
   plot_triangle: f'{output_dir}/triangle.png'
   plot_trace: f'{output_dir}/trace.png'
   plot_autocorrelation_time: f'{output_dir}/autocorrelation_time.png'
@@ -76,16 +78,6 @@ sample:
   save_fn: f'{output_dir}/chain_*.npy'
 
 sample:
-  class: cosmofit.samplers.EmceeSampler
-  init:
-    nwalkers: 40
-  run:
-    max_iterations: 10000
-    check_every: 100
-  check: True
-  save_fn: f'{output_dir}/chain_*.npy'
-
-sample:
   class: cosmofit.samplers.QMCSampler
   run:
     niterations: 100
@@ -96,6 +88,17 @@ sample:
   init:
     ngrid: 2
   save_fn: f'{output_dir}/grid.npy'
+
+sample:
+  class: cosmofit.samplers.EmceeSampler
+  init:
+    nwalkers: 40
+  run:
+    max_iterations: 10000
+    check_every: 100
+  check:
+    eigen_gr_stop: 0.01
+  save_fn: f'{output_dir}/chain_*.npy'
 
 profile:
   class: cosmofit.profilers.MinuitProfiler

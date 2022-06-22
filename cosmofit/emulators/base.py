@@ -30,7 +30,8 @@ class EmulatorConfig(SectionConfig):
                 elif 'class' in sample:
                     from cosmofit.samplers import SamplerConfig
                     config_sampler = SamplerConfig(sample)
-                    sample = {'samples': config_sampler.run(emulator.pipeline).samples}
+                    sampler = config_sampler.run(emulator.pipeline)
+                    sample = {'samples': ParameterValues.concatenate(sampler.chains) if hasattr(sampler, 'chains') else sampler.samples}
                 emulator.set_samples(**sample)
                 emulator.fit(**emudict['fit'])
                 if save_fn is not None and emulator.mpicomm.rank == 0:
@@ -76,9 +77,11 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
                 dtype = np.asarray(values[0]).dtype
                 if not np.issubdtype(dtype, np.inexact):
                     raise ValueError('Attribute {} is of type {}, which is not supported (only float and complex supported)'.format(name, dtype))
+        if self.mpicomm.rank == 0:
+            self.log_info('Found varying {} and fixed {}.'.format(self.varied, list(self.fixed.keys())))
 
         self.params = self.pipeline.params.clone(namespace=None)
-        self.varied_params = self.params.select(varied=True, derived=False)
+        self.varied_params = self.params.names(varied=True, derived=False)
         self.this_params = calculator.runtime_info.full_params.clone(namespace=None)
 
         for name in self.varied:
@@ -98,7 +101,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         elif self.mpicomm.rank == 0:
             samples if isinstance(samples, ParameterValues) else ParameterValues.load(samples)
         if self.mpicomm.rank == 0:
-            self.samples = ParameterValues()
+            self.samples = ParameterValues(attrs=samples.attrs)
             for param in self.pipeline.params.select(varied=True, derived=False):
                 self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)))
             for name in self.varied:
@@ -116,7 +119,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
 
     def __getstate__(self):
         state = {}
-        for name in ['params', 'this_params', 'fixed', 'varied', '_engine_cls']:
+        for name in ['params', 'this_params', 'varied_params', 'fixed', 'varied', '_engine_cls']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
