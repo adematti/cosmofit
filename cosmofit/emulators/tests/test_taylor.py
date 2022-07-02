@@ -13,6 +13,8 @@ def test_taylor(plot=False):
     pipeline = BasePipeline(pipeline)
     power_bak = pipeline.end_calculators[0].power.copy()
     emulator = TaylorEmulatorEngine(pipeline, order=1)
+    emulator.set_samples()
+    emulator.fit()
 
     calculator = emulator.to_calculator()
     calculator.run(**{str(param): param.value for param in calculator.params if param.varied})

@@ -5,7 +5,7 @@ pipeline:
       init:
         data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
-        #wmatrix: f'{data_dir}/window.npy'
+        wmatrix: f'{data_dir}/window.npy'
         klim:
           0: [0.05, 0.2]
           2: [0.05, 0.2]
@@ -22,8 +22,8 @@ pipeline:
         sigmar:
           value: .inf
         al[:3:2]_[0:2]:
-          fixed: False
-      load_fn: f'{output_dir}/emulator.npy'
+          fixed: True
+      #load_fn: f'{output_dir}/emulator.npy'
       emulator:
         save_fn: f'{output_dir}/emulator.npy'
     effectap:
@@ -38,12 +38,18 @@ pipeline:
       fixed: '*'
 
 emulate:
-  class: MLPEmulatorEngine
-
-emulate:
   class: TaylorEmulatorEngine
   init:
     order: 1
+
+emulate:
+  class: MLPEmulatorEngine
+  sample: #f'{output_dir}/samples.npy'
+    save_fn: f'{output_dir}/samples.npy'
+  fit:
+    epochs: 10
+  init:
+    npcs: 20
 
 do:
   source:

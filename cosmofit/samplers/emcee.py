@@ -1,5 +1,3 @@
-import emcee
-
 from cosmofit.samples import Chain
 from .base import BasePosteriorSampler
 
@@ -13,6 +11,7 @@ class EmceeSampler(BasePosteriorSampler):
         self.nwalkers = int(nwalkers)
 
     def _set_sampler(self):
+        import emcee
         self.sampler = emcee.EnsembleSampler(self.nwalkers, len(self.varied_params), self.logposterior, vectorize=True)
 
     def _run_one(self, start, niterations=300, thin_by=1):

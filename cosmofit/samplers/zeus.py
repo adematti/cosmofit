@@ -1,7 +1,5 @@
 import logging
 
-import zeus
-
 from cosmofit.samples import Chain
 from .base import BasePosteriorSampler
 
@@ -16,6 +14,7 @@ class ZeusSampler(BasePosteriorSampler):
         self.light_mode = bool(light_mode)
 
     def _set_sampler(self):
+        import zeus
         handlers = logging.root.handlers.copy()
         level = logging.root.level
         self.sampler = zeus.EnsembleSampler(self.nwalkers, len(self.varied_params), self.logposterior, verbose=False, light_mode=self.light_mode, vectorize=False)

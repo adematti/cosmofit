@@ -1,5 +1,4 @@
 import numpy as np
-import iminuit
 
 from cosmofit import utils
 from cosmofit.samples.profile import Profiles, ParameterValues, ParameterBestFit, ParameterCovariance
@@ -18,6 +17,7 @@ class MinuitProfiler(BaseProfiler):
         return super(MinuitProfiler, self).chi2(values)
 
     def _set_profiler(self):
+        import iminuit
         minuit_params = {}
         minuit_params['name'] = parameter_names = [str(param) for param in self.varied_params]
         self.minuit = iminuit.Minuit(self.chi2, **dict(zip(parameter_names, [param.value for param in self.varied_params])), **minuit_params)

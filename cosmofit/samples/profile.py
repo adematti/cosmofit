@@ -54,10 +54,10 @@ class ParameterValues(BaseParameterCollection):
     def __len__(self):
         return self.shape[0]
 
-    def params(self, outputs=None, **kwargs):
+    def params(self, output=None, **kwargs):
         params = super(ParameterValues, self).params(**kwargs)
-        if outputs is not None:
-            if outputs:
+        if output is not None:
+            if output:
                 params = [param for param in params if str(param) in self.outputs]
             else:
                 params = [param for param in params if str(param) not in self.outputs]
@@ -103,8 +103,8 @@ class ParameterValues(BaseParameterCollection):
             Parameter.
         """
         if not isinstance(item, self._type):
-            is_outputs = str(name) in self.outputs
-            param = Parameter(name, latex=outputs_to_latex(str(name)) if is_outputs else None, derived=is_outputs)
+            is_output = str(name) in self.outputs
+            param = Parameter(name, latex=outputs_to_latex(str(name)) if is_output else None, derived=is_output)
             if param in self:
                 param = self[param].param.clone(param)
             item = ParameterArray(item, param, **self._enforce)

@@ -1,5 +1,4 @@
 import numpy as np
-import dynesty
 
 from cosmofit.samples import Chain
 from cosmofit.parameter import ParameterError
@@ -36,6 +35,7 @@ class DynestySampler(BasePosteriorSampler):
         return toret
 
     def _set_sampler(self):
+        import dynesty
         ndim = len(self.varied_params)
         self.pool = FakePool(size=self.mpicomm.size)
         use_pool = {'prior_transform': True, 'loglikelihood': True, 'propose_point': False, 'update_bound': False}

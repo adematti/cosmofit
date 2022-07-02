@@ -25,8 +25,8 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
             shape = tuple(self.samples.attrs['ngrid'])
             center_index = tuple([s // 2 for s in shape])
             axes, delta = [], []
-            for param in self.varied_params:
-                values = self.samples[param]
+            for name in self.varied_params:
+                values = self.samples[name]
                 values = values.reshape(shape)
                 for axis in range(len(shape)):
                     if shape[axis] > 1:
@@ -37,10 +37,10 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
                             axes.append(axis)
                             break
                 if found and shape[axis] < 2 * self.order + 1:
-                    raise ValueError('Grid is not large enough ({:d}) for parameter {} (axis {:d}) to estimate {:d}-nth order derivative'.format(shape[axis], param, axis, self.order))
+                    raise ValueError('Grid is not large enough ({:d}) for parameter {} (axis {:d}) to estimate {:d}-nth order derivative'.format(shape[axis], name, axis, self.order))
                 if not found and self.order > 0:
-                    raise ValueError('Parameter {} has not been sampled, hence impossible to estimate {:d}-nth order derivative'.format(param, self.order))
-                self.centers[str(param)] = values[center_index]
+                    raise ValueError('Parameter {} has not been sampled, hence impossible to estimate {:d}-nth order derivative'.format(name, self.order))
+                self.centers[name] = values[center_index]
 
             for name in self.varied:
                 values = self.samples[name]
@@ -59,7 +59,7 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
     def predict(self, **params):
         diff = [params[param] - self.centers[param] for param in self.varied_params]
         ndim = len(diff)
-        toret = self.fixed.copy()
+        toret = {}
         for name in self.derivatives:
             toret[name] = self.derivatives[name][0].copy()
             prefactor = 1

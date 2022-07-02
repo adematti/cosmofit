@@ -64,8 +64,8 @@ class QMCSampler(BaseClass, metaclass=RegisteredSampler):
             self.engine.reset()
             nsamples = len(self.samples) if self.samples is not None else 0
             self.engine.fast_forward(nsamples)
-            samples = self.engine.scale(self.engine.random(n=niterations), lower, upper)
-            samples = ParameterValues(samples, params=self.varied_params)
+            samples = qmc.scale(self.engine.random(n=niterations), lower, upper)
+            samples = ParameterValues(samples.T, params=self.varied_params)
         mpicomm = self.pipeline.mpicomm
         self.pipeline.mpicomm = self.mpicomm
         self.pipeline.mpirun(**(samples.to_dict() if self.mpicomm.rank == 0 else {}))

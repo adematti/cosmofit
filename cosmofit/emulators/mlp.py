@@ -4,21 +4,47 @@ import scipy as sp
 from .base import BaseEmulatorEngine
 
 
+def _make_tuple(obj, length=None):
+    """
+    Return tuple from ``obj``.
+
+    Parameters
+    ----------
+    obj : object, tuple, list, array
+        If tuple, list or array, cast to list.
+        Else return tuple of ``obj`` with length ``length``.
+
+    length : int, default=1
+        Length of tuple to return, if ``obj`` not already tuple, list or array.
+
+    Returns
+    -------
+    toret : tuple
+    """
+    if np.ndim(obj) == 0:
+        obj = (obj,)
+        if length is not None:
+            obj *= length
+    return tuple(obj)
+
+
 class MLPEmulatorEngine(BaseEmulatorEngine):
 
-    def __init__(self, pipeline, validation_frac=0.2, nhidden=(100, 100, 100), optimizer='adam', batch_sizes=(320, 640, 1280, 2560, 5120), epochs=100, learning_rates=(1e-2, 1e-3, 1e-4, 1e-5, 1e-6), ytransform='arcsinh', npcs=None, seed=None, **kwargs):
+    def __init__(self, pipeline, validation_frac=0.2, nhidden=(100, 100, 100), optimizer='adam',
+                 batch_sizes=(320, 640, 1280, 2560, 5120), epochs=1000, learning_rates=(1e-2, 1e-3, 1e-4, 1e-5, 1e-6),
+                 ytransform='', npcs=None, seed=None, **kwargs):
         super(MLPEmulatorEngine, self).__init__(pipeline=pipeline, **kwargs)
         self.validation_frac = float(validation_frac)
         self.rng = np.random.RandomState(seed=seed)
         self.nhidden = tuple(nhidden)
         self.optimizer = str(optimizer)
-        self.batch_sizes = tuple(batch_sizes)
-        self.learning_rates = tuple(learning_rates)
-        self.epochs = epochs
+        self.batch_sizes = _make_tuple(batch_sizes, length=1)
+        self.epochs = _make_tuple(epochs, length=len(self.batch_sizes))
+        self.learning_rates = _make_tuple(learning_rates, length=len(self.batch_sizes))
         self.npcs = npcs
         self.ytransform = str(ytransform)
 
-    def get_default_samples(self, engine='rqrs', niterations=300):
+    def get_default_samples(self, engine='rqrs', niterations=int(1e5)):
         from cosmofit.samplers import QMCSampler
         sampler = QMCSampler(self.pipeline, engine=engine)
         sampler.run(niterations=niterations)
@@ -29,10 +55,12 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
         self.operations, self.yshapes = None, None
 
         import tensorflow as tf
-        class Model(tf.keras.Model):
+        from tensorflow.keras.callbacks import EarlyStopping
+
+        class TFModel(tf.keras.Model):
 
             def __init__(self, architecture, eigenvectors=None, mean=None, sigma=None):
-                super(Emulator, self).__init__()
+                super(TFModel, self).__init__()
                 self.architecture = architecture
                 self.nlayers = len(self.architecture) - 1
                 self.mean = mean
@@ -41,15 +69,14 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
 
                 self.W, self.b, self.alpha, self.beta = [], [], [], []
                 for i in range(self.nlayers):
-                    self.W.append(tf.Variable(tf.random.normal([self.architecture[i], self.architecture[i + 1]], 0., np.sqrt(2. / len(self.architecture[0]))), name='W_{:d}'.format(i), trainable=True))
+                    self.W.append(tf.Variable(tf.random.normal([self.architecture[i], self.architecture[i + 1]], 0., np.sqrt(2. / self.architecture[0])), name='W_{:d}'.format(i), trainable=True))
                     self.b.append(tf.Variable(tf.zeros([self.architecture[i+1]]), name='b_{:d}'.format(i), trainable=True))
                 for i in range(self.nlayers-1):
                     self.alpha.append(tf.Variable(tf.random.normal([self.architecture[i + 1]]), name='alpha_{:d}'.format(i), trainable=True))
                     self.beta.append(tf.Variable(tf.random.normal([self.architecture[i + 1]]), name='beta_{:d}'.format(i), trainable=True))
 
             @tf.function
-            def call(self, params):
-                x = params
+            def call(self, x):
                 for i in range(self.nlayers):
                     # linear network operation
                     x = tf.add(tf.matmul(x, self.W[i]), self.b[i])
@@ -58,22 +85,32 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
                         x = tf.multiply(tf.add(self.beta[i], tf.multiply(tf.sigmoid(tf.multiply(self.alpha[i], x)), tf.subtract(1., self.beta[i]))), x)
                 # linear output layer
                 if self.eigenvectors is not None:
-                    x = tf.matmul(tf.add(tf.multiply(x, self.sigma), self.mean), self.eigenvectors.T)
+                    x = tf.matmul(tf.add(tf.multiply(x, self.sigma), self.mean), self.eigenvectors)
                 return x
 
             def operations(self):
                 operations = []
                 for i in range(self.nlayers):
                     # linear network operation
-                    operations.append({'eval': 'x @ W + b', 'locals': {'W': self.W[i], 'b': self.b[i]}})
+                    operations.append({'eval': 'x @ W + b', 'locals': {'W': self.W[i].numpy(), 'b': self.b[i].numpy()}})
                     # non-linear activation function
                     if i < self.nlayers - 1:
-                        operations.append({'eval': '(beta + (sp.special.expit(alpha * x) * (1 - beta))) * x', 'locals': {'alpha': self.alpha[i], 'beta': self.beta[i]}})
+                        operations.append({'eval': '(beta + (sp.special.expit(alpha * x) * (1 - beta))) * x', 'locals': {'alpha': self.alpha[i].numpy(), 'beta': self.beta[i].numpy()}})
                 # linear output layer
                 if self.eigenvectors is not None:
-                    operations.appemd({'eval': 'eigenvectors @ (value * sigma + mean)', 'locals': {'eigenvectors': eigenvectors, 'mean': mean, 'sigma': sigma}})
+                    operations.append({'eval': '(x * sigma + mean) @ eigenvectors', 'locals': {'eigenvectors': eigenvectors, 'mean': mean, 'sigma': sigma}})
                 return operations
 
+            def __getstate__(self):
+                state = {}
+                for name in ['W', 'b', 'alpha', 'beta']:
+                    state[name] = [value.numpy() for value in getattr(self, name)]
+                return state
+
+            def __setstate__(self, state):
+                for name in ['W', 'b', 'alpha', 'beta']:
+                    for tfvalue, npvalue in zip(getattr(self, name), state[name]):
+                        tfvalue.assign(npvalue)
 
         nsamples = self.mpicomm.bcast(len(self.samples) if self.mpicomm.rank == 0 else None)
         nvalidation = int(nsamples * self.validation_frac + 0.5)
@@ -82,59 +119,73 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
 
         if self.mpicomm.rank == 0:
             mask = np.zeros(nsamples, dtype='?')
-            mask[self.rng.choice(nsamples, size=nvalidation, replace=False, shuffle=False)] = True
-            samples = {'X': self.samples.to_array(params=self.samples.params(output=False), struct=False)}
-            samples['X'].shape = (samples['X'].shape[0], -1)
+            mask[self.rng.choice(nsamples, size=nvalidation, replace=False)] = True
+            X = []
+            for name in self.varied_params:
+                X.append(self.samples[name].reshape(self.samples.size, -1))
+            samples = {'X': np.concatenate(X, axis=-1)}
             Y, self.yshapes = [], {}
-            for name in self.samples.names(output=True):
-                self.yshapes[name] = self.samples[name].shape[1:]
-                Y.append(self.samples[name].ravel())
+            for name in self.varied:
+                self.yshapes[name] = self.samples[name].shape[len(self.samples.shape):]
+                Y.append(self.samples[name].reshape(self.samples.size, -1))
             samples['Y'] = np.concatenate(Y, axis=-1)
             self.operations = {}
             for name, value in samples.items():
                 mean, sigma = np.mean(value, axis=0), np.std(value, ddof=1, axis=0)
-                self.operations[name] = [{'eval': 'x * sigma + mean' if name == 'Y' else '(x - mean} / sigma',
-                                         'locals': {'mean': mean, 'sigma': sigma}}]
-                setattr(self, name, (value - mean) / sigma)
+                self.operations[name] = [{'eval': 'x * sigma + mean' if name == 'Y' else '(x - mean) / sigma',
+                                          'locals': {'mean': mean, 'sigma': sigma}}]
+                samples[name] = (value - mean) / sigma
             if 'arcsinh' in self.ytransform:
                 Y = np.arcsinh(samples['Y'])
                 mean, sigma = np.mean(Y, axis=0), np.std(Y, ddof=1, axis=0)
                 samples['Y'] = (Y - mean) / sigma
-                self.operations['Y'].insert(0, {'eval': 'np.sinh(x * sigma + mean)', 'locals': {'mean': mean, 'sigma': sigma}})
-            for name, value in samples.items():
+                self.operations['Y'].insert(0, {'eval': 'np.sinh(x) * sigma + mean', 'locals': {'mean': mean, 'sigma': sigma}})
+            for name, value in list(samples.items()):
                 samples['{}_validation'.format(name)] = value[mask]
                 samples['{}_training'.format(name)] = value[~mask]
             eigenvectors, mean, sigma = None, None, None
             architecture = [len(self.varied_params)] + list(self.nhidden)
             if self.npcs is not None:
-                cov = np.cov(samples['Y_training'], rowvar=True, ddof=1)
+                cov = np.cov(samples['Y_training'], rowvar=False, ddof=1)
                 eigenvalues, eigenvectors = np.linalg.eigh(cov)
-                eigenvectors = eigenvectors[:self.npcs]
-                tmp = np.dot(samples['Y_training'], eigenvectors)
+                eigenvectors = eigenvectors.T
+                if self.npcs > len(eigenvectors):
+                    self.log_warning('Number of requested components is {0:d}, but dimension is already {1:d} < {0:d}.'.format(self.npcs, len(eigenvectors)))
+                eigenvectors = eigenvectors[-self.npcs:]
+                tmp = samples['Y_training'] @ eigenvectors.T
                 mean, sigma = np.mean(tmp, axis=0), np.std(tmp, ddof=1, axis=0)
-                architecture += [self.npcs]
+                architecture += [len(mean)]
             else:
                 architecture += [samples['Y'].shape[1]]
 
-            model = Model(architecture, eigenvectors=eigenvectors, mean=mean, sigma=sigma)
-            model.compile(optimizer=self.optimizer, loss='mse', metrics=['mse'])
+            tfmodel = TFModel(architecture, eigenvectors=eigenvectors, mean=mean, sigma=sigma)
+            state = getattr(self, 'tfmodel', None)
+            if state is not None:
+                if not isinstance(state, dict):
+                    state = state.__getstate__()
+                tfmodel.__setstate__(state)
+            self.tfmodel = tfmodel
+            self.tfmodel.compile(optimizer=self.optimizer, loss='mse', metrics=['mse'])
             es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
 
-            for lr, batch_size in zip(self.learning_rates, self.batch_sizes):
-                self.log_info('Using learning rate {:.2e} and batch size {:d}'.format(lr, batch_size))
-                model.optimizer.lr = lr
-                model.fit(samples['X_training'], samples['Y_training'], epochs=self.epochs, batch_size=nbatch,
-                          validation_data=(samples['X_validation'], samples['Y_validation']), callbacks=[es], verbose=2)
-                self.operations['M'] = model.operations()
+            for batch_size, epochs, lr in zip(self.batch_sizes, self.epochs, self.learning_rates):
+                if lr is None:
+                    lr = self.tfmodel.optimizer.lr.numpy()
+                else:
+                    self.tfmodel.optimizer.lr.assign(lr)
+                self.log_info('Using batch (size, epochs, learning rate) = ({:d}, {:d}, {:.2e})'.format(batch_size, epochs, lr))
+                self.tfmodel.fit(samples['X_training'], samples['Y_training'], batch_size=batch_size, epochs=epochs,
+                                 validation_data=(samples['X_validation'], samples['Y_validation']), callbacks=[es], verbose=2)
+                self.operations['M'] = self.tfmodel.operations()
             self.operations = self.operations['X'] + self.operations['M'] + self.operations['Y']
 
         self.operations = self.mpicomm.bcast(self.operations, root=0)
         self.yshapes = self.mpicomm.bcast(self.yshapes, root=0)
 
     def predict(self, **params):
-        x = [params[param] for param in self.varied_params]
+        x = np.array([params[param] for param in self.varied_params])
         for operation in self.operations:
-            x = eval(transform['eval'], {'np': np, 'sp': sp}, {'x': x, **transform['locals']})
+            x = eval(operation['eval'], {'np': np, 'sp': sp}, {'x': x, **operation['locals']})
         cumsize, toret = 0, {}
         for name, shape in self.yshapes.items():
             size = np.prod(shape, dtype='i')
@@ -144,6 +195,9 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
 
     def __getstate__(self):
         state = super(MLPEmulatorEngine, self).__getstate__()
-        for name in ['operations', 'yshapes']:
-            state[name] = getattr(self, name)
+        for name in ['operations', 'yshapes', 'tfmodel']:
+            if hasattr(self, name):
+                tmp = getattr(self, name)
+                if hasattr(tmp, '__getstate__'): tmp = tmp.__getstate__()
+                state[name] = tmp
         return state

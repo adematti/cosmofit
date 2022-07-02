@@ -79,7 +79,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
 
     def mpirun(self, **params):
         value = []
-        names = self.mpicomm.bcast(params.keys() if self.mpicomm.rank == 0 else None, root=0)
+        names = self.mpicomm.bcast(list(params.keys()) if self.mpicomm.rank == 0 else None, root=0)
         for name in names:
             params[name] = value = mpy.scatter(np.ravel(params[name]) if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0)
         size = len(value)
@@ -96,10 +96,10 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
         states = self.mpicomm.gather(states, root=0)
         if self.mpicomm.rank == 0:
             derived = {}
-            for st in states:
+            for state in states:
                 derived.update(state)
             derived = ParameterValues.concatenate([derived[i][None, ...] for i in range(cumsize[-1])])
-        self.runtime_info.derived = derived
+        return derived
 
     def __getstate__(self):
         return {}
@@ -563,9 +563,9 @@ class BasePipeline(BaseClass):
 
     def mpirun(self, **params):
         value = []
-        for name, value in params.items():
-            value = mpy.scatter(np.ravel(value) if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0)
-            params[name] = value
+        names = self.mpicomm.bcast(list(params.keys()) if self.mpicomm.rank == 0 else None, root=0)
+        for name in names:
+            params[name] = value = mpy.scatter(np.ravel(params[name]) if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0)
         size = len(value)
         cumsize = np.cumsum([0] + self.mpicomm.allgather(size))
         if not cumsize[-1]: return

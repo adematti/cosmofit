@@ -11,7 +11,7 @@ from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError
 
 class EmulatorConfig(SectionConfig):
 
-    _sections = ['source', 'init', 'fit']
+    _sections = ['source', 'init', 'fit', 'check']
 
     def run(self, pipeline):
         for calculator in pipeline.calculators:
@@ -25,6 +25,7 @@ class EmulatorConfig(SectionConfig):
                 cls = import_cls(emudict['class'], pythonpath=emudict.get('pythonpath', None), registry=BaseEmulatorEngine._registry)
                 emulator = cls(pipeline.select(calculator), **emudict['init'])
                 sample = emudict.get('sample', {})
+                save_samples_fn = None
                 if not isinstance(sample, dict):
                     sample = {'samples': sample}
                 elif 'class' in sample:
@@ -33,7 +34,10 @@ class EmulatorConfig(SectionConfig):
                     sampler = config_sampler.run(emulator.pipeline)
                     sample = {'samples': ParameterValues.concatenate(sampler.chains) if hasattr(sampler, 'chains') else sampler.samples}
                 emulator.set_samples(**sample)
+                if save_samples_fn is not None:
+                    emulator.samples.save(save_samples_fn)
                 emulator.fit(**emudict['fit'])
+                emulator.check(**emudict['check'])
                 if save_fn is not None and emulator.mpicomm.rank == 0:
                     emulator.save(save_fn)
 
@@ -94,13 +98,16 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             return ('.'.join([self.__module__, self.__class__.__name__]), os.path.dirname(sys.modules[self.__module__].__file__))
 
         self._engine_cls = {'emulator': serialize_cls(self), 'calculator': serialize_cls(calculator)}
+        self.diagnostics = {}
 
-    def set_samples(self, samples=None, **kwargs):
+    def set_samples(self, samples=None, save_fn=None, **kwargs):
         if self.mpicomm.bcast(samples is None, root=0):
             samples = self.get_default_samples(**kwargs)
         elif self.mpicomm.rank == 0:
-            samples if isinstance(samples, ParameterValues) else ParameterValues.load(samples)
+            samples = samples if isinstance(samples, ParameterValues) else ParameterValues.load(samples)
         if self.mpicomm.rank == 0:
+            if save_fn is not None:
+                samples.save(save_fn)
             self.samples = ParameterValues(attrs=samples.attrs)
             for param in self.pipeline.params.select(varied=True, derived=False):
                 self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)))
@@ -117,6 +124,58 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
     def predict(self, **params):
         raise NotImplementedError
 
+    def check(self, mse_stop=None, validation_frac=None):
+
+        if validation_frac is None:
+            validation_frac = 1.
+
+        def add_diagnostics(name, value):
+            if name not in self.diagnostics:
+                self.diagnostics[name] = [value]
+            else:
+                self.diagnostics[name].append(value)
+            return value
+
+        if self.mpicomm.rank == 0:
+            self.log_info('Diagnostics:')
+        item = '- '
+        toret = True
+        nsamples = self.mpicomm.bcast(len(self.samples) if self.mpicomm.rank == 0 else None)
+        nvalidation = int(nsamples * self.validation_frac + 0.5)
+        if nvalidation >= nsamples:
+            raise ValueError('Cannot use {:d} validation samples (>= {:d} total samples)'.format(nvalidation, nsamples))
+        rng = np.random.RandomState(seed=42)
+        if self.mpicomm.rank == 0:
+            samples = self.samples[rng.choice(nsamples, size=nvalidation, replace=False)]
+        calculator = self.to_calculator()
+        for name in self.varied:
+            if name not in calculator.runtime_info.base_params:
+                param = Parameter(name, namespace=None, derived=True)
+                calculator.runtime_info.full_params.set(param)
+                calculator.runtime_info.full_params = calculator.runtime_info.full_params
+        derived = calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
+
+        if self.mpicomm.rank == 0:
+            mse = {}
+            for name in self.varied:
+                mse[name] = np.mean((derived[name] - samples[name]) ** 2)
+                msg = '{}mse of {} is {:.3g} (square root = {:.3g})'.format(item, name, mse[name], np.sqrt(mse[name]))
+                if mse_stop is not None:
+                    test = mse[name] < mse_stop
+                    self.log_info('{} {} {:.3g}.'.format(msg, '<' if test else '>', mse_stop))
+                    add_diagnostics('mse', mse[name])
+                    toret &= test
+                else:
+                    self.log_info('{}.'.format(msg))
+            add_diagnostics('mse', mse)
+
+        self.diagnostics = self.mpicomm.bcast(self.diagnostics, root=0)
+
+        return self.mpicomm.bcast(toret, root=0)
+
+    def to_calculator(self):
+        return BaseEmulator.from_state(self.__getstate__())
+
     def __getstate__(self):
         state = {}
         for name in ['params', 'this_params', 'varied_params', 'fixed', 'varied', '_engine_cls']:
@@ -124,16 +183,13 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
                 state[name] = getattr(self, name)
         return state
 
-    def to_calculator(self):
-        return BaseEmulator.from_state(self.__getstate__())
 
-
-
-class PointEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
+class PointEmulatorEngine(BaseEmulatorEngine):
 
     def get_default_samples(self):
-        from cosmofit.samples import GridSampler
-        sampler = GridSampler(self.pipeline, ngrid=1).run()
+        from cosmofit.samplers import GridSampler
+        sampler = GridSampler(self.pipeline, ngrid=1)
+        sampler.run()
         return sampler.samples
 
     def fit(self):
@@ -141,17 +197,14 @@ class PointEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
 
     def predict(self, **params):
         # Dumb prediction
-        return {**self.fixed, **self.point}
+        return self.point
 
     def __getstate__(self):
         state = super(PointEmulatorEngine, self).__getstate__()
-        for name in ['varied']:
+        for name in ['point']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
-
-    def to_calculator(self):
-        return BaseEmulator.from_state(self.__getstate__())
 
 
 class BaseEmulator(BaseClass):
@@ -165,24 +218,20 @@ class BaseEmulator(BaseClass):
         clsdict = {}
 
         def new_run(self, **params):
-            Calculator.__setstate__(self, EmulatorEngine.predict(self, **params))
+            Calculator.__setstate__(self, {**self.fixed, **EmulatorEngine.predict(self, **params)})
 
-        clsdict = {'run': new_run}
+        def new_getstate(self):
+            return Calculator.__getstate__(self)
+
+        clsdict = {'run': new_run, '__getstate__': new_getstate, '__module__': Calculator.__module__}
 
         new_meta = type('MetaEmulatorCalculator', (type(EmulatorEngine), type(Calculator)), {})
         new_cls = new_meta(new_name, (EmulatorEngine, Calculator), clsdict)
         new_cls.config_fn = Calculator.config_fn
 
-        def new_from_state(cls, *args, **kwargs):
+        def from_state(cls, *args, **kwargs):
             new = cls.__new__(cls)
             new.__dict__.update(EmulatorEngine.from_state(*args, **kwargs).__dict__)
             return new
 
-        def new_load(cls, *args, **kwargs):
-            new = cls.__new__(cls)
-            new.__dict__.update(EmulatorEngine.load(*args, **kwargs).__dict__)
-            return new
-
-        new_cls.from_state = classmethod(new_from_state)
-        new_cls.load = classmethod(new_load)
-        return new_cls.from_state(state)
+        return from_state(new_cls, state)
