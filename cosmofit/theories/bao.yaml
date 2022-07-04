@@ -1,38 +1,21 @@
-class: PowerSpectrumNoWiggles
+class: EmpiricalBAOWigglesGalaxyPowerSpectrum
 
 info:
   version: 0.0.1
-  date: 05/04/2021
+  date: 05/04/2022
   author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
-  description: Compute power spectrum BAO wiggles
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
-
-init:
-  engine: wallish2018
-
----
-
-class: Beutler2017BAOGalaxyPowerSpectrum
-
-info:
-  version: 0.0.1
-  date: 05/04/2021
-  author: Arnaud de Mattia
-  maintainer: Arnaud de Mattia
-  description: Model for BAO power spectrum multipoles
+  description: Empirical model for BAO power spectrum multipoles
   url:
   licence:
   bibtex: [arxiv:1607.03149]
   requirements: []
-  long_description: BAO model used in the BOSS DR12 BAO analysis by Beutler et al. 2017
+  long_description: BAO model used in the BOSS DR12 BAO analysis by Beutler et al. 2017; supports pre-, reciso, recsym, real (f = 0) and redshift-space reconstruction
 
 init:
   ells: [0, 2]
+  smoothing_radius: 15.
+  mode: ''  # '' for pre-recon, reciso, recsym
 
 params:
   bias:
@@ -42,18 +25,12 @@ params:
       dist: uniform
       limits: [0.2, 4.]
     latex: b
-  sigmar:
-    value: 15.
-    fixed: True
-    latex: \Sigma_{r}
-    prior:
-      limits: [0.1, 30]
   sigmas:
-    value: 2.
+    value: 0.
     fixed: True
     latex: \Sigma_{s}
     prior:
-      limits: [0.1, 10]
+      limits: [0, 10]
   sigmapar:
     value: 9.
     fixed: True
@@ -66,6 +43,49 @@ params:
     latex: \Sigma_{\perp}
     prior:
       limits: [0.1, 10]
+  al[:5:2]_[-3:2]:
+    value: 0.
+    fixed: False
+    latex: a_{[], []}
+    prior:
+      limits: [-1000., 1000.]
+
+
+---
+
+class: ResummedBAOWigglesGalaxyPowerSpectrum
+
+info:
+  version: 0.0.1
+  date: 07/04/2022
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Model for BAO power spectrum multipoles with resummed BAO wiggles
+  url:
+  licence:
+  bibtex: [arxiv:1907.00043]
+  requirements: []
+  long_description: Supports pre-, reciso, recsym, real (f = 0) and redshift-space reconstruction
+
+init:
+  ells: [0, 2]
+  smoothing_radius: 15.
+  mode: ''  # '' for pre-recon, reciso, recsym
+
+params:
+  bias:
+    value: 2.
+    fixed: False
+    prior:
+      dist: uniform
+      limits: [0.2, 4.]
+    latex: b
+  sigmas:
+    value: 0.
+    fixed: True
+    latex: \Sigma_{s}
+    prior:
+      limits: [0, 10]
   al[:5:2]_[-3:2]:
     value: 0.
     fixed: False

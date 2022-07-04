@@ -1,8 +1,27 @@
+class: BasePowerSpectrumWiggles
+
+info:
+  version: 0.0.1
+  date: 05/04/2022
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Compute power spectrum BAO wiggles
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description:
+
+init:
+  engine: wallish2018
+
+---
+
 class: ShapeFitPowerSpectrumTemplate
 
 info:
   version: 0.0.1
-  date: 05/04/2021
+  date: 05/04/2022
   author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
   description: Shapefit-parametrized template power spectrum

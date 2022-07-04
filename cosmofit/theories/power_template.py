@@ -5,7 +5,7 @@ from cosmoprimo import PowerSpectrumBAOFilter
 from cosmofit.base import BaseCalculator
 
 
-class PowerSpectrumNoWiggles(BaseCalculator):
+class BasePowerSpectrumWiggles(BaseCalculator):
 
     def __init__(self, zeff=1., engine='wallish2018'):
         self.engine = engine
@@ -15,6 +15,9 @@ class PowerSpectrumNoWiggles(BaseCalculator):
     def run(self):
         self.power = self.cosmo.get_fourier().pk_interpolator().to_1d(z=self.zeff)
         self.power_now = PowerSpectrumBAOFilter(self.power, engine=self.engine).smooth_pk_interpolator()
+
+    def wiggles(self, k):
+        return self.power(k) - self.power_now(k)
 
 
 class BasePowerSpectrumTemplate(BaseCalculator):
@@ -46,13 +49,13 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         super(ShapeFitPowerSpectrumTemplate, self).__init__(*args, **kwargs)
         self.a = float(a)
         self.k_pivot = float(k_pivot)
-        self.requires['powernowiggles'] = ('PowerSpectrumNoWiggles', {'zeff': self.zeff})
+        self.requires['wiggles'] = ('PowerSpectrumWiggles', {'zeff': self.zeff})
 
     def run(self, m=0., n=0.):
         super(ShapeFitPowerSpectrumTemplate, self).run()
         factor = m / self.a * np.tanh(self.a * np.log(self.k / self.k_pivot)) + n * np.log(self.k / self.k_pivot)
         self.power_dd *= np.exp(factor)
-        self.A_p_ref = self.powernowiggles.power_now(self.k_pivot)
+        self.A_p_ref = self.wiggles.power_now(self.k_pivot)
         self.n_s_ref = n + self.cosmo.n_s
         dk = 1e-3
         k = self.k_pivot * np.array([1. - dk, 1. + dk])
@@ -60,7 +63,7 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
             pk_prim = self.cosmo.get_primordial().pk_interpolator()(k)
         else:
             pk_prim = 1.
-        self.m_ref = m + (np.diff(np.log(self.powernowiggles.power_now(k) / pk_prim)) / np.diff(np.log(k)))[0]
+        self.m_ref = m + (np.diff(np.log(self.wiggles.power_now(k) / pk_prim)) / np.diff(np.log(k)))[0]
 
     def __getstate__(self):
         state = super(ShapeFitPowerSpectrumTemplate, self).__getstate__()
