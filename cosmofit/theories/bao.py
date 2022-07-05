@@ -4,7 +4,7 @@ import numpy as np
 from scipy import special, integrate
 
 from cosmofit.parameter import ParameterCollection
-from .power_template import PowerSpectrumNoWiggles
+from .power_template import BasePowerSpectrumWiggles
 from .base import BaseTheoryPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles
 
 
@@ -14,8 +14,8 @@ class BaseBAOWigglesPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
         super(BaseBAOWigglesPowerSpectrum, self).__init__(*args, **kwargs)
         self.mode = str(mode).lower()
         available_modes = ['', 'recsym', 'reciso']
-        if self.mode in available_modes:
-            raise ValueError('reconstruction mode must be one of {}'.format(available_modes))
+        if self.mode not in available_modes:
+            raise ValueError('reconstruction mode {} must be one of {}'.format(self.mode, available_modes))
         self.smoothing_radius = float(smoothing_radius)
         params = ParameterCollection()
         for param in self.params:
@@ -73,8 +73,8 @@ class EmpiricalBAOWigglesGalaxyPowerSpectrum(BaseBAOWigglesPowerSpectrum, TrapzT
     def run(self, bias=1., sigmas=0., sigmapar=8., sigmaper=4., **kwargs):
         f = self.beta(bias=bias, **kwargs) * bias
         jac, kap, muap = self.effectap.ap_k_mu(self.k, self.mu)
-        pk = self.powernowiggles.power(kap)
-        pknow = self.powernowiggles.power_now(kap)
+        pk = self.wiggles.power(kap)
+        pknow = self.wiggles.power_now(kap)
         sigmanl2 = kap**2 * (sigmapar**2 * muap**2 + sigmaper**2 * (1. - muap**2))
         damped_wiggles = (pk - pknow) * np.exp(-sigmanl2 / 2.)
         fog = 1. / (1. + (sigmas * kap * muap)**2 / 2.)**2.
@@ -90,8 +90,8 @@ class ResummedPowerSpectrumWiggles(BasePowerSpectrumWiggles):
         super(ResummedPowerSpectrumWiggles, self).__init__(*args, **kwargs)
         self.mode = str(mode).lower()
         available_modes = ['', 'recsym', 'reciso']
-        if self.mode in available_modes:
-            raise ValueError('reconstruction mode must be one of {}'.format(available_modes))
+        if self.mode not in available_modes:
+            raise ValueError('reconstruction mode {} must be one of {}'.format(self.mode, available_modes))
         self.smoothing_radius = float(smoothing_radius)
 
     def run(self):

@@ -16,11 +16,9 @@ pipeline:
       load_fn: True
       plot: f'{output_dir}/power.png'
     theory:
-      class: cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum
+      class: cosmofit.theories.bao.EmpiricalBAOWigglesGalaxyPowerSpectrum
       params:
         fixed: ['al0*', 'al2*']
-        sigmar:
-          value: .inf
         al[:3:2]_[0:2]:
           fixed: True
       #load_fn: f'{output_dir}/emulator.npy'
