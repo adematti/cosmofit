@@ -1,4 +1,4 @@
-class: EmpiricalBAOWigglesGalaxyPowerSpectrum
+class: EmpiricalBAOWigglesTracerPowerSpectrum
 
 info:
   version: 0.0.1
@@ -53,7 +53,7 @@ params:
 
 ---
 
-class: ResummedBAOWigglesGalaxyPowerSpectrum
+class: ResummedBAOWigglesTracerPowerSpectrum
 
 info:
   version: 0.0.1

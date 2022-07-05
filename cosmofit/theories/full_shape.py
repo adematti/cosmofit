@@ -44,10 +44,10 @@ class LPTPowerSpectrum(BasePTPowerSpectrum):
         return state
 
 
-class LPTGalaxyPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
+class LPTTracerPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, **kwargs):
-        super(LPTGalaxyPowerSpectrum, self).__init__(*args, **kwargs)
+        super(LPTTracerPowerSpectrum, self).__init__(*args, **kwargs)
         self.requires = {'pt': ('LPTPowerSpectrum', {'k': self.k, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial})}
 
     def run(self, **params):

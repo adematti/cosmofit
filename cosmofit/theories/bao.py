@@ -64,10 +64,10 @@ class BaseBAOWigglesPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
         return beta
 
 
-class EmpiricalBAOWigglesGalaxyPowerSpectrum(BaseBAOWigglesPowerSpectrum, TrapzTheoryPowerSpectrumMultipoles):
+class EmpiricalBAOWigglesTracerPowerSpectrum(BaseBAOWigglesPowerSpectrum, TrapzTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, mu=200, **kwargs):
-        super(EmpiricalBAOWigglesGalaxyPowerSpectrum, self).__init__(*args, **kwargs)
+        super(EmpiricalBAOWigglesTracerPowerSpectrum, self).__init__(*args, **kwargs)
         self.set_k_mu(k=self.k, mu=mu, ells=self.ells)
 
     def run(self, bias=1., sigmas=0., sigmapar=8., sigmaper=4., **kwargs):
@@ -133,10 +133,10 @@ class ResummedPowerSpectrumWiggles(BasePowerSpectrumWiggles):
         return resummed_wiggles
 
 
-class ResummedBAOWigglesGalaxyPowerSpectrum(BaseBAOWigglesPowerSpectrum, TrapzTheoryPowerSpectrumMultipoles):
+class ResummedBAOWigglesTracerPowerSpectrum(BaseBAOWigglesPowerSpectrum, TrapzTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, mu=200, **kwargs):
-        super(ResummedBAOWigglesGalaxyPowerSpectrum, self).__init__(*args, **kwargs)
+        super(ResummedBAOWigglesTracerPowerSpectrum, self).__init__(*args, **kwargs)
         self.set_k_mu(k=self.k, mu=mu, ells=self.ells)
         self.requires['wiggles'] = ('ResummedPowerSpectrumWiggles', {'zeff': self.zeff, 'mode': self.mode, 'smoothing_radius': self.smoothing_radius})
 
