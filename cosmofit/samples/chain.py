@@ -268,7 +268,7 @@ class Chain(ParameterValues):
         """
         from getdist import MCSamples
         toret = None
-        if params is None: params = self.params()
+        if params is None: params = self.params(varied=True)
         labels = [param.latex() for param in params]
         samples = self.to_array(params=params, struct=False).reshape(-1, self.size)
         names = [str(param) for param in params]

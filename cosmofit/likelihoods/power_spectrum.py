@@ -25,24 +25,23 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             power = power[:(power.shape[0] // krebin) * krebin:krebin]
             data = power.get_power(complex=False)
             nells = len(power.ells)
-            assert len(data) == nells
             if klim is None:
-                return [np.array(power.k)] * nells, tuple(power.ells), list(data)
-            if utils.is_sequence(klim):
+                klim = {ell: [0, np.inf] for ell in power.ells}
+            elif utils.is_sequence(klim):
                 if not utils.is_sequence(klim[0]):
                     klim = [klim] * nells
                 if len(klim) > nells:
                     raise ValueError('{:d} limits provided but only {:d} poles computed'.format(len(klim), nells))
                 klim = {ell: klim[ill] for ill, ell in enumerate(power.ells)}
-            if isinstance(klim, dict):
-                list_k, list_data, ells = [], [], []
-                for ell, lim in klim.items():
-                    mask = (power.k >= lim[0]) & (power.k < lim[1])
-                    list_k.append(power.k[mask])
-                    list_data.append(data[power.ells.index(ell)][mask])
-                    ells.append(ell)
-                return list_k, tuple(ells), list_data
-            raise ValueError('Unknown klim format; provide e.g. {0: (0.01, 0.2), 2: (0.01, 0.15)}')
+            elif not isinstance(klim, dict):
+                raise ValueError('Unknown klim format; provide e.g. {0: (0.01, 0.2), 2: (0.01, 0.15)}')
+            list_k, list_data, ells = [], [], []
+            for ell, lim in klim.items():
+                mask = (power.k >= lim[0]) & (power.k < lim[1])
+                list_k.append(power.k[mask])
+                list_data.append(data[power.ells.index(ell)][mask])
+                ells.append(ell)
+            return list_k, tuple(ells), list_data
 
         self.k, poles, nobs = None, None, None
 
@@ -59,10 +58,10 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
                 list_data = []
                 for fn in covariance:
                     for fn in sorted(glob.glob(fn)):
-                        k, ells, data = lim_data(load_data(fn))
+                        mock_k, mock_ells, data = lim_data(load_data(fn))
                         if self.k is None:
                             self.k, self.ells = k, ells
-                        if not all(np.allclose(kk, skk) for kk, skk in zip(self.k, k)):
+                        if not all(np.allclose(sk, mk) for sk, mk in zip(self.k, mock_k)):
                             raise ValueError('{} does not have expected k-binning (based on previous data)'.format(fn))
                         if ells != self.ells:
                             raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))

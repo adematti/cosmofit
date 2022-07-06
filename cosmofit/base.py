@@ -196,6 +196,7 @@ class CalculatorConfig(SectionConfig):
 
     def init(self, namespace=None, params=None, **kwargs):
         initparams = self['params']
+        derived = initparams.derived
         if params is not None:
             if isinstance(params, ParameterCollection):
                 initparams = initparams.init(namespace=namespace)
@@ -233,6 +234,7 @@ class CalculatorConfig(SectionConfig):
                     this_namespace = full_param.namespace
             full_params.set(param.clone(namespace=this_namespace))
         new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=full_params, **kwargs)
+        new.runtime_info._derived_names = derived
         save_fn = self['save_fn']
         if save_fn is not None:
             new.save(save_fn)
@@ -545,6 +547,7 @@ class BasePipeline(BaseClass):
 
         for calculator in self.end_calculators:
             calculator.run(**calculator.runtime_info.params)
+        self._set_derived()
 
     def run(self, **params):  # params with namespace
         for calculator in self.calculators:
@@ -651,6 +654,61 @@ class BasePipeline(BaseClass):
         self.params = self.params.clone(namespace=None)
         for calculator in self.calculators:
             calculator.runtime_info = calculator.runtime_info.clone(full_params=calculator.runtime_info.full_params.clone(namespace=None))
+
+    def _classify_derived(self, calculators=None, niterations=3):
+        if calculators is None:
+            calculators = []
+            for calculator in self.calculators:
+                derived = getattr(calculator.runtime_info, '_derived_names', {})
+                if any(derived.get(kw, False) for kw in ['all', 'fixed', 'varied']):
+                    calculators.append(calculator)
+        rng = np.random.RandomState(seed=42)
+        states = [{} for i in range(len(calculators))]
+        for ii in range(niterations):
+            params = {str(param): param.ref.sample(random_state=rng) for param in self.params.select(varied=True)}
+            BasePipeline.run(self, **params)
+            for calculator, state in zip(calculators, states):
+                for name, value in calculator.__getstate__().items():
+                    state[name] = state.get(name, []) + [value]
+
+        fixed, varied = [], []
+        for calculator, state in zip(calculators, states):
+            fixed.append({})
+            varied.append([])
+            for name, values in state.items():
+                if all(np.all(value == values[0]) for value in values):
+                    fixed[-1][name] = values[0]
+                else:
+                    varied[-1].append(name)
+                    dtype = np.asarray(values[0]).dtype
+                    if not np.issubdtype(dtype, np.inexact):
+                        raise ValueError('Attribute {} is of type {}, which is not supported (only float and complex supported)'.format(name, dtype))
+        return calculators, fixed, varied
+
+    def _set_derived(self, *args, **kwargs):
+        calculators, fixed, varied = self._classify_derived(*args, **kwargs)
+        for calculator, fixed_names, varied_names in zip(calculators, fixed, varied):
+            derived = getattr(calculator.runtime_info, '_derived_names', {})
+            derived_names = {}
+            for derived_name, b in derived.items():
+                if derived_name == 'all':
+                    if b:
+                        derived_names.update(fixed_names)
+                        derived_names.update(dict.fromkeys(varied_names))
+                elif derived_name == 'fixed':
+                    if b: derived_names.update(fixed_names)
+                elif derived_name == 'varied':
+                    if b: derived_names.update(dict.fromkeys(varied_names))
+                else:
+                    if b: derived_names[derived_name] = None
+                    elif derived_name in derived_names: del derived_names[derived_name]
+            derived_names = list(derived_names.keys())
+            for name in derived_names:
+                if name not in calculator.runtime_info.base_params:
+                    param = Parameter(name, namespace=calculator.runtime_info.namespace, derived=True)
+                    calculator.runtime_info.full_params.set(param)
+                    calculator.runtime_info.full_params = calculator.runtime_info.full_params
+        return calculators, fixed, varied
 
 
 class LikelihoodPipeline(BasePipeline):

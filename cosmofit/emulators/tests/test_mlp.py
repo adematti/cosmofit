@@ -26,11 +26,11 @@ def test_mlp_linear(plot=False):
     pipeline['model'] = {'class': 'LinearModel'}
     pipeline = BasePipeline(pipeline)
     calculator = pipeline.end_calculators[0]
-    emulator = MLPEmulatorEngine(pipeline, nhidden=(), batch_sizes=(10000,), epochs=1000, learning_rates=None, npcs=3)
+    emulator = MLPEmulatorEngine(pipeline, nhidden=(), npcs=3)
     emulator.set_samples(niterations=int(1e5))
 
     #emulator.fit()
-    emulator.fit()
+    emulator.fit(batch_sizes=(10000,), epochs=1000, learning_rates=None)
     emulator.check(validation_frac=0.5)
 
     emulated_calculator = emulator.to_calculator()

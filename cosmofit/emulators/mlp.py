@@ -30,17 +30,9 @@ def _make_tuple(obj, length=None):
 
 class MLPEmulatorEngine(BaseEmulatorEngine):
 
-    def __init__(self, pipeline, validation_frac=0.2, nhidden=(100, 100, 100), optimizer='adam',
-                 batch_sizes=(320, 640, 1280, 2560, 5120), epochs=1000, learning_rates=(1e-2, 1e-3, 1e-4, 1e-5, 1e-6),
-                 ytransform='', npcs=None, seed=None, **kwargs):
+    def __init__(self, pipeline, nhidden=(100, 100, 100), ytransform='', npcs=None, **kwargs):
         super(MLPEmulatorEngine, self).__init__(pipeline=pipeline, **kwargs)
-        self.validation_frac = float(validation_frac)
-        self.rng = np.random.RandomState(seed=seed)
         self.nhidden = tuple(nhidden)
-        self.optimizer = str(optimizer)
-        self.batch_sizes = _make_tuple(batch_sizes, length=1)
-        self.epochs = _make_tuple(epochs, length=len(self.batch_sizes))
-        self.learning_rates = _make_tuple(learning_rates, length=len(self.batch_sizes))
         self.npcs = npcs
         self.ytransform = str(ytransform)
 
@@ -50,7 +42,14 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
         sampler.run(niterations=niterations)
         return sampler.samples
 
-    def fit(self):
+    def fit(self, optimizer='adam', validation_frac=0.2, batch_sizes=(320, 640, 1280, 2560, 5120), epochs=1000, learning_rates=(1e-2, 1e-3, 1e-4, 1e-5, 1e-6), seed=None):
+
+        optimizer = str(optimizer)
+        validation_frac = float(validation_frac)
+        batch_sizes = _make_tuple(batch_sizes, length=1)
+        epochs = _make_tuple(epochs, length=len(batch_sizes))
+        learning_rates = _make_tuple(learning_rates, length=len(batch_sizes))
+        rng = np.random.RandomState(seed=seed)
 
         self.operations, self.yshapes = None, None
 
@@ -112,22 +111,22 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
                     for tfvalue, npvalue in zip(getattr(self, name), state[name]):
                         tfvalue.assign(npvalue)
 
-        nsamples = self.mpicomm.bcast(len(self.samples) if self.mpicomm.rank == 0 else None)
-        nvalidation = int(nsamples * self.validation_frac + 0.5)
+        nsamples = self.mpicomm.bcast(self.samples.size if self.mpicomm.rank == 0 else None)
+        nvalidation = int(nsamples * validation_frac + 0.5)
         if nvalidation >= nsamples:
             raise ValueError('Cannot use {:d} validation samples (>= {:d} total samples)'.format(nvalidation, nsamples))
 
         if self.mpicomm.rank == 0:
             mask = np.zeros(nsamples, dtype='?')
-            mask[self.rng.choice(nsamples, size=nvalidation, replace=False)] = True
+            mask[rng.choice(nsamples, size=nvalidation, replace=False)] = True
             X = []
             for name in self.varied_params:
-                X.append(self.samples[name].reshape(self.samples.size, -1))
+                X.append(self.samples[name].reshape(nsamples, 1))
             samples = {'X': np.concatenate(X, axis=-1)}
             Y, self.yshapes = [], {}
             for name in self.varied:
                 self.yshapes[name] = self.samples[name].shape[len(self.samples.shape):]
-                Y.append(self.samples[name].reshape(self.samples.size, -1))
+                Y.append(self.samples[name].reshape(nsamples, -1))
             samples['Y'] = np.concatenate(Y, axis=-1)
             self.operations = {}
             for name, value in samples.items():
@@ -165,16 +164,16 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
                     state = state.__getstate__()
                 tfmodel.__setstate__(state)
             self.tfmodel = tfmodel
-            self.tfmodel.compile(optimizer=self.optimizer, loss='mse', metrics=['mse'])
+            self.tfmodel.compile(optimizer=optimizer, loss='mse', metrics=['mse'])
             es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
 
-            for batch_size, epochs, lr in zip(self.batch_sizes, self.epochs, self.learning_rates):
+            for batch_size, epoch, lr in zip(batch_sizes, epochs, learning_rates):
                 if lr is None:
                     lr = self.tfmodel.optimizer.lr.numpy()
                 else:
                     self.tfmodel.optimizer.lr.assign(lr)
-                self.log_info('Using batch (size, epochs, learning rate) = ({:d}, {:d}, {:.2e})'.format(batch_size, epochs, lr))
-                self.tfmodel.fit(samples['X_training'], samples['Y_training'], batch_size=batch_size, epochs=epochs,
+                self.log_info('Using (batch size, epochs, learning rate) = ({:d}, {:d}, {:.2e})'.format(batch_size, epoch, lr))
+                self.tfmodel.fit(samples['X_training'], samples['Y_training'], batch_size=batch_size, epochs=epoch,
                                  validation_data=(samples['X_validation'], samples['Y_validation']), callbacks=[es], verbose=2)
                 self.operations['M'] = self.tfmodel.operations()
             self.operations = self.operations['X'] + self.operations['M'] + self.operations['Y']

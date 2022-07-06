@@ -44,6 +44,8 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         self.mpicomm = mpicomm
         self.likelihood = likelihood
         self.varied_params = self.likelihood.params.select(varied=True, derived=False)
+        if self.mpicomm.rank == 0:
+            self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
         self.max_tries = int(max_tries)
         self.profiles = profiles
         if profiles is not None and not isinstance(profiles, Profiles):

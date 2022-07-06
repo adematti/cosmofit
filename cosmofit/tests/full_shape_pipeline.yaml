@@ -16,9 +16,9 @@ pipeline:
       save_fn: f'{output_dir}/QSO.like.npy'
       load_fn: True
     theory:
-      class: cosmofit.theories.full_shape.LPTGalaxyPowerSpectrum
+      class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
     lpt:
-      class: cosmofit.theories.full_shape.LPTPowerSpectrum
+      class: cosmofit.theories.full_shape.LPTPowerSpectrumMultipoles
       #load_fn: f'{output_dir}/emulator.npy'
       emulator:
         save_fn: f'{output_dir}/emulator.npy'

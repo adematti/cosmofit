@@ -8,7 +8,7 @@ from .power_template import BasePowerSpectrumWiggles
 from .base import BaseTheoryPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles
 
 
-class BaseBAOWigglesPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
+class BaseBAOWigglesPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, mode='', smoothing_radius=15., **kwargs):
         super(BaseBAOWigglesPowerSpectrum, self).__init__(*args, **kwargs)
@@ -17,42 +17,7 @@ class BaseBAOWigglesPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
         if self.mode not in available_modes:
             raise ValueError('reconstruction mode {} must be one of {}'.format(self.mode, available_modes))
         self.smoothing_radius = float(smoothing_radius)
-        params = ParameterCollection()
-        for param in self.params:
-            ellpow = self.decode_broadband_param(param)
-            if ellpow is None or ellpow[0] in self.ells:
-                params.set(param)
-        self.params = params
-        self.set_broadband_coeffs()
         self.requires = {'effectap': ('EffectAP', {'zeff': self.zeff, 'fiducial': self.fiducial}), 'wiggles': ('BasePowerSpectrumWiggles', {'zeff': self.zeff})}
-
-    @staticmethod
-    def decode_broadband_param(param):
-        match = re.match('al(.*)_(.*)', str(param))
-        if match:
-            ell = int(match.group(1))
-            pow = int(match.group(2))
-            return ell, pow
-        return None
-
-    def set_broadband_coeffs(self):
-        self.broadband_coeffs = {}
-        for ell in self.ells:
-            self.broadband_coeffs[ell] = {}
-        for param in self.params:
-            name = param.basename
-            ellpow = self.decode_broadband_param(param)
-            if ellpow is not None:
-                self.broadband_coeffs[ellpow[0]][name] = ellpow[1]
-
-    def broadband_poles(self, **params):
-        toret = []
-        for ell in self.ells:
-            tmp = np.zeros_like(self.k)
-            for name, ii in self.broadband_coeffs[ell].items():
-                tmp += params[name] * self.k**ii
-            toret.append(tmp)
-        return np.array(toret)
 
     def beta(self, bias=1., **kwargs):
         if 'beta' in kwargs:
@@ -64,10 +29,10 @@ class BaseBAOWigglesPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
         return beta
 
 
-class EmpiricalBAOWigglesTracerPowerSpectrum(BaseBAOWigglesPowerSpectrum, TrapzTheoryPowerSpectrumMultipoles):
+class DampedBAOWigglesPowerSpectrumMultipoles(BaseBAOWigglesPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, mu=200, **kwargs):
-        super(EmpiricalBAOWigglesTracerPowerSpectrum, self).__init__(*args, **kwargs)
+        super(DampedBAOWigglesTracerPowerSpectrum, self).__init__(*args, **kwargs)
         self.set_k_mu(k=self.k, mu=mu, ells=self.ells)
 
     def run(self, bias=1., sigmas=0., sigmapar=8., sigmaper=4., **kwargs):
@@ -81,7 +46,7 @@ class EmpiricalBAOWigglesTracerPowerSpectrum(BaseBAOWigglesPowerSpectrum, TrapzT
         sk = 0.
         if self.mode == 'reciso': sk = np.exp(-1. / 2. * (kap * self.smoothing_radius)**2)
         pkmu = jac * fog * (bias + f * muap**2 * (1 - sk))**2 * (pknow + damped_wiggles)
-        self.power = self.to_poles(pkmu) + self.broadband_poles(**kwargs)
+        self.power = self.to_poles(pkmu)
 
 
 class ResummedPowerSpectrumWiggles(BasePowerSpectrumWiggles):
@@ -133,7 +98,7 @@ class ResummedPowerSpectrumWiggles(BasePowerSpectrumWiggles):
         return resummed_wiggles
 
 
-class ResummedBAOWigglesTracerPowerSpectrum(BaseBAOWigglesPowerSpectrum, TrapzTheoryPowerSpectrumMultipoles):
+class ResummedBAOWigglesPowerSpectrumMultipoles(BaseBAOWigglesPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, mu=200, **kwargs):
         super(ResummedBAOWigglesTracerPowerSpectrum, self).__init__(*args, **kwargs)
@@ -146,5 +111,96 @@ class ResummedBAOWigglesTracerPowerSpectrum(BaseBAOWigglesPowerSpectrum, TrapzTh
         pknow = self.wiggles.power_now(kap)
         wiggles = self.wiggles.wiggles(kap, muap, bias=bias, **kwargs)
         fog = 1. / (1. + (sigmas * kap * muap)**2 / 2.)**2.
-        pkmu = jac * (wiggles + fog * (bias + f * muap**2 * (1 - sk))**2 * pknow)
-        self.power = self.to_poles(pkmu) + self.broadband_poles(**kwargs)
+        sk = 0.
+        if self.mode == 'reciso': sk = np.exp(-1. / 2. * (kap * self.smoothing_radius)**2)
+        pkmu = jac * fog * (damped_wiggles + (bias + f * muap**2 * (1 - sk))**2 * pknow)
+        self.power = self.to_poles(pkmu)
+
+
+class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
+
+    params = {'al[:5:2]_[-3:2]': {'value': 0., 'fixed': False, 'latex': 'a_{[], []}', 'prior': {'limits': [-1000., 1000.]}}}
+
+    def __init__(self, k=None, zeff=1., ells=(0, 2, 4), fiducial=None, **kwargs):
+        super(BaseBAOWigglesTracerPowerSpectrum, self).__init__(k=k, zeff=zeff, ells=ells, fiducial=fiducial)
+        self._set_params()
+        self.requires = {'bao': (self.__class__.__name__.replace('Tracer', ''),
+                                {'k': self.k, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial, **kwargs})}
+
+    def _set_params(self):
+        params = ParameterCollection()
+        self.broadband_coeffs = {}
+        for ell in self.ells:
+            self.broadband_coeffs[ell] = {}
+        for param in self.params:
+            name = param.basename
+            match = re.match('al(.*)_(.*)', str(param))
+            if match:
+                ell = int(match.group(1))
+                pow = int(match.group(2))
+                if ell in self.ells:
+                    self.broadband_coeffs[ell][name] = pow
+            else:
+                raise ValueError('Unrecognized paraneter {}'.format(param))
+        self.params = params
+
+    def run(self, **params):
+        self.power = self.bao.power.copy()
+        for ill, ell in enumerate(self.ells):
+            for name, ii in self.broadband_coeffs[ell].items():
+                self.power[ill] += params[name] * self.k**ii
+
+
+class DampedBAOWigglesTracerPowerSpectrumMultipoles(BaseBAOWigglesTracerPowerSpectrumMultipoles):
+
+    pass
+
+
+class ResummedBAOWigglesTracerPowerSpectrumMultipoles(BaseBAOWigglesTracerPowerSpectrumMultipolesMultipoles):
+
+    pass
+
+
+class BaseBAOWigglesCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMultipoles):
+
+    def __init__(self, s=None, zeff=1., ells=(0, 2, 4), fiducial=None, **kwargs):
+        super(BaseBAOWigglesCorrelationFunctionMultipoles, self).__init__(s=s, zeff=zeff, ells=ells, fiducial=fiducial)
+        self.k = np.logspace(min(-3, - np.log10(self.s[-1]) - 0.1), max(2, - np.log10(self.s[0]) + 0.1), 2000)
+        from cosmoprimo import PowerToCorrelation
+        self.fftlog = PowerToCorrelation(self.k, ell=self.ells, q=0, lowring=False)
+        self.requires = {'power': (self.__class__.__name__.replace('CorrelationFunction', 'PowerSpectrum'),
+                                  {'k': self.k, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial, **kwargs})}
+
+    def run(self):
+        s, self.corr = self.fftlog(self.power.power)
+        self.s = s[0]
+
+
+class DampedBAOWigglesCorrelationFunctionMultipoles(BaseBAOWigglesTracerCorrelationFunctionMultipoles):
+
+    pass
+
+
+class ResummedBAOWigglesCorrelationFunctionMultipoles(BaseBAOWigglesTracerCorrelationFunctionMultipolesMultipoles):
+
+    pass
+
+
+class BaseBAOWigglesTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMultipoles):
+
+    params = {'al[:5:2]_[-1:3]': {'value': 0., 'fixed': False, 'latex': 'a_{[], []}', 'prior': {'limits': [-10., 10.]}}}
+
+    def __init__(self, s=None, zeff=1., ells=(0, 2, 4), fiducial=None, **kwargs):
+        super(BaseBAOWigglesTracerCorrelationFunction, self).__init__(s=s, zeff=zeff, ells=ells, fiducial=fiducial)
+        self._set_params()
+        self.requires = {'bao': (self.__class__.__name__.replace('Tracer', ''),
+                                {'s': self.s, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial, **kwargs})}
+
+    def run(self, **params):
+        self.corr = self.bao.corr.copy()
+        for ill, ell in enumerate(self.ells):
+            for name, ii in self.broadband_coeffs[ell].items():
+                self.corr[ill] += params[name] * self.s**ii
+
+
+BaseBAOWigglesTracerCorrelationFunctionMultipoles._set_params = BaseBAOWigglesTracerPowerSpectrumMultipoles._set_params

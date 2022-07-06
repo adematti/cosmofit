@@ -88,6 +88,8 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
         self.likelihood = likelihood
         self.varied_params = self.likelihood.params.select(varied=True, derived=False)
         if self.mpicomm.rank == 0:
+            self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
+        if self.mpicomm.rank == 0:
             if chains is None: chains = max(self.mpicomm.size - 1, 1)
             if isinstance(chains, numbers.Number):
                 self.chains = [None] * int(chains)
@@ -219,7 +221,7 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
                     indices_in_chain, indices = ParameterValues(self.derived[1]).match(chain, name=self.varied_params.names())
                     assert indices_in_chain[0].size == chain.size
                     for array in self.derived[0]:
-                        chain.set(array[indices].reshape(chain.shape), output=True)
+                        chain.set(array[indices].reshape(chain.shape + array.shape[1:]), output=True)
                 else:
                     chain = None
                 chains[ichain] = chain

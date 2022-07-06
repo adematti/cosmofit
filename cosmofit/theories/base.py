@@ -22,6 +22,23 @@ class BaseTheoryPowerSpectrumMultipoles(BaseCalculator):
         return state
 
 
+class BaseTheoryCorrelationFunctionMultipoles(BaseCalculator):
+
+    def __init__(self, s=None, zeff=1., ells=(0, 2, 4), fiducial=None):
+        if s is None: s = np.linspace(20., 200, 101)
+        self.s = np.array(s, dtype='f8')
+        self.zeff = float(zeff)
+        self.ells = tuple(ells)
+        self.fiducial = fiducial
+
+    def __getstate__(self):
+        state = {}
+        for name in ['s', 'zeff', 'ells', 'corr']:
+            if hasattr(self, name):
+                state[name] = getattr(self, name)
+        return state
+
+
 class TrapzTheoryPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, mu=200, **kwargs):

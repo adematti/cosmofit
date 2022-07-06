@@ -62,37 +62,19 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         self.pipeline.mpicomm = mpicomm
         if len(self.pipeline.end_calculators) > 1:
             raise PipelineError('For emulator, pipeline must have a single end calculator; use pipeline.select()')
+
         calculator = self.pipeline.end_calculators[0]
-
-        states = {}
-        rng = np.random.RandomState(seed=42)
-        for ii in range(3):
-            params = {str(param): param.ref.sample(random_state=rng) for param in self.pipeline.params.select(varied=True)}
-            self.pipeline.run(**params)
-            for name, value in calculator.__getstate__().items():
-                states[name] = states.get(name, []) + [value]
-
-        self.fixed, self.varied = {}, []
-        for name, values in states.items():
-            if all(np.all(value == values[0]) for value in values):
-                self.fixed[name] = values[0]
-            else:
-                self.varied.append(name)
-                dtype = np.asarray(values[0]).dtype
-                if not np.issubdtype(dtype, np.inexact):
-                    raise ValueError('Attribute {} is of type {}, which is not supported (only float and complex supported)'.format(name, dtype))
-        if self.mpicomm.rank == 0:
-            self.log_info('Found varying {} and fixed {}.'.format(self.varied, list(self.fixed.keys())))
-
         self.params = self.pipeline.params.clone(namespace=None)
         self.varied_params = self.params.names(varied=True, derived=False)
         self.this_params = calculator.runtime_info.full_params.clone(namespace=None)
 
-        for name in self.varied:
-            if name not in calculator.runtime_info.base_params:
-                param = Parameter(name, namespace=calculator.runtime_info.namespace, derived=True)
-                calculator.runtime_info.full_params.set(param)
-                calculator.runtime_info.full_params = calculator.runtime_info.full_params
+        calculator.runtime_info._derived_names = {'all': True}
+        fixed, varied = self.pipeline._set_derived([calculator])[1:]
+        self.fixed, self.varied = fixed[0], varied[0]
+
+        if self.mpicomm.rank == 0:
+            self.log_info('Varied parameters: {}.'.format(self.varied_params))
+            self.log_info('Found varying {} and fixed {} outputs.'.format(self.varied, list(self.fixed.keys())))
 
         def serialize_cls(self):
             return ('.'.join([self.__module__, self.__class__.__name__]), os.path.dirname(sys.modules[self.__module__].__file__))
@@ -114,6 +96,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             for name in self.varied:
                 param = self.pipeline.end_calculators[0].runtime_info.base_params[name]
                 self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)), output=True)
+            self.samples = self.samples.ravel()
 
     def get_default_samples(self):
         raise NotImplementedError
@@ -124,10 +107,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
     def predict(self, **params):
         raise NotImplementedError
 
-    def check(self, mse_stop=None, validation_frac=None):
-
-        if validation_frac is None:
-            validation_frac = 1.
+    def check(self, mse_stop=None, validation_frac=1.):
 
         def add_diagnostics(name, value):
             if name not in self.diagnostics:
@@ -140,10 +120,10 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             self.log_info('Diagnostics:')
         item = '- '
         toret = True
-        nsamples = self.mpicomm.bcast(len(self.samples) if self.mpicomm.rank == 0 else None)
-        nvalidation = int(nsamples * self.validation_frac + 0.5)
-        if nvalidation >= nsamples:
-            raise ValueError('Cannot use {:d} validation samples (>= {:d} total samples)'.format(nvalidation, nsamples))
+        nsamples = self.mpicomm.bcast(self.samples.size if self.mpicomm.rank == 0 else None)
+        nvalidation = int(nsamples * validation_frac + 0.5)
+        if nvalidation > nsamples:
+            raise ValueError('Cannot use {:d} validation samples (> {:d} total samples)'.format(nvalidation, nsamples))
         rng = np.random.RandomState(seed=42)
         if self.mpicomm.rank == 0:
             samples = self.samples[rng.choice(nsamples, size=nvalidation, replace=False)]

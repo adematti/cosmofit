@@ -16,9 +16,10 @@ pipeline:
       load_fn: True
       plot: f'{output_dir}/power.png'
     theory:
-      class: cosmofit.theories.bao.EmpiricalBAOWigglesGalaxyPowerSpectrum
+      class: cosmofit.theories.bao.EmpiricalBAOWigglesTracerPowerSpectrumMultipoles
       params:
         fixed: ['al0*', 'al2*']
+        derived: [varied]
         al[:3:2]_[0:2]:
           fixed: True
       #load_fn: f'{output_dir}/emulator.npy'
@@ -36,14 +37,22 @@ pipeline:
       fixed: '*'
 
 emulate:
+  class: MLPEmulatorEngine
+  sample: #f'{output_dir}/samples.npy'
+    save_fn: f'{output_dir}/samples.npy'
+  fit:
+    epochs: 10
+  init:
+    npcs: 20
+
+emulate:
   class: TaylorEmulatorEngine
   init:
     order: 1
 
 emulate:
   class: MLPEmulatorEngine
-  sample: #f'{output_dir}/samples.npy'
-    save_fn: f'{output_dir}/samples.npy'
+  sample: f'{output_dir}/chain_0.npy'
   fit:
     epochs: 10
   init:

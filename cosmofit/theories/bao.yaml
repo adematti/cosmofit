@@ -1,4 +1,4 @@
-class: EmpiricalBAOWigglesTracerPowerSpectrum
+class: DampedBAOWigglesPowerSpectrum
 
 info:
   version: 0.0.1
@@ -43,17 +43,11 @@ params:
     latex: \Sigma_{\perp}
     prior:
       limits: [0.1, 10]
-  al[:5:2]_[-3:2]:
-    value: 0.
-    fixed: False
-    latex: a_{[], []}
-    prior:
-      limits: [-1000., 1000.]
 
 
 ---
 
-class: ResummedBAOWigglesTracerPowerSpectrum
+class: ResummedBAOWigglesPowerSpectrum
 
 info:
   version: 0.0.1
@@ -86,9 +80,3 @@ params:
     latex: \Sigma_{s}
     prior:
       limits: [0, 10]
-  al[:5:2]_[-3:2]:
-    value: 0.
-    fixed: False
-    latex: a_{[], []}
-    prior:
-      limits: [-1000., 1000.]

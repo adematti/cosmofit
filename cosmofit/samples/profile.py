@@ -47,8 +47,11 @@ class ParameterValues(BaseParameterCollection):
         return ()
 
     @property
+    def ndim(self):
+        return len(self.shape)
+
+    @property
     def size(self):
-        """Equivalent for :meth:`__len__`."""
         return np.prod(self.shape, dtype='intp')
 
     def __len__(self):
@@ -62,6 +65,13 @@ class ParameterValues(BaseParameterCollection):
             else:
                 params = [param for param in params if str(param) not in self.outputs]
         return params
+
+    def ravel(self):
+        new = self.copy()
+        for name in self.names():  # flatten along iteration axis
+            array = self[name]
+            new[name] = array.reshape((self.size,) + array.shape[self.ndim:])
+        return new
 
     @classmethod
     def concatenate(cls, *others):
