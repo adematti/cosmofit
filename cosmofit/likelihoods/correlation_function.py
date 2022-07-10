@@ -57,7 +57,7 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
                             self.s, self.ells = mock_s, mock_ells
                         if not all(np.allclose(ss, ms, atol=1e-2) for ss, ms in zip(self.s, mock_s)):
                             raise ValueError('{} does not have expected s-binning (based on previous data)'.format(fn))
-                        if ells != self.ells:
+                        if mock_ells != self.ells:
                             raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))
                         list_data.append(np.ravel(data))
                 nobs = len(list_data)
@@ -67,7 +67,7 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
         super(CorrelationFunctionMultipolesLikelihood, self).__init__(covariance=covariance, data=np.concatenate(poles, axis=0) if poles is not None else None, nobs=nobs)
         self.requires['theory'] = ('BaseTheoryCorrelationFunctionMultipoles', {'s': self.s, 'ells': self.ells, 'zeff': zeff, 'fiducial': fiducial})
 
-    def plot(self, fn=None, labelsize=14, kw_save=None):
+    def plot(self, fn=None, kw_save=None):
         from matplotlib import pyplot as plt
         height_ratios = [max(len(self.ells), 3)] + [1] * len(self.ells)
         figsize = (6, 1.5 * sum(height_ratios))
@@ -82,11 +82,11 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
             lax[ill + 1].plot(self.s[ill], (data[ill] - model[ill]) / std[ill], color='C{:d}'.format(ill))
             lax[ill + 1].set_ylim(-4, 4)
             for offset in [-2., 2.]: lax[ill + 1].axhline(offset, color='k', linestyle='--')
-            lax[ill + 1].set_ylabel(r'$\Delta \xi_{{{0:d}}} / \sigma_{{ \xi_{{{0:d}}} }}$'.format(ell), fontsize=labelsize)
+            lax[ill + 1].set_ylabel(r'$\Delta \xi_{{{0:d}}} / \sigma_{{ \xi_{{{0:d}}} }}$'.format(ell))
         for ax in lax: ax.grid(True)
         lax[0].legend()
-        lax[0].set_ylabel(r'$s^{2} \xi_{\ell}(s)$ [$(\mathrm{Mpc}/h)^{2}$]', fontsize=labelsize)
-        lax[-1].set_xlabel(r'$s$ [$\mathrm{Mpc}/h$]', fontsize=labelsize)
+        lax[0].set_ylabel(r'$s^{2} \xi_{\ell}(s)$ [$(\mathrm{Mpc}/h)^{2}$]')
+        lax[-1].set_xlabel(r'$s$ [$\mathrm{Mpc}/h$]')
         if fn is not None:
             plotting.savefig(fn, fig=fig, **(kw_save or {}))
         return lax

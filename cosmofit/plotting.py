@@ -15,6 +15,10 @@ def savefig(filename, fig=None, bbox_inches='tight', pad_inches=0.1, dpi=200, **
     """
     Save figure to ``filename``.
 
+    Warning
+    -------
+    Take care to close figure at the end, ``plt.close(fig)``.
+
     Parameters
     ----------
     filename : string
@@ -24,14 +28,19 @@ def savefig(filename, fig=None, bbox_inches='tight', pad_inches=0.1, dpi=200, **
         Figure to save. Defaults to current figure.
 
     kwargs : dict
-        Arguments for :meth:`matplotlib.figure.Figure.savefig`.
+        Optional arguments for :meth:`matplotlib.figure.Figure.savefig`.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
     """
-    utils.mkdir(os.path.dirname(filename))
+    from matplotlib import pyplot as plt
+    mkdir(os.path.dirname(filename))
     logger.info('Saving figure to {}.'.format(filename))
     if fig is None:
         fig = plt.gcf()
     fig.savefig(filename, bbox_inches=bbox_inches, pad_inches=pad_inches, dpi=dpi, **kwargs)
-    plt.close(fig)
+    return fig
 
 
 def suplabel(axis, label, shift=0, labelpad=5, ha='center', va='center', **kwargs):

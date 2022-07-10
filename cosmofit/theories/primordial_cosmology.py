@@ -1,7 +1,6 @@
 from cosmoprimo import Cosmology, CosmologyError
 
 from cosmofit.base import BaseCalculator
-from .base import get_cosmo
 
 
 class BasePrimordialCosmology(BaseCalculator):
@@ -15,6 +14,7 @@ class Cosmoprimo(BasePrimordialCosmology):
         self.engine = engine
         self.extra_params = extra_params or {}
         if fiducial is not None:
+            from .base import get_cosmo
             cosmo = get_cosmo(fiducial)
             for param in self.params:
                 name = param.basename

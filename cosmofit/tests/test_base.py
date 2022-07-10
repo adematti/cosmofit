@@ -1,9 +1,11 @@
+import os
 import copy
 
 import numpy as np
 
 from cosmofit import setup_logging
-from cosmofit.base import BaseConfig, BasePipeline, PipelineError, LikelihoodPipeline, ParameterConfig, ParameterCollection
+from cosmofit.base import BaseConfig, BasePipeline, PipelineError, LikelihoodPipeline
+from cosmofit.parameter import ParameterConfig, ParameterCollection, Parameter, ParameterPrior
 
 
 def test_config():
@@ -17,14 +19,16 @@ def test_config():
 
 def test_params():
 
-    config = BaseConfig('/local/home/adematti/Bureau/DESI/NERSC/cosmodesi/cosmofit/cosmofit/theories/bao.yaml', index={'class': 'Beutler2017BAOGalaxyPowerSpectrum'})
+    config = BaseConfig(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'theories', 'bao.yaml'), index={'class': 'DampedBAOWigglesTracerPowerSpectrumMultipoles'})
     params = ParameterCollection(config['params'])
-    assert params.names(name='sigmar') == ['sigmar']
-    assert params.names(name=['sigmar', 'al[:5:2]_[-3:2]']) == ['sigmar', 'al0_-3', 'al0_-2', 'al0_-1', 'al0_0', 'al0_1', 'al2_-3', 'al2_-2', 'al2_-1', 'al2_0', 'al2_1', 'al4_-3', 'al4_-2', 'al4_-1', 'al4_0', 'al4_1']
+    assert params.names(name='sigmas') == ['sigmas']
+    assert params.names(name=['sigmas', 'al[:5:2]_[-3:2]']) == ['sigmas', 'al0_-3', 'al0_-2', 'al0_-1', 'al0_0', 'al0_1', 'al2_-3', 'al2_-2', 'al2_-1', 'al2_0', 'al2_1', 'al4_-3', 'al4_-2', 'al4_-1', 'al4_0', 'al4_1']
 
     ref_config = {'al[:5:2]_[-3:2]': {'prior': {'limits': [0., 1]}}, 'sigma': {'latex': r'\sigma'}, 'bias': {'latex': 'b', 'fixed': False}}
     config = copy.deepcopy(ref_config)
     params = ParameterCollection(config)
+    assert Parameter(**params['al0_-3'].__getstate__()) == params['al0_-3']
+    assert ParameterPrior(**params['al0_-3'].prior.__getstate__()) == params['al0_-3'].prior
     assert (not params['al0_-3'].fixed) and (params['sigma'].fixed) and not (params['bias'].fixed)
     config['fixed'] = 'al[:5:2]_[-3:2]'
     params = ParameterConfig(config).init()
@@ -59,14 +63,13 @@ def test_pipeline():
     # with pytest.raises(PipelineError):
     #     pipeline.end_calculators[0].power = None
     assert len(pipeline.end_calculators) == 1 and pipeline.end_calculators[0].runtime_info.basename == 'like'
-    assert len(pipeline.calculators) == 6
+    assert len(pipeline.calculators) == 7
     varied = pipeline.params.select(varied=True)
-    assert len(varied) == 7
-    assert pipeline.params['QSO.sigmar'].latex() == r'\Sigma_{r}'
-    assert len(pipeline.params.select(fixed=True)) == 21
-    print(pipeline.params.names())
-    assert pipeline.params.names() == ['QSO.bias', 'QSO.sigmar', 'QSO.sigmas', 'QSO.sigmapar', 'QSO.sigmaper', 'QSO.al0_-3', 'QSO.al0_-2', 'QSO.al0_-1', 'QSO.al0_0', 'QSO.al0_1', 'QSO.al2_-3', 'QSO.al2_-2', 'QSO.al2_-1', 'QSO.al2_0', 'QSO.al2_1',
-                                       'QSO.qpar', 'QSO.qper', 'h', 'omega_cdm', 'omega_b', 'A_s', 'k_pivot', 'n_s', 'omega_ncdm', 'N_ur', 'tau_reio', 'w0_fld', 'wa_fld']
+    assert len(varied) == 13
+    assert pipeline.params['QSO.sigmas'].latex() == r'\Sigma_{s}'
+    assert len(pipeline.params.select(fixed=True)) == 19
+    assert pipeline.params.names() == ['QSO.qpar', 'QSO.qper', 'QSO.bias', 'QSO.sigmas', 'QSO.sigmapar', 'QSO.sigmaper', 'QSO.al0_-3', 'QSO.al0_-2', 'QSO.al0_-1', 'QSO.al0_0', 'QSO.al0_1',
+                                       'QSO.al2_-3', 'QSO.al2_-2', 'QSO.al2_-1', 'QSO.al2_0', 'QSO.al2_1', 'QSO.al4_-3', 'QSO.al4_-2', 'QSO.al4_-1', 'QSO.al4_0', 'QSO.al4_1', 'h', 'omega_cdm', 'omega_b', 'A_s', 'k_pivot', 'n_s', 'omega_ncdm', 'N_ur', 'tau_reio', 'w0_fld', 'wa_fld']
     pipeline.run()
 
     config = BaseConfig('full_shape_pipeline.yaml')
@@ -119,13 +122,13 @@ if __name__ == '__main__':
 
     # test_config()
     # test_params()
-    # test_pipeline()
+    test_pipeline()
     # test_likelihood()
     # test_sample()
     # test_profile()
     # test_do()
     # test_summarize()
-    test_emulate()
+    # test_emulate()
     # test_emulate(config_fn='full_shape_pipeline.yaml')
     # test_profile(config_fn='full_shape_pipeline.yaml')
     # test_sample(config_fn='full_shape_pipeline.yaml')

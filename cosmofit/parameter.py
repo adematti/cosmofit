@@ -1,15 +1,15 @@
 """Classes to handle parameters."""
 
-import functools
 import re
 import fnmatch
+import functools
 
 import numpy as np
 from scipy import stats
 
-from . import base
+from . import base, utils
 from .io import BaseConfig
-from .utils import BaseClass, is_sequence
+from .utils import BaseClass
 
 
 def decode_name(name, default_start=0, default_stop=None, default_step=1):
@@ -145,9 +145,12 @@ def find_names(allnames, name, quiet=True):
     toret : list
         List of parameter names (strings).
     """
-    if isinstance(name, list):
+    if not utils.is_sequence(allnames):
+        allnames = [allnames]
+
+    if utils.is_sequence(name):
         toret = []
-        for name_ in name: toret += find_names(allnames, name_, quiet=quiet)
+        for nn in name: toret += find_names(allnames, nn, quiet=quiet)
         return toret
 
     name = str(name)
@@ -323,13 +326,11 @@ class Parameter(BaseClass):
             return
         basename = str(basename)
         names = basename.split(base.namespace_delimiter)
-        if namespace is not None: names = [namespace] + names
-        if len(names) > 2:
-            raise ParameterError('Single namespace accepted')
-        if len(names) == 2:
-            self.namespace, self.basename = names
+        if namespace: names = [namespace] + names
+        if len(names) >= 2:
+            self.basename, self.namespace = names[-1], base.namespace_delimiter.join(names[:-1])
         else:
-            self.namespace, self.basename = None, names[0]
+            self.basename, self.namespace = names[0], None
         self.value = value
         self.prior = prior if isinstance(prior, ParameterPrior) else ParameterPrior(**(prior or {}))
         if value is None:
@@ -397,13 +398,12 @@ class Parameter(BaseClass):
             state[key] = getattr(self, key)
             if hasattr(state[key], '__getstate__'):
                 state[key] = state[key].__getstate__()
+        state['latex'] = state.pop('_latex')
         return state
 
     def __setstate__(self, state):
         """Set this class state dictionary."""
-        super(Parameter, self).__setstate__(state)
-        for key in ['prior', 'ref']:
-            setattr(self, key, ParameterPrior.from_state(state[key]))
+        self.__init__(**state)
 
     def __repr__(self):
         """Represent parameter as string (name and fixed or varied)."""
@@ -415,7 +415,7 @@ class Parameter(BaseClass):
 
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
-        return type(other) == type(self) and all(getattr(other, key) == getattr(self, key) for key in self._attrs)
+        return type(other) == type(self) and all(getattr(other, name) == getattr(self, name) for name in self._attrs)
 
 
 class GetterSetter(object):
@@ -508,10 +508,10 @@ class BaseParameterCollection(BaseClass):
         if data is None:
             return
 
-        if is_sequence(data):
-            data_ = datanew.data = self.data.copy()
+        if utils.is_sequence(data):
+            dd = datanew.data = self.data.copy()
             data = {}
-            for item in data_:
+            for item in dd:
                 data[self._get_name(item)] = item  # only name is provided
 
         for name, item in data.items():
@@ -659,15 +659,18 @@ class BaseParameterCollection(BaseClass):
             self.set(item)
 
     def params(self, **kwargs):
-        names = [self._get_name(item) for item in self.data]
-        name = kwargs.pop('name', None)
-        if name is not None:
-            names = find_names(names, name)
-            if not names: return []  # no match
         toret = []
-        for name in names:
-            param = self._get_param(self[name])
-            if all(getattr(param, key) == value for key, value in kwargs.items()):
+        for param in self:
+            match = True
+            for key, value in kwargs.items():
+                param_value = getattr(param, key)
+                if key in ['name', 'basename', 'namespace']:
+                    key_match = bool(find_names([param_value], value))
+                else:
+                    key_match = value == param_value
+                match &= key_match
+                if not key_match: break
+            if match:
                 toret.append(param)
         return toret
 
@@ -675,6 +678,11 @@ class BaseParameterCollection(BaseClass):
         """Return parameter names in collection."""
         params = self.params(**kwargs)
         return [str(param) for param in params]
+
+    def basenames(self, **kwargs):
+        """Return base parameter names in collection."""
+        params = self.params(**kwargs)
+        return [param.basename for param in params]
 
     def select(self, **kwargs):
         """
@@ -703,7 +711,7 @@ class BaseParameterCollection(BaseClass):
         Unique items only are kept.
         """
         if not others: return cls()
-        if len(others) == 1 and is_sequence(others[0]):
+        if len(others) == 1 and utils.is_sequence(others[0]):
             others = others[0]
         new = cls(others[0])
         for other in others[1:]:
@@ -771,8 +779,7 @@ class BaseParameterCollection(BaseClass):
         return new
 
     def items(self):
-        for item in self:
-            yield self._get_name(item), item
+        return [(self._get_name(item), item) for item in self]
 
     def deepcopy(self):
         import copy
@@ -791,12 +798,22 @@ class ParameterConfig(BaseConfig):
         if isinstance(data, self.__class__):
             self.__dict__.update(data.copy().__dict__)
             return
+        if isinstance(data, ParameterCollection):
+            dd = {}
+            for name, param in data.items():
+                state = param.__getstate__()
+                state.pop('basename')
+                state['namespace'] = False
+                dd[name] = state
+            data = dd
+        if utils.is_sequence(data):
+            data = {name: {} for name in data}
         super(ParameterConfig, self).__init__(data=data, **kwargs)
         data = self.copy()
         self.fixed, self.derived, self.namespace = {}, {}, {}
-        for meta_name, meta_default in zip(['fixed', 'varied', 'derived', 'namespace'], [[], [], [], '*']):
-            meta = data.pop(meta_name, meta_default)
-            if not is_sequence(meta): meta = [meta]
+        for meta_name in ['fixed', 'varied', 'derived', 'namespace']:
+            meta = data.pop(meta_name, [])
+            if not utils.is_sequence(meta): meta = [meta]
             if meta_name in ['derived', 'namespace']:
                 getattr(self, meta_name).update({name: True for name in meta})
             else:
@@ -808,7 +825,7 @@ class ParameterConfig(BaseConfig):
             for name, latex in yield_names_latex(name, latex=latex):
                 tmp = conf.copy()
                 if latex is not None: tmp['latex'] = latex
-                namespace = tmp.get('namespace', None)
+                tmp['namespace'] = namespace = tmp.get('namespace', None)
                 if isinstance(namespace, str):
                     name = base.namespace_delimiter.join([namespace, name])
                     tmp['namespace'] = False
@@ -851,13 +868,13 @@ class ParameterConfig(BaseConfig):
         if namespace is None:
             new = self.deepcopy()
             for name in new:
-                new[name].pop('namespace')
+                new[name]['namespace'] = False
             return new
         new = self.__class__()
         for name, param in self.items():
             newparam = param.copy()
-            newparam.pop('namespace')
-            if param['namespace']:
+            newparam['namespace'] = False
+            if param['namespace'] or param['namespace'] is None:
                 name = base.namespace_delimiter.join([namespace, name])
             new[name] = newparam
         for meta_name in ['fixed', 'derived', 'namespace']:
@@ -904,7 +921,7 @@ class ParameterCollection(BaseParameterCollection):
         if isinstance(data, ParameterConfig):
             self.__dict__.update(data.init())
 
-        if is_sequence(data):
+        if utils.is_sequence(data):
             dd = data
             data = {}
             for name in dd:
@@ -1104,13 +1121,14 @@ class ParameterPrior(BaseClass):
 
     def __setstate__(self, state):
         """Set this class state dictionary."""
-        self.__init__(state['dist'], state['limits'], **state['attrs'])
+        self.__init__(**state)
 
     def __getstate__(self):
         """Return this class state dictionary."""
         state = {}
-        for key in ['dist', 'limits', 'attrs']:
+        for key in ['dist', 'limits']:
             state[key] = getattr(self, key)
+        state.update(self.attrs)
         return state
 
     def is_proper(self):

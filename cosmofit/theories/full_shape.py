@@ -1,6 +1,6 @@
 import numpy as np
 
-from .bao import BaseTheoryPowerSpectrumMultipoles
+from .bao import BaseTheoryPowerSpectrumMultipoles, BaseTheoryCorrelationFunctionMultipoles
 from .power_template import BasePowerSpectrumTemplate  # to add calculator in the registry
 
 
@@ -11,7 +11,7 @@ class BasePTPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
         self.requires = {'effectap': ('EffectAP', {'zeff': self.zeff, 'fiducial': self.fiducial}), 'pklin': ('BasePowerSpectrumTemplate', {'k': self.kin})}
 
 
-class LPTPowerSpectrumMultipoles(BasePTPowerSpectrum):
+class LPTPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles):
 
     kin = np.logspace(-3., 1., 200)
 

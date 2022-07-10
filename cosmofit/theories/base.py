@@ -82,19 +82,19 @@ class EffectAP(BaseCalculator):
             self.mode = 'distances'
             if 'qiso' in self.params:
                 self.mode = 'qiso'
-            elif 'qpar' in self.params and 'qper' in self.params:
+            elif 'qpar' in self.params.basenames() and 'qper' in self.params.basenames():
                 self.mode = 'qparqper'
 
         if self.mode == 'qiso':
-            self.params = self.params.select(name=['qiso'])
+            self.params = self.params.select(basename=['qiso'])
         elif self.mode == 'qparqper':
-            self.params = self.params.select(name=['qpar', 'qper'])
+            self.params = self.params.select(basename=['qpar', 'qper'])
         elif self.mode == 'distances':
             self.params = self.params.clear()
         else:
             raise ValueError('mode must be one of ["qiso", "qparqper", "distances"]')
-
-        self.requires = {'cosmo': ('BasePrimordialCosmology', {})}
+        from .primordial_cosmology import BasePrimordialCosmology
+        self.requires = {'cosmo': (BasePrimordialCosmology, {})}
 
     def run(self, **params):
         if self.mode == 'distances':

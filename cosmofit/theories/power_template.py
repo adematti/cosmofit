@@ -1,8 +1,7 @@
 import numpy as np
 
-from cosmoprimo import PowerSpectrumBAOFilter
-
 from cosmofit.base import BaseCalculator
+from .primordial_cosmology import BasePrimordialCosmology
 
 
 class BasePowerSpectrumWiggles(BaseCalculator):
@@ -10,10 +9,11 @@ class BasePowerSpectrumWiggles(BaseCalculator):
     def __init__(self, zeff=1., engine='wallish2018'):
         self.engine = engine
         self.zeff = float(zeff)
-        self.requires = {'cosmo': ('BasePrimordialCosmology', {})}
+        self.requires = {'cosmo': (BasePrimordialCosmology, {})}
 
     def run(self):
         self.power = self.cosmo.get_fourier().pk_interpolator().to_1d(z=self.zeff)
+        from cosmoprimo import PowerSpectrumBAOFilter
         self.power_now = PowerSpectrumBAOFilter(self.power, engine=self.engine).smooth_pk_interpolator()
 
     def wiggles(self, k):
@@ -27,7 +27,7 @@ class BasePowerSpectrumTemplate(BaseCalculator):
             k = np.logspace(-3., 1., 200)
         self.k = np.array(k, dtype='f8')
         self.zeff = float(zeff)
-        self.requires = {'cosmo': ('BasePrimordialCosmology', {})}
+        self.requires = {'cosmo': (BasePrimordialCosmology, {})}
 
     def run(self):
         fo = self.cosmo.get_fourier()
@@ -49,7 +49,7 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         super(ShapeFitPowerSpectrumTemplate, self).__init__(*args, **kwargs)
         self.a = float(a)
         self.k_pivot = float(k_pivot)
-        self.requires['wiggles'] = ('PowerSpectrumWiggles', {'zeff': self.zeff})
+        self.requires['wiggles'] = (BasePowerSpectrumWiggles, {'zeff': self.zeff})
 
     def run(self, m=0., n=0.):
         super(ShapeFitPowerSpectrumTemplate, self).run()
@@ -59,7 +59,7 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         self.n_s_ref = n + self.cosmo.n_s
         dk = 1e-3
         k = self.k_pivot * np.array([1. - dk, 1. + dk])
-        if self.params['n'].varied:
+        if self.runtime_info.base_params['n'].varied:
             pk_prim = self.cosmo.get_primordial().pk_interpolator()(k)
         else:
             pk_prim = 1.

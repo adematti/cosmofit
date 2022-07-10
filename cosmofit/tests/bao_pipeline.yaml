@@ -16,12 +16,10 @@ pipeline:
       load_fn: True
       plot: f'{output_dir}/power.png'
     theory:
-      class: cosmofit.theories.bao.EmpiricalBAOWigglesTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
       params:
-        fixed: ['al0*', 'al2*']
+        fixed: ['al4*']
         derived: [varied]
-        al[:3:2]_[0:2]:
-          fixed: True
       #load_fn: f'{output_dir}/emulator.npy'
       emulator:
         save_fn: f'{output_dir}/emulator.npy'

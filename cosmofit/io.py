@@ -221,6 +221,7 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
     def __copy__(self):
         import copy
         new = super(BaseConfig, self).__copy__()
+        new.data = self.data.copy()
         for name in self._attrs:
             if hasattr(self, name):
                 setattr(self, name, copy.copy(getattr(self, name)))

@@ -66,7 +66,6 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         calculator = self.pipeline.end_calculators[0]
         self.params = self.pipeline.params.clone(namespace=None)
         self.varied_params = self.params.names(varied=True, derived=False)
-        self.this_params = calculator.runtime_info.full_params.clone(namespace=None)
 
         calculator.runtime_info._derived_names = {'all': True}
         fixed, varied = self.pipeline._set_derived([calculator])[1:]
@@ -79,7 +78,8 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         def serialize_cls(self):
             return ('.'.join([self.__module__, self.__class__.__name__]), os.path.dirname(sys.modules[self.__module__].__file__))
 
-        self._engine_cls = {'emulator': serialize_cls(self), 'calculator': serialize_cls(calculator)}
+        self._emulator_cls = serialize_cls(self)
+        self._calculator_cls = serialize_cls(calculator)
         self.diagnostics = {}
 
     def set_samples(self, samples=None, save_fn=None, **kwargs):
@@ -158,7 +158,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
 
     def __getstate__(self):
         state = {}
-        for name in ['params', 'this_params', 'varied_params', 'fixed', 'varied', '_engine_cls']:
+        for name in ['params', 'varied_params', 'fixed', 'varied', '_emulator_cls', '_calculator_cls']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -191,8 +191,8 @@ class BaseEmulator(BaseClass):
 
     @classmethod
     def from_state(cls, state):
-        EmulatorEngine = import_cls(*state['_engine_cls']['emulator'])
-        Calculator = import_cls(*state['_engine_cls']['calculator'])
+        EmulatorEngine = import_cls(*state['_emulator_cls'])
+        Calculator = import_cls(*state['_calculator_cls'])
         new_name = Calculator.__name__
 
         clsdict = {}
