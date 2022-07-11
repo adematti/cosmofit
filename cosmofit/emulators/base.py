@@ -6,7 +6,7 @@ import numpy as np
 from cosmofit.samples import ParameterValues
 from cosmofit.base import PipelineError, SectionConfig, import_cls
 from cosmofit.utils import BaseClass
-from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError
+from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError, ParameterCollection
 
 
 class EmulatorConfig(SectionConfig):
@@ -64,11 +64,11 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             raise PipelineError('For emulator, pipeline must have a single end calculator; use pipeline.select()')
 
         calculator = self.pipeline.end_calculators[0]
-        self.params = self.pipeline.params.clone(namespace=None)
-        self.varied_params = self.params.names(varied=True, derived=False)
+        self.params = self.pipeline.params.clone(namespace=None).select(derived=False)
+        self.varied_params = self.params.names(varied=True)
 
-        calculator.runtime_info._derived_names = {'all': True}
-        fixed, varied = self.pipeline._set_derived([calculator])[1:]
+        calculator.runtime_info._derived_names = {'fixed': True, 'varied': True}
+        fixed, varied = self.pipeline._set_auto_derived([calculator])[1:]
         self.fixed, self.varied = fixed[0], varied[0]
 
         if self.mpicomm.rank == 0:
@@ -158,10 +158,14 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
 
     def __getstate__(self):
         state = {}
-        for name in ['params', 'varied_params', 'fixed', 'varied', '_emulator_cls', '_calculator_cls']:
-            if hasattr(self, name):
-                state[name] = getattr(self, name)
+        for name in ['varied_params', 'fixed', 'varied', '_emulator_cls', '_calculator_cls']:
+            state[name] = getattr(self, name)
+        state['params'] = self.params.__getstate__()
         return state
+
+    def __setstate__(self, state):
+        super(BaseEmulatorEngine, self).__setstate__(state)
+        self.params = ParameterCollection.from_state(state['params'])
 
 
 class PointEmulatorEngine(BaseEmulatorEngine):
@@ -197,13 +201,16 @@ class BaseEmulator(BaseClass):
 
         clsdict = {}
 
+        def new_set_params(self, params):
+            return params
+
         def new_run(self, **params):
             Calculator.__setstate__(self, {**self.fixed, **EmulatorEngine.predict(self, **params)})
 
         def new_getstate(self):
             return Calculator.__getstate__(self)
 
-        clsdict = {'run': new_run, '__getstate__': new_getstate, '__module__': Calculator.__module__}
+        clsdict = {'set_params': new_set_params, 'run': new_run, '__getstate__': new_getstate, '__module__': Calculator.__module__}
 
         new_meta = type('MetaEmulatorCalculator', (type(EmulatorEngine), type(Calculator)), {})
         new_cls = new_meta(new_name, (EmulatorEngine, Calculator), clsdict)

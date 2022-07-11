@@ -35,7 +35,7 @@ def savefig(filename, fig=None, bbox_inches='tight', pad_inches=0.1, dpi=200, **
     fig : matplotlib.figure.Figure
     """
     from matplotlib import pyplot as plt
-    mkdir(os.path.dirname(filename))
+    utils.mkdir(os.path.dirname(filename))
     logger.info('Saving figure to {}.'.format(filename))
     if fig is None:
         fig = plt.gcf()

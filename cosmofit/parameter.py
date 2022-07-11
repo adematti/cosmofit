@@ -250,7 +250,7 @@ class ParameterArray(np.ndarray):
         return results[0] if len(results) == 1 else results
 
     def __repr__(self):
-        return '{}({}, {})'.format(self.__class__.__name__, self, self.param)
+        return '{}({}, {})'.format(self.__class__.__name__, self.param, self)
 
     def __getstate__(self):
         return {'value': self.view(np.ndarray), 'param': self.param.__getstate__()}
@@ -660,12 +660,13 @@ class BaseParameterCollection(BaseClass):
 
     def params(self, **kwargs):
         toret = []
-        for param in self:
+        for item in self:
+            param = self._get_param(item)
             match = True
             for key, value in kwargs.items():
                 param_value = getattr(param, key)
                 if key in ['name', 'basename', 'namespace']:
-                    key_match = bool(find_names([param_value], value))
+                    key_match = value is None or bool(find_names([param_value], value))
                 else:
                     key_match = value == param_value
                 match &= key_match
@@ -793,6 +794,7 @@ class BaseParameterCollection(BaseClass):
 class ParameterConfig(BaseConfig):
 
     _attrs = BaseConfig._attrs + ['fixed', 'derived', 'namespace']
+    _keywords = {'fixed': [], 'derived': ['fixed', 'varied'], 'namespace': []}
 
     def __init__(self, data=None, **kwargs):
         if isinstance(data, self.__class__):
@@ -836,7 +838,7 @@ class ParameterConfig(BaseConfig):
                     param_meta = tmp.pop(meta_name, None)
                     if param_meta is None:
                         for template in meta:
-                            if find_names([name], template, quiet=True):
+                            if template not in self._keywords[meta_name] and find_names([name], template, quiet=True):
                                 param_meta = meta[template]
                                 found = True
                     if found:
@@ -878,7 +880,11 @@ class ParameterConfig(BaseConfig):
                 name = base.namespace_delimiter.join([namespace, name])
             new[name] = newparam
         for meta_name in ['fixed', 'derived', 'namespace']:
-            setattr(new, meta_name, {base.namespace_delimiter.join([namespace, name]): value for name, value in getattr(self, meta_name).items()})
+            tmp = {}
+            for name, value in getattr(self, meta_name).items():
+                key = base.namespace_delimiter.join([namespace, name]) if name not in self._keywords[meta_name] else name
+                tmp[key] = value
+            setattr(new, meta_name, tmp)
         return new
 
     def init(self, namespace=None):
@@ -946,7 +952,7 @@ class ParameterCollection(BaseParameterCollection):
                     param = Parameter(basename=name, latex=latex, **conf)
                     self.set(param)
 
-    def update(self, *args, name=None, **kwargs):
+    def update(self, *args, name=None, basename=None, **kwargs):
         """Update collection with new one."""
         if len(args) == 1 and isinstance(args[0], self.__class__):
             other = args[0]
@@ -957,7 +963,7 @@ class ParameterCollection(BaseParameterCollection):
                     tmp = item.copy()
                 self.set(tmp)
         elif len(args) <= 1:
-            list_update = self.names(name=name)
+            list_update = self.names(name=name, basename=basename)
             for meta_name, fixed in zip(['fixed', 'varied'], [True, False]):
                 if meta_name in kwargs:
                     meta = kwargs[meta_name]

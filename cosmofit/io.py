@@ -83,7 +83,7 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
     parser : callable
         *yaml* parser.
     """
-    _attrs = ['data']
+    _attrs = []
 
     def __init__(self, data=None, string=None, parser=None, decode=True, **kwargs):
         """
@@ -224,7 +224,7 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         new.data = self.data.copy()
         for name in self._attrs:
             if hasattr(self, name):
-                setattr(self, name, copy.copy(getattr(self, name)))
+                setattr(new, name, copy.copy(getattr(self, name)))
         return new
 
     def deepcopy(self):

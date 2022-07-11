@@ -121,20 +121,19 @@ class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipo
 
     def __init__(self, k=None, zeff=1., ells=(0, 2, 4), fiducial=None, **kwargs):
         super(BaseBAOWigglesTracerPowerSpectrumMultipoles, self).__init__(k=k, zeff=zeff, ells=ells, fiducial=fiducial)
-        params = self.params.copy()
-        self.params = self.params.select(basename='al*_*')
-        for param in params.names():
-            if param in self.params: del params[param]
-        self._set_broadband_coeffs()
         self.requires = {'bao': {'class': self.__class__.__name__.replace('Tracer', ''),
-                                 'init': {'k': self.k, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial, **kwargs},
-                                 'params': params}}
+                                 'init': {'k': self.k, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial, **kwargs}}}
 
-    def _set_broadband_coeffs(self):
+    def set_params(self, params):
+        self_params = params.select(basename='al*_*')
+        bao_params = params.copy()
+        for param in bao_params.names():
+            if param in self_params: del bao_params[param]
+        self.requires['bao']['params'] = bao_params
         self.broadband_coeffs = {}
         for ell in self.ells:
             self.broadband_coeffs[ell] = {}
-        for param in self.params:
+        for param in self_params:
             name = param.basename
             match = re.match('al(.*)_(.*)', name)
             if match:
@@ -144,6 +143,7 @@ class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipo
                     self.broadband_coeffs[ell][name] = pow
             else:
                 raise ValueError('Unrecognized parameter {}'.format(param))
+        return self_params
 
     def run(self, **params):
         self.power = self.bao.power.copy()
@@ -182,8 +182,8 @@ class BaseBAOWigglesTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFun
     def __init__(self, s=None, zeff=1., ells=(0, 2, 4), fiducial=None, **kwargs):
         super(BaseBAOWigglesTracerCorrelationFunctionMultipoles, self).__init__(s=s, zeff=zeff, ells=ells, fiducial=fiducial)
         self._set_broadband_coeffs()
-        self.requires = {'bao': (self.__class__.__name__.replace('Tracer', ''),
-                                {'s': self.s, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial, **kwargs})}
+        self.requires = {'bao': {'class': self.__class__.__name__.replace('Tracer', ''),
+                                 'init': {'s': self.s, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial, **kwargs}}}
 
     def run(self, **params):
         self.corr = self.bao.corr.copy()
@@ -202,4 +202,4 @@ class ResummedBAOWigglesCorrelationFunctionMultipoles(BaseBAOWigglesTracerCorrel
     pass
 
 
-BaseBAOWigglesTracerCorrelationFunctionMultipoles._set_broadband_coeffs = BaseBAOWigglesTracerPowerSpectrumMultipoles._set_broadband_coeffs
+BaseBAOWigglesTracerCorrelationFunctionMultipoles.set_params = BaseBAOWigglesTracerPowerSpectrumMultipoles.set_params

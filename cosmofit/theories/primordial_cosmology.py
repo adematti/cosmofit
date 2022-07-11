@@ -13,10 +13,14 @@ class Cosmoprimo(BasePrimordialCosmology):
     def __init__(self, fiducial=None, engine='class', extra_params=None):
         self.engine = engine
         self.extra_params = extra_params or {}
-        if fiducial is not None:
+        self.fiducial = fiducial
+        self.requires = {}
+
+    def set_params(self, params):
+        if self.fiducial is not None:
             from .base import get_cosmo
-            cosmo = get_cosmo(fiducial)
-            for param in self.params:
+            cosmo = get_cosmo(self.fiducial)
+            for param in params:
                 name = param.basename
                 if name.lower().startswith('omega_'):
                     name = name[:5] + '0' + name[5:]
@@ -24,7 +28,7 @@ class Cosmoprimo(BasePrimordialCosmology):
                     param.value = getattr(cosmo, 'O' + name[1:]) * cosmo.h ** 2
                 else:
                     param.value = getattr(cosmo, name)
-        self.requires = {}
+        return params
 
     def run(self, **params):
         self.cosmo = Cosmology(**params, extra_params=self.extra_params, engine=self.engine)

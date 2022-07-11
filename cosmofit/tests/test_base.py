@@ -86,7 +86,7 @@ def test_likelihood():
     likelihood = pipeline.loglikelihood
     pipeline.run(**{'QSO.qpar': 1.})
     assert not np.allclose(pipeline.loglikelihood, likelihood)
-    pipeline.mpirun(**{'QSO.sigmar': [1., 2.]})
+    pipeline.mpirun(**{'QSO.sigmas': [1., 2.]})
     assert len(pipeline.loglikelihood) == 2
 
 
@@ -122,9 +122,9 @@ if __name__ == '__main__':
 
     # test_config()
     # test_params()
-    test_pipeline()
+    # test_pipeline()
     # test_likelihood()
-    # test_sample()
+    test_sample()
     # test_profile()
     # test_do()
     # test_summarize()

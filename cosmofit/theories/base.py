@@ -76,25 +76,26 @@ class EffectAP(BaseCalculator):
         fiducial = get_cosmo(fiducial)
         self.efunc_fid = fiducial.efunc(self.zeff)
         self.comoving_angular_distance_fid = fiducial.comoving_angular_distance(self.zeff)
-
         self.mode = mode
-        if self.mode is None:
-            self.mode = 'distances'
-            if 'qiso' in self.params:
-                self.mode = 'qiso'
-            elif 'qpar' in self.params.basenames() and 'qper' in self.params.basenames():
-                self.mode = 'qparqper'
-
-        if self.mode == 'qiso':
-            self.params = self.params.select(basename=['qiso'])
-        elif self.mode == 'qparqper':
-            self.params = self.params.select(basename=['qpar', 'qper'])
-        elif self.mode == 'distances':
-            self.params = self.params.clear()
-        else:
-            raise ValueError('mode must be one of ["qiso", "qparqper", "distances"]')
         from .primordial_cosmology import BasePrimordialCosmology
         self.requires = {'cosmo': (BasePrimordialCosmology, {})}
+
+    def set_params(self, params):
+        if self.mode is None:
+            self.mode = 'distances'
+            if 'qiso' in params:
+                self.mode = 'qiso'
+            elif 'qpar' in params.basenames() and 'qper' in params.basenames():
+                self.mode = 'qparqper'
+        if self.mode == 'qiso':
+            params = params.select(basename=['qiso'])
+        elif self.mode == 'qparqper':
+            params = params.select(basename=['qpar', 'qper'])
+        elif self.mode == 'distances':
+            params = params.clear()
+        else:
+            raise ValueError('mode must be one of ["qiso", "qparqper", "distances"]')
+        return params
 
     def run(self, **params):
         if self.mode == 'distances':
