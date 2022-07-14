@@ -15,6 +15,9 @@ pipeline:
       save: f'{output_dir}/QSO.like.npy'
       load: True
       plot: f'{output_dir}/power.png'
+    window:
+      class: cosmofit.theories.base.WindowedPowerSpectrumMultipoles
+      plot: f'{output_dir}/window.png'
     theory:
       class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
       params:
@@ -23,21 +26,15 @@ pipeline:
       #load: f'{output_dir}/emulator.npy'
       #emulator:
       #  save: f'{output_dir}/emulator.npy'
-    theory.bao:
-      class: cosmofit.theories.bao.DampedBAOWigglesPowerSpectrumMultipoles
-      load: f'{output_dir}/emulator.npy'
-      emulator:
-        save: f'{output_dir}/emulator.npy'
-    effectap:
-      class: cosmofit.theories.base.EffectAP
-      init:
-        mode: qparqper
+    #theory.bao:
+    #  class: cosmofit.theories.bao.DampedBAOWigglesPowerSpectrumMultipoles
+    #  load: f'{output_dir}/emulator.npy'
+    #  emulator:
+    #    save: f'{output_dir}/emulator.npy'
+    param:
+      class: cosmofit.theories.power_template.BAOWigglesPowerSpectrumParameterization
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
-    #init:
-    #  fiducial: DESI
-    params:
-      fixed: '*'
 
 emulate:
   class: MLPEmulatorEngine

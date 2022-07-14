@@ -1,11 +1,11 @@
-class: PrimordialNonGaussianityPowerSpectrum
+class: PrimordialNonGaussianityPowerSpectrumMultipoles
 
 info:
   version: 0.0.1
   date: 05/04/2022
   author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
-  description: Compute primordial non-Gaussianity power spectrum
+  description: Compute primordial non-Gaussianity power spectrum multipoles
   url:
   licence:
   bibtex: []
@@ -16,20 +16,14 @@ init:
   ells: [0, 2, 4]
 
 params:
-  fnl_loc:
+  bfnl_loc:
     value: 0.
     prior:
       dist: uniform
-      limits: [-1e3, 1e3]
-    latex: f_{NL}^{\mathrm{loc}}
-  p:
-    value: 1.
-    prior:
-      dist: uniform
-      limits: [0.1, 10]
-    latex: p
+      limits: [-100, 100]
+    latex: bf_{NL}^{\mathrm{loc}}
   bias:
-    value: 1.69
+    value: 2.
     prior:
       dist: uniform
       limits: [0.1, 10]
@@ -44,5 +38,5 @@ params:
     value: 5.
     prior:
       dist: uniform
-      limits: [0.1, 10]
+      limits: [0., 10]
     latex: \Sigma_{s}

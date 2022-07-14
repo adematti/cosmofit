@@ -71,7 +71,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
 
         super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=np.concatenate(poles, axis=0) if poles is not None else None, nobs=nobs)
-        self.requires['theory'] = ('WindowedPowerSpectrumMultipoles', {'k': self.k, 'ellsout': self.ells, 'zeff': zeff, 'fiducial': fiducial, 'wmatrix': wmatrix})
+        self.requires['theory'] = ('WindowedPowerSpectrumMultipoles', {'k': self.k, 'ells': self.ells, 'zeff': zeff, 'fiducial': fiducial, 'wmatrix': wmatrix})
 
     def plot(self, fn=None, kw_save=None):
         from matplotlib import pyplot as plt

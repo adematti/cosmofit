@@ -7,13 +7,16 @@ from .base import EffectAP
 
 class BasePowerSpectrumWiggles(BaseCalculator):
 
-    def __init__(self, zeff=1., engine='wallish2018'):
+    def __init__(self, zeff=1., engine='wallish2018', **kwargs):
         self.engine = engine
         self.zeff = float(zeff)
-        self.requires = {'cosmo': (BasePrimordialCosmology, {})}
+        self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
 
     def run(self):
-        self.power = self.cosmo.get_fourier().pk_interpolator().to_1d(z=self.zeff)
+        fo = self.cosmo.get_fourier()
+        self.sigma8 = fo.sigma8_z(self.zeff, of='delta_cb')
+        self.fsigma8 = fo.sigma8_z(self.zeff, of='theta_cb')
+        self.power = fo.pk_interpolator().to_1d(z=self.zeff)
         from cosmoprimo import PowerSpectrumBAOFilter
         self.power_now = PowerSpectrumBAOFilter(self.power, engine=self.engine).smooth_pk_interpolator()
 
@@ -23,14 +26,12 @@ class BasePowerSpectrumWiggles(BaseCalculator):
 
 class BasePowerSpectrumTemplate(BaseCalculator):
 
-    def __init__(self, k=None, zeff=1., fiducial=None):
+    def __init__(self, k=None, zeff=1., **kwargs):
         if k is None:
             k = np.logspace(-3., 1., 200)
         self.k = np.array(k, dtype='f8')
         self.zeff = float(zeff)
-        self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': {}}}
-        if fiducial is not None:
-            self.requires['cosmo']['init']['fiducial'] = fiducial
+        self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
 
     def run(self):
         fo = self.cosmo.get_fourier()
@@ -58,7 +59,7 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         super(ShapeFitPowerSpectrumTemplate, self).__init__(*args, **kwargs)
         self.a = float(a)
         self.k_pivot = float(k_pivot)
-        self.requires['wiggles'] = (BasePowerSpectrumWiggles, {'zeff': self.zeff})
+        self.requires['wiggles'] = (BasePowerSpectrumWiggles, {'zeff': self.zeff, **self.requires['cosmo']['init']})
 
     def run(self, dm=0., dn=0.):
         super(ShapeFitPowerSpectrumTemplate, self).run()
@@ -202,6 +203,25 @@ class BandVelocityPowerSpectrumParameterization(BasePowerSpectrumParameterizatio
 
     def run(self, f=None):
         self.f = f
+        if f is None: self.f = self.template.fsigma8 / self.template.sigma8
         self.power_dd = self.template.power_tt / f**2
         self.ptt = self.template.ptt
+        self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
+
+
+class BAOWigglesPowerSpectrumParameterization(BasePowerSpectrumParameterization):
+
+    _parambasenames = ('f',)
+
+    def __init__(self, zeff=1., fiducial=None, wiggles='BasePowerSpectrumWiggles', **kwargs):
+        if fiducial is None:
+            raise ValueError('Give fiducial cosmology for power spectrum template')
+        self.requires = {'template': {'class': wiggles, 'init': {'zeff': zeff, 'fiducial': fiducial, **kwargs}},
+                         'effectap': {'class': EffectAP, 'init': {'zeff': zeff, 'fiducial': fiducial, 'mode': 'qparqper'}}}
+
+    def run(self, f=None):
+        for name in ['power', 'power_now', 'wiggles']:
+            setattr(self, name, getattr(self.template, name))
+        self.f = f
+        if f is None: self.f = self.template.fsigma8 / self.template.sigma8
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper

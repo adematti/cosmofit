@@ -4,7 +4,7 @@ import numpy as np
 from scipy import special, integrate
 
 from cosmofit.parameter import ParameterCollection
-from .power_template import BasePowerSpectrumWiggles
+from .power_template import BasePowerSpectrumWiggles, BAOWigglesPowerSpectrumParameterization
 from .base import BaseTheoryPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles, BaseTheoryCorrelationFunctionMultipoles
 
 
@@ -17,16 +17,7 @@ class BaseBAOWigglesPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
         if self.mode not in available_modes:
             raise ValueError('reconstruction mode {} must be one of {}'.format(self.mode, available_modes))
         self.smoothing_radius = float(smoothing_radius)
-        self.requires = {'effectap': ('EffectAP', {'zeff': self.zeff, 'fiducial': self.fiducial}), 'wiggles': ('BasePowerSpectrumWiggles', {'zeff': self.zeff})}
-
-    def beta(self, bias=1., **kwargs):
-        if 'beta' in kwargs:
-            beta = kwargs['beta']
-        elif 'f' in kwargs:
-            beta = kwargs['f'] / bias
-        else:
-            beta = self.wiggles.cosmo.growth_rate(self.zeff) / bias
-        return beta
+        self.requires = {'template': {'class': BAOWigglesPowerSpectrumParameterization, 'init': {'wiggles': BasePowerSpectrumWiggles, 'zeff': self.zeff, 'fiducial': self.fiducial}}}
 
 
 class DampedBAOWigglesPowerSpectrumMultipoles(BaseBAOWigglesPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles):
@@ -36,10 +27,10 @@ class DampedBAOWigglesPowerSpectrumMultipoles(BaseBAOWigglesPowerSpectrumMultipo
         self.set_k_mu(k=self.k, mu=mu, ells=self.ells)
 
     def run(self, bias=1., sigmas=0., sigmapar=8., sigmaper=4., **kwargs):
-        f = self.beta(bias=bias, **kwargs) * bias
-        jac, kap, muap = self.effectap.ap_k_mu(self.k, self.mu)
-        pk = self.wiggles.power(kap)
-        pknow = self.wiggles.power_now(kap)
+        f = self.template.f
+        jac, kap, muap = self.template.ap_k_mu(self.k, self.mu)
+        pk = self.template.power(kap)
+        pknow = self.template.power_now(kap)
         sigmanl2 = kap**2 * (sigmapar**2 * muap**2 + sigmaper**2 * (1. - muap**2))
         damped_wiggles = (pk - pknow) * np.exp(-sigmanl2 / 2.)
         fog = 1. / (1. + (sigmas * kap * muap)**2 / 2.)**2.
@@ -103,13 +94,13 @@ class ResummedBAOWigglesPowerSpectrumMultipoles(BaseBAOWigglesPowerSpectrumMulti
     def __init__(self, *args, mu=200, **kwargs):
         super(ResummedBAOWigglesTracerPowerSpectrum, self).__init__(*args, **kwargs)
         self.set_k_mu(k=self.k, mu=mu, ells=self.ells)
-        self.requires['wiggles'] = ('ResummedPowerSpectrumWiggles', {'zeff': self.zeff, 'mode': self.mode, 'smoothing_radius': self.smoothing_radius})
+        self.requires['template']['init'].update({'wiggles': ResummedPowerSpectrumWiggles, 'mode': self.mode, 'smoothing_radius': self.smoothing_radius})
 
     def run(self, bias=1., sigmas=0., **kwargs):
-        f = self.beta(bias=bias, **kwargs) * bias
-        jac, kap, muap = self.effectap.ap_k_mu(self.k, self.mu)
-        pknow = self.wiggles.power_now(kap)
-        wiggles = self.wiggles.wiggles(kap, muap, bias=bias, **kwargs)
+        f = self.template.f
+        jac, kap, muap = self.template.ap_k_mu(self.k, self.mu)
+        pknow = self.template.power_now(kap)
+        wiggles = self.template.wiggles(kap, muap, bias=bias, **kwargs)
         fog = 1. / (1. + (sigmas * kap * muap)**2 / 2.)**2.
         sk = 0.
         if self.mode == 'reciso': sk = np.exp(-1. / 2. * (kap * self.smoothing_radius)**2)

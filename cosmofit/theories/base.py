@@ -2,6 +2,7 @@ import numpy as np
 from scipy import special
 
 from cosmofit.base import BaseCalculator
+from cosmofit import plotting
 from . import utils
 
 
@@ -16,7 +17,7 @@ class BaseTheoryPowerSpectrumMultipoles(BaseCalculator):
 
     def __getstate__(self):
         state = {}
-        for name in ['k', 'zeff', 'ells', 'power']:
+        for name in ['k', 'zeff', 'ells', 'power', 'fiducial']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -127,16 +128,17 @@ class EffectAP(BaseCalculator):
 
 class WindowedPowerSpectrumMultipoles(BaseCalculator):
 
-    def __init__(self, k=None, ellsout=(0, 2, 4), zeff=None, fiducial=None, wmatrix=None):
+    def __init__(self, k=None, ells=(0, 2, 4), zeff=None, fiducial=None, wmatrix=None):
         if k is None: k = np.linspace(0.01, 0.2, 20)
         if np.ndim(k[0]) == 0:
-            k = [k] * len(ellsout)
+            k = [k] * len(ells)
         self.k = [np.array(kk, dtype='f8') for kk in k]
         self.zeff = float(zeff)
-        self.ellsout = tuple(ellsout)
+        self.ells = tuple(ells)
+        #wmatrix = None
         self.wmatrix = wmatrix
         if wmatrix is None:
-            self.ellsin = tuple(self.ellsout)
+            self.ellsin = tuple(self.ells)
             self.kin = np.unique(np.concatenate(self.k, axis=0))
             if all(np.allclose(kk, self.kin) for kk in self.k):
                 self.kmask = None
@@ -153,7 +155,7 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
                     wmatrix = wmatrix.poles
                 else:
                     wmatrix = BaseMatrix.load(fn)
-            wmatrix.select_proj(projsout=[(ellout, None) for ellout in self.ellsout])
+            wmatrix.select_proj(projsout=[(ell, None) for ell in self.ells])
             self.ellsin = []
             for proj in wmatrix.projsin:
                 assert proj.wa_order in (None, 0)
@@ -187,6 +189,7 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
             self.flatpower = theory[self.kmask]
         else:
             self.flatpower = theory
+        #print(np.interp(0.1, self.k[0], self.power[0]), np.interp(0.1, self.kin, self.theory.power[0]))
 
     @property
     def power(self):
@@ -204,3 +207,22 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
+
+    def plot(self, fn=None, kw_save=None):
+        from matplotlib import pyplot as plt
+        fig, ax = plt.subplots()
+        ax.plot([], [], linestyle='--', color='k', label='theory')
+        ax.plot([], [], linestyle='-', color='k', label='window')
+        for ill, ell in enumerate(self.ells):
+            color = 'C{:d}'.format(ill)
+            k = self.k[ill]
+            maskin = (self.kin >= k[0]) & (self.kin <= k[-1])
+            ax.plot(self.kin[maskin], self.kin[maskin] * self.theory.power[ill][maskin], color=color, linestyle='--', label=None)
+            ax.plot(k, k * self.power[ill], color=color, linestyle='-', label=r'$\ell = {:d}$'.format(ell))
+        ax.grid(True)
+        ax.legend()
+        ax.set_ylabel(r'$k P_{\ell}(k)$ [$(\mathrm{Mpc}/h)^{2}$]')
+        ax.set_xlabel(r'$k$ [$h/\mathrm{Mpc}$]')
+        if fn is not None:
+            plotting.savefig(fn, fig=fig, **(kw_save or {}))
+        return ax

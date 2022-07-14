@@ -262,7 +262,7 @@ class Info(BaseClass):
         self.__dict__.update(**kwargs)
 
     def __getstate__(self):
-        return self.__dict__
+        return self.__dict__.copy()
 
     def update(self, *args, **kwargs):
         state = self.__getstate__()
@@ -536,6 +536,9 @@ class BasePipeline(BaseClass):
         for calculator in self.calculators:
             if not calculator.runtime_info.required_by:
                 self.end_calculators.append(calculator)
+
+        self.log_info('Found calculators {}.'.format(self.calculators))
+        self.log_info('Found end calculators {}.'.format(self.end_calculators))
         # Checks
         for param in final_params:
             if not any(param in calculator.runtime_info.full_params for calculator in self.calculators):
@@ -695,14 +698,16 @@ class BasePipeline(BaseClass):
                 derived = getattr(calculator.runtime_info, '_derived_names', {})
                 if any(kw in derived for kw in ParameterConfig._keywords['derived']):
                     calculators.append(calculator)
-        rng = np.random.RandomState(seed=42)
+
         states = [{} for i in range(len(calculators))]
-        for ii in range(niterations):
-            params = {str(param): param.ref.sample(random_state=rng) for param in self.params.select(varied=True)}
-            BasePipeline.run(self, **params)
-            for calculator, state in zip(calculators, states):
-                for name, value in calculator.__getstate__().items():
-                    state[name] = state.get(name, []) + [value]
+        rng = np.random.RandomState(seed=42)
+        if calculators:
+            for ii in range(niterations):
+                params = {str(param): param.ref.sample(random_state=rng) for param in self.params.select(varied=True)}
+                BasePipeline.run(self, **params)
+                for calculator, state in zip(calculators, states):
+                    for name, value in calculator.__getstate__().items():
+                        state[name] = state.get(name, []) + [value]
 
         fixed, varied = [], []
         for calculator, state in zip(calculators, states):

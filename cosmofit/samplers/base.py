@@ -97,9 +97,9 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
                 if not utils.is_sequence(chains):
                     chains = [chains]
                 self.chains = [chain if isinstance(chain, Chain) else Chain.load(chain) for chain in chains]
-        nchains = self.mpicomm.bcast(len(self.chains), root=0)
+        nchains = self.mpicomm.bcast(len(self.chains) if self.mpicomm.rank == 0 else None, root=0)
         if self.mpicomm.rank != 0:
-            self.chains = [None] * len(chains)
+            self.chains = [None] * nchains
         self.max_tries = int(max_tries)
         self._set_rng(rng=rng, seed=seed)
         self.diagnostics = {}
