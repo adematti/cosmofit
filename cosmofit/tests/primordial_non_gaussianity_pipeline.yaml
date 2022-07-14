@@ -3,7 +3,7 @@ pipeline:
     like:
       class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
       init:
-        data: f'{data_dir}/data.npy'
+        #data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
         wmatrix: f'{data_dir}/window.npy'
         klim:
@@ -12,23 +12,23 @@ pipeline:
         kstep: 0.01
         zeff: 2.0
         fiducial: DESI
-      save: f'{output_dir}/QSO_NGC.pnglike.npy'
+      save: f'{output_dir}/pnglike_QSO_NGC.npy'
       load: True
       plot: f'{output_dir}/power_NGC.png'
   SGC:
     like:
       class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
       init:
-        data: f'{data_dir}/data.npy'
+        #data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
         wmatrix: f'{data_dir}/window.npy'
         klim:
-          0: [0.01, 0.2]
-          2: [0.01, 0.2]
-        kstep: 0.005
+          0: [0.02, 0.2]
+          2: [0.02, 0.2]
+        kstep: 0.01
         zeff: 2.0
         fiducial: DESI
-      save: f'{output_dir}/QSO_SGC.pnglike.npy'
+      save: f'{output_dir}/pnglike_QSO_SGC.npy'
       load: True
   theory:
     class: cosmofit.theories.primordial_non_gaussianity.PrimordialNonGaussianityPowerSpectrumMultipoles

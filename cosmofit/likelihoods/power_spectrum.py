@@ -60,7 +60,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
                     for fn in sorted(glob.glob(fn)):
                         mock_k, mock_ells, data = lim_data(load_data(fn))
                         if self.k is None:
-                            self.k, self.ells = k, ells
+                            self.k, self.ells = mock_k, mock_ells
                         if not all(np.allclose(sk, mk) for sk, mk in zip(self.k, mock_k)):
                             raise ValueError('{} does not have expected k-binning (based on previous data)'.format(fn))
                         if mock_ells != self.ells:
