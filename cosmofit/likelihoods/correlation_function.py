@@ -47,30 +47,32 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
             if not has_mocks:
                 raise ValueError('data is mean of mocks, but no mocks provided')
         elif data is not None:
-            if isinstance(data, str):
-                data = load_data(data)
-            self.s, self.ells, poles = lim_data(data)
-            poles = np.ravel(poles)
+            if self.mpicomm.rank == 0:
+                if isinstance(data, str):
+                    data = load_data(data)
+                self.s, self.ells, flatdata = lim_data(data)
+                flatdata = np.ravel(flatdata)
 
         if has_mocks:
             if self.mpicomm.rank == 0:
-                list_data = []
+                list_mock = []
                 for fn in covariance:
                     for fn in sorted(glob.glob(fn)):
-                        mock_s, mock_ells, data = lim_data(load_data(fn))
+                        mock_s, mock_ells, mock = lim_data(load_data(fn))
                         if self.s is None:
                             self.s, self.ells = mock_s, mock_ells
-                        if not all(np.allclose(ss, ms, atol=1e-2) for ss, ms in zip(self.s, mock_s)):
+                        if not all(np.allclose(ss, ms) for ss, ms in zip(self.s, mock_s)):
                             raise ValueError('{} does not have expected s-binning (based on previous data)'.format(fn))
                         if mock_ells != self.ells:
                             raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))
-                        list_data.append(np.ravel(data))
+                        list_mock.append(np.ravel(mock))
+                nobs = len(list_mock)
                 if data_is_mean:
-                    poles = np.mean(list_data, axis=0)
-                covariance = np.cov(list_data, rowvar=False, ddof=1)
-            if data_is_mean:
-                poles = self.mpicomm.bcast(poles if self.mpicomm.rank == 0 else None, root=0)
+                    flatdata = np.mean(list_mock, axis=0)
+                covariance = np.cov(list_mock, rowvar=False, ddof=1)
             covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
+
+        self.s, self.ells, flatdata, nobs = self.mpicomm.bcast((self.s, self.ells, flatdata, nobs) if self.mpicomm.rank == 0 else None, root=0)
 
         super(CorrelationFunctionMultipolesLikelihood, self).__init__(covariance=covariance, data=poles, nobs=nobs)
         self.requires['theory'] = ('BaseTheoryCorrelationFunctionMultipoles', {'s': self.s, 'ells': self.ells, 'zeff': zeff, 'fiducial': fiducial})

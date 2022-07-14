@@ -43,7 +43,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
                 ells.append(ell)
             return list_k, tuple(ells), list_data
 
-        self.k, poles, nobs = None, None, None
+        self.k, self.ells, self.flatdata, self.nobs = None, None, None, None
         data_is_mean = data == 'mean'
         if isinstance(covariance, str):
             covariance = [covariance]
@@ -53,33 +53,34 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             if not has_mocks:
                 raise ValueError('data is mean of mocks, but no mocks provided')
         elif data is not None:
-            if isinstance(data, str):
-                data = load_data(data)
-            self.k, self.ells, poles = lim_data(data)
-            poles = np.ravel(poles)
+            if self.mpicomm.rank == 0:
+                if isinstance(data, str):
+                    data = load_data(data)
+                self.k, self.ells, flatdata = lim_data(data)
+                flatdata = np.ravel(flatdata)
 
         if has_mocks:
             if self.mpicomm.rank == 0:
-                list_data = []
+                list_mock = []
                 for fn in covariance:
                     for fn in sorted(glob.glob(fn)):
-                        mock_k, mock_ells, data = lim_data(load_data(fn))
+                        mock_k, mock_ells, mock = lim_data(load_data(fn))
                         if self.k is None:
                             self.k, self.ells = mock_k, mock_ells
                         if not all(np.allclose(sk, mk) for sk, mk in zip(self.k, mock_k)):
                             raise ValueError('{} does not have expected k-binning (based on previous data)'.format(fn))
                         if mock_ells != self.ells:
                             raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))
-                        list_data.append(np.ravel(data))
-                nobs = len(list_data)
+                        list_mock.append(np.ravel(mock))
+                nobs = len(list_mock)
                 if data_is_mean:
-                    poles = np.mean(list_data, axis=0)
-                covariance = np.cov(list_data, rowvar=False, ddof=1)
-            if data_is_mean:
-                poles = self.mpicomm.bcast(poles if self.mpicomm.rank == 0 else None, root=0)
+                    flatdata = np.mean(list_mock, axis=0)
+                covariance = np.cov(list_mock, rowvar=False, ddof=1)
             covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
 
-        super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=poles, nobs=nobs)
+        self.k, self.ells, flatdata, nobs = self.mpicomm.bcast((self.k, self.ells, flatdata, nobs) if self.mpicomm.rank == 0 else None, root=0)
+
+        super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=flatdata, nobs=nobs)
         self.requires['theory'] = ('WindowedPowerSpectrumMultipoles', {'k': self.k, 'ells': self.ells, 'zeff': zeff, 'fiducial': fiducial, 'wmatrix': wmatrix})
 
     def plot(self, fn=None, kw_save=None):
