@@ -44,16 +44,21 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             return list_k, tuple(ells), list_data
 
         self.k, poles, nobs = None, None, None
+        data_is_mean = data == 'mean'
+        if isinstance(covariance, str):
+            covariance = [covariance]
+        has_mocks = utils.is_sequence(covariance) and isinstance(covariance[0], str)
 
-        if data is not None:
+        if data_is_mean:
+            if not has_mocks:
+                raise ValueError('data is mean of mocks, but no mocks provided')
+        elif data is not None:
             if isinstance(data, str):
                 data = load_data(data)
             self.k, self.ells, poles = lim_data(data)
+            poles = np.ravel(poles)
 
-        if isinstance(covariance, str):
-            covariance = [covariance]
-
-        if utils.is_sequence(covariance) and isinstance(covariance[0], str):
+        if has_mocks:
             if self.mpicomm.rank == 0:
                 list_data = []
                 for fn in covariance:
@@ -67,10 +72,14 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
                             raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))
                         list_data.append(np.ravel(data))
                 nobs = len(list_data)
+                if data_is_mean:
+                    poles = np.mean(list_data, axis=0)
                 covariance = np.cov(list_data, rowvar=False, ddof=1)
+            if data_is_mean:
+                poles = self.mpicomm.bcast(poles if self.mpicomm.rank == 0 else None, root=0)
             covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
 
-        super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=np.concatenate(poles, axis=0) if poles is not None else None, nobs=nobs)
+        super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=poles, nobs=nobs)
         self.requires['theory'] = ('WindowedPowerSpectrumMultipoles', {'k': self.k, 'ells': self.ells, 'zeff': zeff, 'fiducial': fiducial, 'wmatrix': wmatrix})
 
     def plot(self, fn=None, kw_save=None):

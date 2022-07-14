@@ -4,6 +4,7 @@ pipeline:
       class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
       init:
         #data: f'{data_dir}/data.npy'
+        data: mean
         covariance: f'{data_dir}/mock_*.npy'
         wmatrix: f'{data_dir}/window.npy'
         klim:
@@ -20,6 +21,7 @@ pipeline:
       class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
       init:
         #data: f'{data_dir}/data.npy'
+        data: mean
         covariance: f'{data_dir}/mock_*.npy'
         wmatrix: f'{data_dir}/window.npy'
         klim:
