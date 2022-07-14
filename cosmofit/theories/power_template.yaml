@@ -15,16 +15,68 @@ info:
 init:
   engine: wallish2018
 
+
 ---
 
-class: ShapeFitPowerSpectrumTemplate
+class: FullPowerSpectrumParameterization
 
 info:
   version: 0.0.1
   date: 05/04/2022
   author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
-  description: Shapefit-parametrized template power spectrum
+  description: Full-fit parameterization
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description:
+
+init:
+
+params:
+  h:
+    value: 0.6736
+    prior:
+      dist: uniform
+      limits: [0.4, 0.9]
+    latex: h
+  omega_cdm:
+    value: 0.12
+    prior:
+      dist: uniform
+      limits: [0.05, 0.2]
+    latex: \omega_{c}
+  omega_b:
+    value: 0.02237
+    prior:
+      dist: uniform
+      limits: [0.01, 0.03]
+    latex: \omega_{b}
+  A_s:
+    value: 2.083e-09
+    prior:
+      dist: uniform
+      limits: [0.7, 1.1]
+    latex: A_{s}
+  n_s:
+    value: 0.9649
+    prior:
+      dist: uniform
+      limits: [0.8, 1.2]
+    latex: n_s
+
+
+---
+
+class: ShapeFitPowerSpectrumParameterization
+
+info:
+  version: 0.0.1
+  date: 05/04/2022
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Shapefit-parameterized template power spectrum
   url:
   licence:
   bibtex: []
@@ -36,25 +88,86 @@ init:
   k_pivot: 0.03
 
 params:
-  m:
+  dm:
     value: 0.
     prior:
       dist: uniform
       limits: [-3., 3.]
     latex: m
-  n:
+  dn:
     value: 0.
     fixed: True
     prior:
       dist: uniform
       limits: [-0.5, 0.5]
     latex: n
-  A_p_ref:
+  A_p:
     derived: True
-    latex: 'A_{p, \mathrm{ref}}'
-  m_ref:
+    latex: 'A_{p}'
+  f_sqrt_A_p:
     derived: True
-    latex: 'm_{\mathrm{ref}}'
-  n_s_ref:
+    latex: 'f A_{p}^{1/2}'
+  m:
     derived: True
-    latex: 'n_{s, \mathrm{ref}}'
+    latex: 'm'
+  n:
+    derived: True
+    latex: 'n_{s}'
+  f:
+    value: 0.8
+    prior:
+      dist: uniform
+      limits: [0.1, 1.2]
+    latex: 'f'
+  qpar:
+    value: 1.
+    prior:
+      dist: uniform
+      limits: [0.8, 1.2]
+    latex: '\alpha_{\parallel}'
+  qper:
+    value: 1.
+    prior:
+      dist: uniform
+      limits: [0.8, 1.2]
+    latex: '\alpha_{\perp}'
+
+
+---
+
+class: BandVelocityPowerSpectrumParameterization
+
+info:
+  version: 0.0.1
+  date: 05/04/2022
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Bandpower-parameterized template velocity power spectrum
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description:
+
+init:
+  kpoints: [0.02, 0.2]
+
+params:
+  rptt[:20]:
+    value: 0.
+    prior:
+      dist: norm
+      loc: 0.
+      scale: 1.
+  f:
+    value: 0.8
+    prior:
+      dist: uniform
+      limits: [0.1, 1.2]
+    latex: 'f'
+  qap:
+    value: 1.
+    prior:
+      dist: uniform
+      limits: [0.8, 1.2]
+    latex: '\alpha_{ap}'

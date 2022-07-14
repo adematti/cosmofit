@@ -40,10 +40,6 @@ params:
       dist: uniform
       limits: [0.7, 1.1]
     latex: A_{s}
-  k_pivot:
-    value: 0.05
-    latex: k_{p}
-    fixed: True
   n_s:
     value: 0.9649
     prior:
@@ -69,4 +65,8 @@ params:
   wa_fld:
     value: 0.
     latex: w_{a}
+    fixed: True
+  k_pivot:
+    value: 0.05
+    latex: k_{p}
     fixed: True

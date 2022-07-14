@@ -85,16 +85,20 @@ class EffectAP(BaseCalculator):
             self.mode = 'distances'
             if 'qiso' in params:
                 self.mode = 'qiso'
+            elif 'qap' in params:
+                self.mode == 'qap'
             elif 'qpar' in params.basenames() and 'qper' in params.basenames():
                 self.mode = 'qparqper'
         if self.mode == 'qiso':
             params = params.select(basename=['qiso'])
+        elif self.mode == 'qap':
+            params = params.select(basename=['qap'])
         elif self.mode == 'qparqper':
             params = params.select(basename=['qpar', 'qper'])
         elif self.mode == 'distances':
             params = params.clear()
         else:
-            raise ValueError('mode must be one of ["qiso", "qparqper", "distances"]')
+            raise ValueError('mode must be one of ["qiso", "qap", "qparqper", "distances"]')
         return params
 
     def run(self, **params):
@@ -102,6 +106,10 @@ class EffectAP(BaseCalculator):
             qpar, qper = self.efunc_fid / self.cosmo.efunc(self.zeff), self.cosmo.comoving_angular_distance(self.zeff) / self.comoving_angular_distance_fid
         elif self.mode == 'qiso':
             qpar = qper = params['qiso']
+        elif self.mode == 'qap':
+            qap = params['qap']   # qpar / qper
+            eta = 1. / 3.
+            qpar, qper = qap**(1 - eta), qap**(-eta)
         else:
             qpar, qper = params['qpar'], params['qper']
         self.qpar, self.qper = qpar, qper

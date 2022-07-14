@@ -12,22 +12,22 @@ pipeline:
         kstep: 0.02
         zeff: 2.0
         fiducial: DESI
-      save_fn: f'{output_dir}/QSO.like.npy'
-      load_fn: True
+      save: f'{output_dir}/QSO.like.npy'
+      load: True
       plot: f'{output_dir}/power.png'
     theory:
       class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
       params:
         fixed: ['al*']
         derived: [varied]
-      #load_fn: f'{output_dir}/emulator.npy'
+      #load: f'{output_dir}/emulator.npy'
       #emulator:
-      #  save_fn: f'{output_dir}/emulator.npy'
+      #  save: f'{output_dir}/emulator.npy'
     theory.bao:
       class: cosmofit.theories.bao.DampedBAOWigglesPowerSpectrumMultipoles
-      load_fn: f'{output_dir}/emulator.npy'
+      load: f'{output_dir}/emulator.npy'
       emulator:
-        save_fn: f'{output_dir}/emulator.npy'
+        save: f'{output_dir}/emulator.npy'
     effectap:
       class: cosmofit.theories.base.EffectAP
       init:
@@ -42,7 +42,7 @@ pipeline:
 emulate:
   class: MLPEmulatorEngine
   sample: #f'{output_dir}/samples.npy'
-    save_fn: f'{output_dir}/samples.npy'
+    save: f'{output_dir}/samples.npy'
   fit:
     epochs: 10
   init:
@@ -83,19 +83,13 @@ sample:
     max_iterations: 100000
     check_every: 100
   check: True
-  save_fn: f'{output_dir}/chain_*.npy'
-
-sample:
-  class: cosmofit.samplers.QMCSampler
-  run:
-    niterations: 100
-  save_fn: f'{output_dir}/grid.npy'
+  save: f'{output_dir}/chain_*.npy'
 
 sample:
   class: cosmofit.samplers.GridSampler
   init:
     ngrid: 2
-  save_fn: f'{output_dir}/grid.npy'
+  save: f'{output_dir}/grid.npy'
 
 sample:
   class: cosmofit.samplers.EmceeSampler
@@ -106,11 +100,11 @@ sample:
     check_every: 100
   check:
     eigen_gr_stop: 0.01
-  save_fn: f'{output_dir}/chain_*.npy'
+  save: f'{output_dir}/chain_*.npy'
 
 profile:
   class: cosmofit.profilers.MinuitProfiler
-  save_fn: f'{output_dir}/profiles.npy'
+  save: f'{output_dir}/profiles.npy'
   run:
     niterations: 2
 

@@ -37,7 +37,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
     def __setattr__(self, name, item):
         super(BaseCalculator, self).__setattr__(name, item)
         if name in self.runtime_info.requires:
-            raise PipelineError('Attribute {} is reserved to a calculator, hence cannot be set!'.format(name))
+            raise PipelineError('Attribute {} is reserved to a calculator, hence cannot be set'.format(name))
 
     def __getattr__(self, name):
         if name == 'requires':
@@ -51,6 +51,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             toret = self.runtime_info.requires[name]
             if toret.runtime_info.torun:
                 toret.run(**toret.runtime_info.params)
+                toret.runtime_info.torun = False
             return toret
         return super(BaseCalculator, self).__getattribute__(name)
 
@@ -172,7 +173,7 @@ def _best_match_parameter(namespace, basename, params):
 class CalculatorConfig(SectionConfig):
 
     _sections = ['info', 'init', 'params']
-    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load_fn', 'save_fn']
+    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save']
 
     def __init__(self, data, **kwargs):
         # cls, init kwargs
@@ -191,8 +192,8 @@ class CalculatorConfig(SectionConfig):
         self['class'] = import_cls(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
         self['info'] = Info(**self['info'])
         self['params'] = ParameterConfig(self['params'])
-        load_fn = data.get('load_fn', None)
-        save_fn = data.get('save_fn', None)
+        load_fn = data.get('load', None)
+        save_fn = data.get('save', None)
         if not isinstance(load_fn, str):
             if load_fn and isinstance(save_fn, str):
                 load_fn = save_fn
@@ -219,7 +220,7 @@ class CalculatorConfig(SectionConfig):
                     tmp[name]['namespace'] = None
                     tmp.namespace[name] = None
             self['params'] = tmp.clone(self['params'])
-        self['load_fn'], self['save_fn'] = load_fn, save_fn
+        self['load'], self['save'] = load_fn, save_fn
 
     def init(self, namespace=None, params=None, **kwargs):
         derived = [param for param, b in self['params'].derived.items() if b]
@@ -244,7 +245,7 @@ class CalculatorConfig(SectionConfig):
             self_params = new.set_params(self_params)
         new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=self_params, **kwargs)
         new.runtime_info._derived_names = derived
-        save_fn = self['save_fn']
+        save_fn = self['save']
         if save_fn is not None:
             new.save(save_fn)
         return new

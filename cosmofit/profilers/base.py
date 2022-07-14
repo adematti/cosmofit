@@ -17,7 +17,7 @@ class ProfilerConfig(SectionConfig):
 
     def run(self, likelihood):
         profiler = self['class'](likelihood, **self['init'])
-        save_fn = self.get('save_fn', None)
+        save_fn = self.get('save', None)
 
         profiler.run(**self['run'])
         if save_fn is not None and profiler.mpicomm.rank == 0:

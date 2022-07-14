@@ -19,9 +19,9 @@ class EmulatorConfig(SectionConfig):
             if 'emulator' in calcdict:
                 emudict = calcdict['emulator']
                 if not isinstance(emudict, dict):
-                    emudict = {'save_fn': emudict}
+                    emudict = {'save': emudict}
                 emudict = self.clone(EmulatorConfig(emudict))
-                save_fn = emudict.get('save_fn', calcdict.get('save_fn', None))
+                save_fn = emudict.get('save', calcdict.get('save', None))
                 cls = import_cls(emudict['class'], pythonpath=emudict.get('pythonpath', None), registry=BaseEmulatorEngine._registry)
                 emulator = cls(pipeline.select(calculator), **emudict['init'])
                 sample = emudict.get('sample', {})

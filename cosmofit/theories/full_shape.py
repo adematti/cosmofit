@@ -1,29 +1,24 @@
 import numpy as np
 
 from .bao import BaseTheoryPowerSpectrumMultipoles, BaseTheoryCorrelationFunctionMultipoles
-from .power_template import BasePowerSpectrumTemplate  # to add calculator in the registry
+from .power_template import BasePowerSpectrumParameterization  # to add calculator in the registry
 
 
 class BasePTPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, **kwargs):
         super(BasePTPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
-        self.requires = {'effectap': ('EffectAP', {'zeff': self.zeff, 'fiducial': self.fiducial}), 'pklin': ('BasePowerSpectrumTemplate', {'k': self.kin})}
+        self.requires = {'template': (BasePowerSpectrumParameterization, {'k': self.kin, 'zeff': self.zeff, 'fiducial': self.fiducial})}
 
 
 class LPTPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles):
 
     kin = np.logspace(-3., 1., 200)
 
-    def run(self, **params):
-        self.sigma8 = self.pklin.sigma8
-        if 'fsigma8' in params:
-            growth_rate = params['fsigma8'] / self.sigma8
-        else:
-            growth_rate = self.pklin.growth_rate
+    def run(self):
         from velocileptors.LPT.lpt_rsd_fftw import LPT_RSD
-        self.lpt = LPT_RSD(self.kin, self.pklin.power_dd, kIR=0.2, cutoff=10, extrap_min=-4, extrap_max=3, N=2000, threads=1, jn=5)
-        self.lpt.make_pltable(growth_rate, kv=self.k, apar=self.effectap.qpar, aperp=self.effectap.qper, ngauss=3)
+        self.lpt = LPT_RSD(self.kin, self.template.power_dd, kIR=0.2, cutoff=10, extrap_min=-4, extrap_max=3, N=2000, threads=1, jn=5)
+        self.lpt.make_pltable(self.template.f, kv=self.k, apar=self.template.qpar, aperp=self.template.qper, ngauss=3)
         self.lpttable = [self.lpt.p0ktable, self.lpt.p2ktable, self.lpt.p4ktable]
 
     def combine_bias_terms_power_poles(self, b1=1.69, b2=-1.17, bs=-0.71, b3=0., alpha0=0., alpha2=0., alpha4=0., alpha6=0., sn0=0., sn2=0., sn4=0.):
@@ -50,8 +45,6 @@ class LPTTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
         self.requires = {'pt': (self.__class__.__name__.replace('Tracer', ''), {'k': self.k, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial})}
 
     def run(self, **params):
-        if 'b1sigma8' in params:
-            params['b1'] = params.pop('b1sigma8') / self.pt.sigma8
         self.power = self.pt.combine_bias_terms_power_poles(**params)
 
 

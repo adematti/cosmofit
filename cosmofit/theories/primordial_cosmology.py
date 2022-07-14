@@ -28,6 +28,7 @@ class Cosmoprimo(BasePrimordialCosmology):
                     param.value = getattr(cosmo, 'O' + name[1:]) * cosmo.h ** 2
                 else:
                     param.value = getattr(cosmo, name)
+                param.fixed = True
         return params
 
     def run(self, **params):

@@ -11,7 +11,7 @@ class PrimordialNonGaussianityPowerSpectrum(BaseTheoryPowerSpectrumMultipoles):
 
     def run(self, fnl_loc=0., p=1., bias=2., sigmas=0., sn0=0.):
         pk = self.cosmo.get_fourier().pk_interpolator().to_1d(self.k, z=self.zeff)
-        tk = pk / self.cosmo.get_primordial().pk_interpolator()(self.k)
+        tk = (pk / self.cosmo.get_primordial().pk_interpolator()(self.k))**0.5
         tk /= tk[0]
         # https://arxiv.org/pdf/1904.08859.pdf eq. 2.3
         znorm = 10.

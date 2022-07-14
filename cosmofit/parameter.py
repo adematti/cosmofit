@@ -1147,7 +1147,14 @@ class ParameterPrior(BaseClass):
 
     def __getattr__(self, name):
         """Make :attr:`rv` attributes directly available in :class:`ParameterPrior`."""
-        return getattr(object.__getattribute__(self, 'rv'), name)
+        try:
+            return getattr(object.__getattribute__(self, 'rv'), name)
+        except AttributeError as exc:
+            attrs = object.__getattribute__(self, 'attrs')
+            if name in attrs:
+                return attrs[name]
+            else:
+                raise exc
 
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""

@@ -16,7 +16,7 @@ class RQuasiRandomSequence(qmc.QMCEngine):
         phi = 1.0
         # This is the Newton's method, solving phi**(d+1) - phi - 1 = 0
         eq_check = phi**(self.d + 1) - phi - 1
-        while (np.abs(eq_check) > 1e-15):
+        while (np.abs(eq_check) > 1e-12):
             phi -= (phi**(self.d + 1) - phi - 1) / ((self.d + 1) * phi**self.d - 1)
             eq_check = phi**(self.d + 1) - phi - 1
         self.inv_phi = [phi**(-(1 + d)) for d in range(self.d)]
@@ -56,6 +56,7 @@ class QMCSampler(BaseClass, metaclass=RegisteredSampler):
         lower, upper = [], []
         for param in self.varied_params:
             if param.ref.is_proper():
+                print(param, param.value, param.proposal)
                 lower.append(param.value - param.proposal)
                 upper.append(param.value + param.proposal)
             else:

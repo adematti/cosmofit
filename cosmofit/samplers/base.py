@@ -24,7 +24,7 @@ class SamplerConfig(SectionConfig):
 
     def run(self, pipeline):
         sampler = self['class'](pipeline, **self['init'])
-        save_fn = self.get('save_fn', None)
+        save_fn = self.get('save', None)
 
         if self.is_posterior_sampler:
             check = self.get('check', {})

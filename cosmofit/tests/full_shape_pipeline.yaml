@@ -13,34 +13,21 @@ pipeline:
         kstep: 0.01
         zeff: 2.0
         fiducial: DESI
-      save_fn: f'{output_dir}/QSO.like.npy'
-      load_fn: True
+      save: f'{output_dir}/QSO.like.npy'
+      load: True
     theory:
       class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
-    lpt:
-      class: cosmofit.theories.full_shape.LPTPowerSpectrumMultipoles
-      #load_fn: f'{output_dir}/emulator.npy'
-      emulator:
-        save_fn: f'{output_dir}/emulator.npy'
-      params:
-        fsigma8:
-          value: 0.5
-          prior:
-            dist: uniform
-            limits: [0.2, 0.8]
-          latex: 'f\sigma_{8}'
-    shapefit:
-      class: cosmofit.theories.power_template.ShapeFitPowerSpectrumTemplate
-    effectap:
-      class: cosmofit.theories.base.EffectAP
-      init:
-        mode: qparqper
+    #lpt:
+    #  class: cosmofit.theories.full_shape.LPTPowerSpectrumMultipoles
+      #load: f'{output_dir}/emulator.npy'
+    #  emulator:
+    #    save: f'{output_dir}/emulator.npy'
+    #shapefit:
+    #  class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
+    ptheta:
+      class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
-    #init:
-    #  fiducial: DESI
-    params:
-      fixed: '*'
 
 emulate:
   class: TaylorEmulatorEngine
@@ -64,6 +51,12 @@ summarize:
 #   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
 
 sample:
+  class: cosmofit.samplers.QMCSampler
+  run:
+    niterations: 2
+  save: f'{output_dir}/grid.npy'
+
+sample:
   class: cosmofit.samplers.DynestySampler
   init:
     mode: static
@@ -71,7 +64,7 @@ sample:
     max_iterations: 10000
     check_every: 100
   check: True
-  save_fn: f'{output_dir}/samples_*.npy'
+  save: f'{output_dir}/samples_*.npy'
 
 sample:
   class: cosmofit.samplers.EmceeSampler
@@ -81,11 +74,11 @@ sample:
     max_iterations: 10000
     check_every: 100
   check: True
-  save_fn: f'{output_dir}/samples_*.npy'
+  save: f'{output_dir}/samples_*.npy'
 
 profile:
   class: cosmofit.profilers.MinuitProfiler
-  save_fn: f'{output_dir}/profiles.npy'
+  save: f'{output_dir}/profiles.npy'
 
 data_dir: pk
 output_dir: tmp
