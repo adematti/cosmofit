@@ -54,17 +54,17 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         self._set_profiler()
 
     def loglikelihood(self, values):
-        values = np.asarray(values)
+        values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
-        di = {str(param): [value[iparam] for value in values] for iparam, param in enumerate(self.varied_params)}
+        di = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}
         self.likelihood.mpirun(**di)
         toret = None
         if self.likelihood.mpicomm.rank == 0:
             if self.derived is None:
                 self.derived = [self.likelihood.derived, di]
             else:
-                self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: self.derived[1][name] + di[name] for name in di}]
+                self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: np.concatenate([self.derived[1][name], di[name]], axis=0) for name in di}]
             toret = self.likelihood.loglikelihood
             for array in self.likelihood.derived:
                 if array.param.varied:
@@ -73,10 +73,10 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         return self.likelihood.mpicomm.bcast(toret, root=0)
 
     def logposterior(self, values):
-        values = np.asarray(values)
+        values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
-        params = {str(param): np.array([value[iparam] for value in values]) for iparam, param in enumerate(self.varied_params)}
+        params = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}
         toret = self.likelihood.logprior(**params)
         mask = ~np.isinf(toret)
         toret[mask] += self.loglikelihood(values[mask])
