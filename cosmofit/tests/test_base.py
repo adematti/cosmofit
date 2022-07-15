@@ -135,4 +135,4 @@ if __name__ == '__main__':
     # test_summarize(config_fn='full_shape_pipeline.yaml')
     # test_sample(config_fn='primordial_non_gaussianity_pipeline.yaml')
     # test_profile(config_fn='primordial_non_gaussianity_pipeline.yaml')
-    test_do(config_fn='primordial_non_gaussianity_pipeline.yaml')
+    # test_do(config_fn='primordial_non_gaussianity_pipeline.yaml')
