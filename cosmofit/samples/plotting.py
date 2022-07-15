@@ -2,7 +2,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import gridspec
 
-from cosmofit import plotting, utils
+from cosmofit import utils
+from cosmofit.plotting import savefig
 from . import diagnostics
 
 
@@ -82,7 +83,7 @@ def plot_trace(chains, params=None, figsize=None, colors=None, labelsize=None, f
     lax[-1].set_xlabel('step', fontsize=labelsize)
 
     if fn is not None:
-        plotting.savefig(fn, **(kw_save or {}))
+        savefig(fn, **(kw_save or {}))
     return lax
 
 
@@ -145,7 +146,7 @@ def plot_gelman_rubin(chains, params=None, multivariate=False, threshold=None, s
     ax.legend()
 
     if fn is not None:
-        plotting.savefig(fn, fig=fig **(kw_save or {}))
+        savefig(fn, fig=fig, **(kw_save or {}))
     return ax
 
 
@@ -201,7 +202,7 @@ def plot_geweke(chains, params=None, threshold=None, slices=None, labelsize=None
     ax.legend()
 
     if fn is not None:
-        plotting.savefig(fn, fig=fig, **(kw_save or {}))
+        savefig(fn, fig=fig, **(kw_save or {}))
     return ax
 
 
@@ -262,7 +263,7 @@ def plot_autocorrelation_time(chains, params=None, threshold=50, slices=None, la
     ax.legend()
 
     if fn is not None:
-        plotting.savefig(fn, fig=fig **(kw_save or {}))
+        savefig(fn, fig=fig, **(kw_save or {}))
     return ax
 
 
@@ -296,7 +297,7 @@ def plot_triangle(chains, params=None, labels=None, fn=None, kw_save=None, **kwa
     chains = [chain.to_getdist(label=label) for chain, label in zip(chains, labels)]
     lax = g.triangle_plot(chains, params, **kwargs)
     if fn is not None:
-        plotting.savefig(fn, **(kw_save or {}))
+        savefig(fn, **(kw_save or {}))
     return lax
 
 
@@ -404,7 +405,7 @@ def plot_aligned(profiles, param, ids=None, labels=None, colors=None, truth=None
     ax.tick_params(labelsize=ticksize)
     if add_legend: ax.legend(**{**{'ncol': maxpoints}, **kw_legend})
     if fn is not None:
-        plotting.savefig(fn, fig=fig, **(kw_save or {}))
+        savefig(fn, fig=fig, **(kw_save or {}))
     return ax
 
 
@@ -474,5 +475,5 @@ def plot_aligned_stacked(profiles, params=None, ids=None, labels=None, truths=No
         lax.append(ax)
 
     if fn is not None:
-        plotting.savefig(fn, fig=fig, **(kw_save or {}))
+        savefig(fn, fig=fig, **(kw_save or {}))
     return np.array(lax)

@@ -8,6 +8,16 @@ class BasePrimordialCosmology(BaseCalculator):
     pass
 
 
+def get_from_cosmo(cosmo, name):
+    if name.lower().startswith('omega_'):
+        name = name[:5] + '0' + name[5:]
+    if name.startswith('omega'):
+        Omega = getattr(cosmo, 'O' + name[1:], None)
+        if Omega is not None:
+            return Omega * cosmo.h ** 2
+    return getattr(cosmo, name)
+
+
 class Cosmoprimo(BasePrimordialCosmology):
 
     def __init__(self, fiducial=None, engine='class', extra_params=None):
@@ -21,13 +31,7 @@ class Cosmoprimo(BasePrimordialCosmology):
             from .base import get_cosmo
             cosmo = get_cosmo(self.fiducial)
             for param in params:
-                name = param.basename
-                if name.lower().startswith('omega_'):
-                    name = name[:5] + '0' + name[5:]
-                if name.startswith('omega'):
-                    param.value = getattr(cosmo, 'O' + name[1:]) * cosmo.h ** 2
-                else:
-                    param.value = getattr(cosmo, name)
+                param.value = get_from_cosmo(cosmo, param.basename)
                 param.fixed = True
         return params
 
@@ -40,7 +44,7 @@ class Cosmoprimo(BasePrimordialCosmology):
         except AttributeError as exc:
             if 'cosmo' in self.__dict__:
                 try:
-                    return getattr(self.cosmo, name)
+                    return get_from_cosmo(self.cosmo, name)
                 except CosmologyError as exc:  # TODO: remove once cosmoprimo is updated
                     raise AttributeError from exc
             raise exc

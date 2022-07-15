@@ -35,7 +35,7 @@ params:
       limits: [-1e5, 1e5]
     latex: s_{n, 0}
   sigmas:
-    value: 5.
+    value: 0.
     prior:
       dist: uniform
       limits: [0., 10]
