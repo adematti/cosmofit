@@ -132,7 +132,8 @@ def plot_gelman_rubin(chains, params=None, multivariate=False, threshold=None, s
         for param in gr: gr[param].append(diagnostics.gelman_rubin(chains_sliced, param, method='diag', **kwargs))
     for param in gr: gr[param] = np.asarray(gr[param])
 
-    if ax is None: ax = plt.gca()
+    fig = None
+    if ax is None: fig, ax = plt.subplots()
     ax.grid(True)
     ax.set_xlabel('step', fontsize=labelsize)
     ax.set_ylabel(r'$\hat{R}$', fontsize=labelsize)
@@ -144,7 +145,7 @@ def plot_gelman_rubin(chains, params=None, multivariate=False, threshold=None, s
     ax.legend()
 
     if fn is not None:
-        plotting.savefig(fn, **(kw_save or {}))
+        plotting.savefig(fn, fig=fig **(kw_save or {}))
     return ax
 
 
@@ -188,7 +189,8 @@ def plot_geweke(chains, params=None, threshold=None, slices=None, labelsize=None
         for param in geweke: geweke[param].append(diagnostics.geweke(chains_sliced, param, **kwargs))
     for param in geweke: geweke[param] = np.asarray(geweke[param]).mean(axis=-1)
 
-    if ax is None: ax = plt.gca()
+    fig = None
+    if ax is None: fig, ax = plt.subplots()
     ax.grid(True)
     ax.set_xlabel('step', fontsize=labelsize)
     ax.set_ylabel(r'geweke', fontsize=labelsize)
@@ -199,7 +201,7 @@ def plot_geweke(chains, params=None, threshold=None, slices=None, labelsize=None
     ax.legend()
 
     if fn is not None:
-        plotting.savefig(fn, **(kw_save or {}))
+        plotting.savefig(fn, fig=fig, **(kw_save or {}))
     return ax
 
 
@@ -247,7 +249,8 @@ def plot_autocorrelation_time(chains, params=None, threshold=50, slices=None, la
             autocorr[param].append(tmp)
     for param in autocorr: autocorr[param] = np.asarray(autocorr[param])
 
-    if ax is None: ax = plt.gca()
+    fig = None
+    if ax is None: fig, ax = plt.subplots()
     ax.grid(True)
     ax.set_xlabel('step $N$', fontsize=labelsize)
     ax.set_ylabel('$\tau$', fontsize=labelsize)
@@ -259,7 +262,7 @@ def plot_autocorrelation_time(chains, params=None, threshold=50, slices=None, la
     ax.legend()
 
     if fn is not None:
-        plotting.savefig(fn, **(kw_save or {}))
+        plotting.savefig(fn, fig=fig **(kw_save or {}))
     return ax
 
 
@@ -361,7 +364,8 @@ def plot_aligned(profiles, param, ids=None, labels=None, colors=None, truth=None
 
     xmain = np.arange(len(profiles))
     xaux = np.linspace(-0.15, 0.15, maxpoints)
-    if ax is None: ax = plt.gca()
+    fig = None
+    if ax is None: fig, ax = plt.subplots()
     for iprof, prof in enumerate(profiles):
         if param not in prof.bestfit: continue
         ibest = prof.bestfit.logposterior.argmax()
@@ -400,7 +404,7 @@ def plot_aligned(profiles, param, ids=None, labels=None, colors=None, truth=None
     ax.tick_params(labelsize=ticksize)
     if add_legend: ax.legend(**{**{'ncol': maxpoints}, **kw_legend})
     if fn is not None:
-        plotting.savefig(fn, **(kw_save or {}))
+        plotting.savefig(fn, fig=fig, **(kw_save or {}))
     return ax
 
 

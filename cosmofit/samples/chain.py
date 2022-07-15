@@ -385,7 +385,7 @@ class Chain(ParameterValues):
         """
         return utils.cov_to_corrcoef(self.cov(params, **kwargs))
 
-    def to_stats(self, params=None, quantities=None, sigfigs=2, tablefmt='latex_raw', filename=None):
+    def to_stats(self, params=None, quantities=None, sigfigs=2, tablefmt='latex_raw', fn=None):
         """
         Export samples summary quantities.
 
@@ -406,7 +406,7 @@ class Chain(ParameterValues):
             Format for summary table.
             See :func:`tabulate.tabulate`.
 
-        filename : string default=None
+        fn : string, default=None
             If not ``None``, file name where to save summary table.
 
         Returns
@@ -422,8 +422,9 @@ class Chain(ParameterValues):
 
         def round_errors(low, up):
             low, up = utils.round_measurement(0.0, low, up, sigfigs=sigfigs)[1:]
-            if is_latex: return '${{}}_{{{}}}^{{+{}}}$'.format(low, up)
-            return '{}/+{}'.format(low, up)
+            low, up = [val if val.startswith('-') else '+{}'.format(val) for val in [low, up]]
+            if is_latex: return '${{}}_{{{}}}^{{{}}}$'.format(low, up)
+            return '{}/{}'.format(low, up)
 
         for iparam, param in enumerate(params):
             row = []
@@ -449,9 +450,9 @@ class Chain(ParameterValues):
                     raise RuntimeError('Unknown quantity {}.'.format(quantity))
             data.append(row)
         tab = tabulate.tabulate(data, headers=quantities, tablefmt=tablefmt)
-        if filename is not None:
-            utils.mkdir(os.path.dirname(filename))
-            self.log_info('Saving to {}.'.format(filename))
-            with open(filename, 'w') as file:
+        if fn is not None:
+            utils.mkdir(os.path.dirname(fn))
+            self.log_info('Saving to {}.'.format(fn))
+            with open(fn, 'w') as file:
                 file.write(tab)
         return tab
