@@ -85,7 +85,7 @@ info:
 
 init:
   a: 0.6
-  k_pivot: 0.03
+  kpivot: 0.03
 
 params:
   dm:

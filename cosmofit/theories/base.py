@@ -70,7 +70,7 @@ def get_cosmo(cosmo):
 
 class EffectAP(BaseCalculator):
 
-    def __init__(self, zeff=1., fiducial=None, mode=None):
+    def __init__(self, zeff=1., fiducial=None, mode=None, eta=1./3.):
         self.zeff = float(zeff)
         if fiducial is None:
             raise ValueError('Provide fiducial cosmology')
@@ -78,6 +78,7 @@ class EffectAP(BaseCalculator):
         self.efunc_fid = fiducial.efunc(self.zeff)
         self.comoving_angular_distance_fid = fiducial.comoving_angular_distance(self.zeff)
         self.mode = mode
+        self.eta = float(eta)
         from .primordial_cosmology import BasePrimordialCosmology
         self.requires = {'cosmo': (BasePrimordialCosmology, {})}
 
@@ -109,20 +110,20 @@ class EffectAP(BaseCalculator):
             qpar = qper = params['qiso']
         elif self.mode == 'qap':
             qap = params['qap']   # qpar / qper
-            eta = 1. / 3.
-            qpar, qper = qap**(1 - eta), qap**(-eta)
+            qpar, qper = qap**(1 - self.eta), qap**(-self.eta)
         else:
             qpar, qper = params['qpar'], params['qper']
         self.qpar, self.qper = qpar, qper
+        self.qap = self.qpar / self.qper
+        self.qiso = self.qpar**self.eta * self.qper*(1. - self.eta)
 
     def ap_k_mu(self, k, mu):
         jac = 1. / (self.qpar * self.qper ** 2)
-        F = self.qpar / self.qper
-        factor_ap = np.sqrt(1 + mu**2 * (1. / F**2 - 1))
+        factorap = np.sqrt(1 + mu**2 * (1. / self.qap**2 - 1))
         # Beutler 2016 (arXiv: 1607.03150v1) eq 44
-        kap = k[..., None] / self.qper * factor_ap
+        kap = k[..., None] / self.qper * factorap
         # Beutler 2016 (arXiv: 1607.03150v1) eq 45
-        muap = mu / F / factor_ap
+        muap = mu / self.qap / factorap
         return jac, kap, muap
 
 

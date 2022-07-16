@@ -1,40 +1,122 @@
 import glob
 import numpy as np
+from scipy import constants
 
 from .base import BaseGaussianLikelihood
+from cosmofit.parameter import ParameterCollection
 
 
-class FullParameterizationLikelihood(BaseGaussianLikelihood):
+def load_chain(chains, burnin=None):
+    if isinstance(chains, str):
+        chains = [chains]
+    if utils.is_sequence(chains) and isinstance(chains[0], str)
+        chains = [Chain.load(fn) for fn in glob.glob(ff) for ff in chains]
+    if burnin is not None:
+        chains = [chain.remove_burnin(burnin) for chain in chains]
+    return Chain.concatenate(chains)
+
+
+class BaseParameterizationLikelihood(BaseGaussianLikelihood):
+
+    _parambasenames = None
 
     def __init__(self, chains, select=None, burnin=None):
-        if isinstance(chains, str):
-            chains = [chains]
-        if utils.is_sequence(chains) and isinstance(chains[0], str)
-            chains = [Chain.load(fn) for fn in glob.glob(ff) for ff in chains]
-        if burnin is not None:
-            chains = [chain.remove_burnin(burnin) for chain in chains]
-        chain = Chain.concatenate(chains)
-        params = chain.params()
+        self.chain = None
+        if self.mpicomm.rank == 0:
+            self.chain = load_chain(chains, burnin=burnin)
+        self.params = self.mpicomm.bcast(self.chain.params() if self.mpicomm.rank == 0 else None, root=0)
         if select is not None:
-            params = params.select(**select)
-        self.params = params
-        mean = np.array([chain.mean(param) for param in self.params])
-        covariance = chain.cov(self.params)
-        super(FullParameterizationLikelihood, self).__init__(covariance=covariance, data=mean)
+            self.params = self.params.select(**select)
+        if self._parambasenames is not None:
+            self.params = self.params.select(basename=self._parambasenames)
         self.requires = {'cosmo': ('BasePrimordialCosmology', {})}
 
-    def _update_params(self, params):
-        indices = [self.params.index(param) for param in params]
-        super(FullParameterizationLikelihood, self).__init__(covariance=self.covariance[np.ix_(indices, indices)], data=self.flatdata[indices])
+    def _prepare(self):
+        mean = self.mpicomm.bcast(np.array([self.chain.mean(param) for param in self.params]) if self.mpicomm.rank == 0 else None, root=0)
+        covariance = self.mpicomm.bcast(self.chain.cov(self.params) if self.mpicomm.rank == 0 else None, root=0)
+        super(FullParameterizationLikelihood, self).__init__(covariance=covariance, data=mean)
+        del self.chain
+
+    def _set_meta(self, **kwargs):
+        for name, value in kwargs.items():
+            if value is None:
+                param = self.chain.params(basename=[name])
+                if not param:
+                    raise ValueError('{} must be provided either as arguments or input samples'.format(name))
+                value = self.chain.mean(param[0])
+            value = float(value)
+            setattr(self, name, value)
+
+    def run(self):
+        if not hasattr(self, 'precision'):
+            self._prepare()
+        super(BaseParameterizationLikelihood, self).run()
+
+
+class FullParameterizationLikelihood(BaseParameterizationLikelihood):
+
+    def _prepare(self):
+        self.params = ParameterCollection()
+        for param in params:
+            value = getattr(self.cosmo, param.basename, None)
+            if value is not None:
+                self.params.set(param)
+        super(FullParameterizationLikelihood, self)._prepare()
 
     @property
     def flatmodel(self):
-        params, values = [], []
-        for param in self.params:
-            value = getattr(self.cosmo, param.basename)
-            if value is not None:
-                params.append(param)
-                values.append(value)
-        if len(params) != len(self.params):
-            self._update_params(params)
-        return np.array(values, dtype='f8')
+        return np.array([getattr(self.cosmo, param.basename) for param in self.params], dtype='f8')
+
+
+class BAOParameterizationLikelihood(BaseParameterizationLikelihood):
+
+    _parambasenames = ('DH_over_rs_drag', 'DM_over_rs_drag')
+
+    def _-init__(self, *args, zeff=None, **kwargs):
+        super(BAOParameterizationLikelihood, self).__init__(*args, **kwargs)
+        self._set_meta(zeff=zeff)
+        from cosmofit.power_template import BAOExtractor
+        self.requires = {'bao': (BAOExtractor, {'zeff': self.zeff})}
+
+    @property
+    def flatmodel(self):
+        return np.array([getattr(self.bao, param.basename) for param in self.params], dtype='f8')
+
+
+class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
+
+    _parambasenames = ('n', 'm', 'f_sqrt_A_p') + BAOParameterizationLikelihood._parambasenames
+
+    def __init__(self, *args, kpivot=0.03, **kwargs):
+        super(ShapeFitParameterizationLikelihood, self).__init__(*args, **kwargs)
+        self._set_meta(kpivot=kpivot)
+        from cosmofit.power_template import ShapeFitPowerSpectrumExtractor
+        self.requires['shapefit'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff, 'kpivot': self.kpivot, 'of': 'theta_cb', 'n_varied': self.params[0].varied})
+
+    @property
+    def flatmodel(self):
+        values = [getattr(self.shapefit, name) for name in ['n', 'm', 'A_p']]
+        values[-1] **= 0.5
+        return np.concatenate([values, super(ShapeFitPowerSpectrumParameterization, self).flatmodel], axis=0)
+
+
+class BandVelocityPowerSpectrumParameterizationLikelihood(BaseParameterizationLikelihood):
+
+    _parambasenames = ('ptt', 'f', 'qap')
+
+    def __init__(self, *args, kpoints=None, fiducial=None, **kwargs):
+        super(ShapeFitParameterizationLikelihood, self).__init__(*args, **kwargs)
+        self._set_meta(kpoints=kpoints)
+        from cosmofit.power_template import BandVelocityPowerSpectrumExtractor
+        self.requires['bandpower'] = (BandVelocityPowerSpectrumExtractor, {'zeff': self.zeff, 'kpoints': self.kpoints})
+        self.requires['effectap'] = (EffectAP, {'zeff': self.zeff, 'fiducial': fiducial, 'mode': 'distances'})
+
+    @property
+    def flatmodel(self):
+        qiso = self.effectap.qiso
+        self.bandpower.kpoints = self.kpoints / qiso
+        ptt = self.bandpower.ptt / qiso**3
+        fo = self.cosmo.get_fourier()
+        r = 8. * qiso
+        f = fo.sigma_rz(r, self.zeff, of='theta_cb') / fo.sigma_rz(r, self.zeff, of='delta_cb')
+        return np.concatenate([ptt, [f, self.effectap.qap]], axis=0)

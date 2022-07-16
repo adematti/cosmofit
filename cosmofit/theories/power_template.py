@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import constants
 
 from cosmofit.base import BaseCalculator
 from .primordial_cosmology import BasePrimordialCosmology
@@ -7,16 +8,17 @@ from .base import EffectAP
 
 class BasePowerSpectrumWiggles(BaseCalculator):
 
-    def __init__(self, zeff=1., engine='wallish2018', **kwargs):
+    def __init__(self, zeff=1., engine='wallish2018', of='delta_cb', **kwargs):
         self.engine = engine
         self.zeff = float(zeff)
+        self.of = of
         self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
 
     def run(self):
         fo = self.cosmo.get_fourier()
         self.sigma8 = fo.sigma8_z(self.zeff, of='delta_cb')
         self.fsigma8 = fo.sigma8_z(self.zeff, of='theta_cb')
-        self.power = fo.pk_interpolator().to_1d(z=self.zeff)
+        self.power = fo.pk_interpolator(of=self.of).to_1d(z=self.zeff)
         from cosmoprimo import PowerSpectrumBAOFilter
         self.power_now = PowerSpectrumBAOFilter(self.power, engine=self.engine).smooth_pk_interpolator()
 
@@ -53,32 +55,70 @@ class FullPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         super(FullPowerSpectrumTemplate, self).__init__(k=k, zeff=zeff, fiducial=None)
 
 
-class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
+class ShapeFitPowerSpectrumExtractor(BaseCalculator):
 
-    def __init__(self, *args, a=0.6, k_pivot=0.03, **kwargs):
-        super(ShapeFitPowerSpectrumTemplate, self).__init__(*args, **kwargs)
-        self.a = float(a)
-        self.k_pivot = float(k_pivot)
-        self.requires['wiggles'] = (BasePowerSpectrumWiggles, {'zeff': self.zeff, **self.requires['cosmo']['init']})
+    def __init__(self, zeff=1., kpivot=0.03, n_varied=True, **kwargs):
+        self.zeff = float(zeff)
+        self.kpivot = float(kpivot)
+        self.n_varied = bool(n_varied)
+        self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs},
+                         'wiggles': {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, **kwargs}}}
 
-    def run(self, dm=0., dn=0.):
-        super(ShapeFitPowerSpectrumTemplate, self).run()
-        factor = dm / self.a * np.tanh(self.a * np.log(self.k / self.k_pivot)) + dn * np.log(self.k / self.k_pivot)
-        self.power_dd *= np.exp(factor)
-        self.A_p = self.wiggles.power_now(self.k_pivot)
-        self.n = dn + self.cosmo.n_s
+    def run(self):
+        self.A_p = self.wiggles.power_now(self.kpivot)
+        self.n = self.cosmo.n_s
         dk = 1e-3
-        k = self.k_pivot * np.array([1. - dk, 1. + dk])
-        if self.runtime_info.base_params['dn'].varied:
-            pk_prim = self.cosmo.get_primordial().pk_interpolator()(k)
+        k = self.kpivot * np.array([1. - dk, 1. + dk])
+        if self.n_varied:
+            pk_prim = self.cosmo.get_primordial().pk_interpolator()(k) * k
         else:
             pk_prim = 1.
-        self.m = dm + (np.diff(np.log(self.wiggles.power_now(k) / pk_prim)) / np.diff(np.log(k)))[0]
+        self.m = (np.diff(np.log(self.wiggles.power_now(k) / pk_prim)) / np.diff(np.log(k)))[0]
+
+    def __getstate__(self):
+        for name in ['A_p', 'n', 'm', 'n_varied']:
+            if hasattr(self, name):
+                state[name] = getattr(self, name)
+        return state
+
+
+class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
+
+    def __init__(self, a=0.6, kpivot=0.03, **kwargs):
+        super(ShapeFitPowerSpectrumTemplate, self).__init__(**kwargs)
+        ShapeFitPowerSpectrumExtractor.__init__(self, kpivot=kpivot, **kwargs)
+        self.a = float(a)
+
+    def run(self, dm=0., dn=0.):
+        self.n_varied = self.runtime_info.base_params['dn'].varied  # for ShapeFitPowerSpectrumExtractor
+        super(ShapeFitPowerSpectrumTemplate, self).run()
+        ShapeFitPowerSpectrumExtractor.run(self)
+        factor = dm / self.a * np.tanh(self.a * np.log(self.k / self.kpivot)) + dn * np.log(self.k / self.kpivot)
+        self.power_dd *= np.exp(factor)
+        self.n += dn
+        self.m += dm
 
     def __getstate__(self):
         state = super(ShapeFitPowerSpectrumTemplate, self).__getstate__()
-        for name in ['A_p', 'n', 'm']:
-            state[name] = getattr(self, name)
+        state.update(ShapeFitPowerSpectrumExtractor.__getstate__(self))
+        return state
+
+
+class BandVelocityPowerSpectrumExtractor(BaseCalculator):
+
+    def __init__(self, kpoints=None, **kwargs):
+        self.kpoints = kpoints
+        self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
+
+    def run(self):
+        self.power_tt = self.cosmo.get_fourier().pk_interpolator(of='theta_cb').to_1d(z=self.zeff)
+        self.ptt = self.power_tt(self.kpoints)
+
+    def __getstate__(self):
+        state = {}
+        for name in ['ptt']:
+            if hasattr(self, name):
+                state[name] = getattr(self, name)
         return state
 
 
@@ -86,9 +126,9 @@ class BandVelocityPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
     _baseparamname = 'rptt'
 
-    def __init__(self, *args, kpoints=None, **kwargs):
-        super(BandVelocityPowerSpectrumTemplate, self).__init__(*args, **kwargs)
-        self.kpoints = kpoints
+    def __init__(self, kpoints=None, **kwargs):
+        super(BandVelocityPowerSpectrumTemplate, self).__init__(**kwargs)
+        BandVelocityPowerSpectrumTemplate.__init__(self, kpoints=kpoints, **kwargs)
 
     def set_params(self, params):
         params = params.select(basename=['{}*'.format(self._baseparamname)])
@@ -127,14 +167,12 @@ class BandVelocityPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         self.templates = np.array(self.templates)
         return params
 
-    def run(self, f=None, **params):
-        fo = self.cosmo.get_fourier()
-        self.power_tt = fo.pk_interpolator(of='theta_cb')(self.k, z=self.zeff)
-        ppoints = fo.pk_interpolator(of='theta_cb')(self.kpoints, z=self.zeff)
-        self.ptt = np.empty(len(self.kpoints), dtype='f8')
+    def run(self, **params):
+        BandVelocityPowerSpectrumExtractor.run(self)
+        self.power_tt = self.power_tt(self.k)
         for ii, template in enumerate(self.templates):
             rptt = params['{}{:d}'.format(self._baseparamname, ii)]
-            self.ptt[ii] = ppoints[ii] * (1. + rptt)
+            self.ptt[ii] *= (1. + rptt)
             self.power_tt += rptt * template
 
 
@@ -171,15 +209,25 @@ class FullPowerSpectrumParameterization(BasePowerSpectrumParameterization):
         self.requires['effectap']['init']['mode'] = 'distances'
 
 
+class BAOExtractor(BaseCalculator):
+
+    def __init__(self, zeff=1., **kwargs):
+        self.zeff = float(zeff)
+        self.requires = {'cosmo': (BasePrimordialCosmology, kwargs)}
+
+    def run(self, qpar=1., qper=1.):
+        rs = self.cosmo.rs_drag
+        self.DH_over_rs_drag = qpar * constants.c / 1e3 / self.cosmo.hubble_function(self.zeff) / rs
+        self.DM_over_rs_drag = qper * self.cosmo.comoving_angular_distance(self.zeff) / rs
+
+
 class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
     _parambasenames = ('f', 'A_p', 'f_sqrt_A_p', 'n', 'm')
 
-    def __init__(self, *args, fiducial=None, **kwargs):
-        super(ShapeFitPowerSpectrumParameterization, self).__init__(*args, fiducial=fiducial, **kwargs)
-        if fiducial is None:
-            raise ValueError('Give fiducial cosmology for power spectrum template')
-        self.requires['template']['init']['fiducial'] = fiducial
+    def __init__(self, *args, **kwargs):
+        super(ShapeFitPowerSpectrumParameterization, self).__init__(*args, **kwargs)
+        self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
         self.requires['effectap']['init']['mode'] = 'qparqper'
 
     def run(self, f=None):
@@ -188,17 +236,18 @@ class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
         for name in ['A_p', 'n', 'm']:
             setattr(self, name, getattr(self.template, name))
         self.f_sqrt_A_p = self.f * self.A_p**0.5
+        self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
+        self.cosmo = self.template.cosmo
+        BAOExtractor.run(self, qpar=self.qper, qper=self.qper)
 
 
 class BandVelocityPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
     _parambasenames = ('f',)
 
-    def __init__(self, *args, fiducial=None, **kwargs):
-        super(BandVelocityPowerSpectrumParameterization, self).__init__(*args, fiducial=fiducial, **kwargs)
-        if fiducial is None:
-            raise ValueError('Give fiducial cosmology for power spectrum template')
-        self.requires['template']['init']['fiducial'] = fiducial
+    def __init__(self, *args, **kwargs):
+        super(BandVelocityPowerSpectrumParameterization, self).__init__(*args, **kwargs)
+        self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
         self.requires['effectap']['init']['mode'] = 'qap'
 
     def run(self, f=None):
@@ -214,8 +263,6 @@ class BAOWigglesPowerSpectrumParameterization(BasePowerSpectrumParameterization)
     _parambasenames = ('f',)
 
     def __init__(self, zeff=1., fiducial=None, wiggles='BasePowerSpectrumWiggles', **kwargs):
-        if fiducial is None:
-            raise ValueError('Give fiducial cosmology for power spectrum template')
         self.requires = {'template': {'class': wiggles, 'init': {'zeff': zeff, 'fiducial': fiducial, **kwargs}},
                          'effectap': {'class': EffectAP, 'init': {'zeff': zeff, 'fiducial': fiducial, 'mode': 'qparqper'}}}
 
@@ -225,3 +272,5 @@ class BAOWigglesPowerSpectrumParameterization(BasePowerSpectrumParameterization)
         self.f = f
         if f is None: self.f = self.template.fsigma8 / self.template.sigma8
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
+        self.cosmo = self.template.cosmo
+        BAOExtractor.run(self, qpar=self.qper, qper=self.qper)
