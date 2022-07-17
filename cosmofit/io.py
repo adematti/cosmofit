@@ -132,7 +132,8 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         self.data = datad
         if decode: self.decode()
 
-    def read_file(self, filename):
+    @staticmethod
+    def read_file(filename):
         """Read file at path ``filename``."""
         with open(filename, 'r') as file:
             toret = file.read()

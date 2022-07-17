@@ -509,7 +509,7 @@ class BaseParameterCollection(BaseClass):
             return
 
         if utils.is_sequence(data):
-            dd = datanew.data = self.data.copy()
+            dd = self.data.copy()
             data = {}
             for item in dd:
                 data[self._get_name(item)] = item  # only name is provided
@@ -814,12 +814,15 @@ class ParameterConfig(BaseConfig):
         data = self.copy()
         self.fixed, self.derived, self.namespace = {}, {}, {}
         for meta_name in ['fixed', 'varied', 'derived', 'namespace']:
-            meta = data.pop(meta_name, [])
-            if not utils.is_sequence(meta): meta = [meta]
+            meta = data.pop(meta_name, {})
+            if utils.is_sequence(meta):
+                meta = {name: True for name in meta}
+            elif not isinstance(meta, dict):
+                meta = {meta: True}
             if meta_name in ['derived', 'namespace']:
-                getattr(self, meta_name).update({name: True for name in meta})
+                getattr(self, meta_name).update(meta)
             else:
-                self.fixed.update({name: meta_name == 'fixed' for name in meta})
+                self.fixed.update({name: (meta_name == 'fixed' and value) or (meta_name == 'varied' and not value) for name, value in meta.items()})
         self.data = {}
         for name, conf in data.items():
             conf = conf.copy()
@@ -842,15 +845,29 @@ class ParameterConfig(BaseConfig):
                                 param_meta = meta[template]
                                 found = True
                     if found:
-                        meta[name] = tmp[meta_name] = param_meta
+                        #meta[name] =
+                        tmp[meta_name] = param_meta
+
+                # Wildcard
+                for name in find_names(list(self.keys()), name):
+                    new = self.get(name, {}).copy()
+                    new.update(tmp)
+                    self[name] = new
 
     def update(self, *args, **kwargs):
         other = self.__class__(*args, **kwargs)
         for name in other:
-            if name in self:
-                self[name].update(other[name])
-            else:
-                self[name] = other[name]
+            tmp = other[name]
+            new = self.get(name, {}).copy()
+            new.update(tmp)
+            if name in self: del self[name]
+            self[name] = new
+        for name in self:
+            tmp = self[name]
+            for name in find_names(list(self.keys()), name):
+                new = self.get(name, {}).copy()
+                new.update(tmp)
+                self[name] = new
 
         def update_order(d1, d2):
             toret = {name: value for name, value in d1.items() if name not in d2}
@@ -888,7 +905,8 @@ class ParameterConfig(BaseConfig):
         return new
 
     def init(self, namespace=None):
-        return ParameterCollection(self.with_namespace(namespace=namespace).data)
+        data = {name: conf for name, conf in self.with_namespace(namespace=namespace).data.items() if '*' not in name}
+        return ParameterCollection(data)
 
 
 class ParameterCollection(BaseParameterCollection):

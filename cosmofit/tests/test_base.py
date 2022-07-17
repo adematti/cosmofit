@@ -1,11 +1,12 @@
 import os
 import copy
 
+import pytest
 import numpy as np
 
 from cosmofit import setup_logging
 from cosmofit.base import BaseConfig, BasePipeline, PipelineError, LikelihoodPipeline
-from cosmofit.parameter import ParameterConfig, ParameterCollection, Parameter, ParameterPrior
+from cosmofit.parameter import ParameterConfig, ParameterCollection, Parameter, ParameterPrior, decode_name, find_names, yield_names_latex
 
 
 def test_config():
@@ -18,7 +19,6 @@ def test_config():
 
 
 def test_params():
-
     config = BaseConfig(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'theories', 'bao.yaml'), index={'class': 'DampedBAOWigglesTracerPowerSpectrumMultipoles'})
     params = ParameterCollection(config['params'])
     assert params.names(name='sigmas') == ['sigmas']
@@ -54,6 +54,20 @@ def test_params():
     config.update(config2)
     params = config.init(namespace='test')
     assert params['test.sigma'].namespace == 'test'
+    assert decode_name('a*b') == (['a*b'], [])
+    assert find_names(['a1', 'a2'], 'a*b') == []
+    with pytest.raises(ValueError):
+        for name in yield_names_latex('a[:]'):
+            print(name)
+    config = ParameterConfig({'a*b': {'value': 1.}})
+    assert len(config.init()) == 0
+    config = config.clone({'a2b': {'latex': 'latex'}})
+    params = config.init()
+    assert len(params) == 1
+    assert params['a2b'].value == 1. and params['a2b'].latex() == 'latex'
+    config = config.clone({'a*b': {'value': 2.}})
+    params = config.init()
+    assert params['a2b'].value == 2 and params['a2b'].latex() == 'latex'
 
 
 def test_pipeline():
@@ -120,6 +134,7 @@ if __name__ == '__main__':
 
     setup_logging('info')
 
+    test_params()
     # test_config()
     # test_params()
     # test_pipeline()

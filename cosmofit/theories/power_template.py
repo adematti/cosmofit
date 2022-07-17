@@ -2,6 +2,7 @@ import numpy as np
 from scipy import constants
 
 from cosmofit.base import BaseCalculator
+from cosmofit.parameter import Parameter
 from .primordial_cosmology import BasePrimordialCosmology
 from .base import EffectAP
 
@@ -84,8 +85,8 @@ class ShapeFitPowerSpectrumExtractor(BaseCalculator):
 
 class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
-    def __init__(self, a=0.6, kpivot=0.03, **kwargs):
-        super(ShapeFitPowerSpectrumTemplate, self).__init__(**kwargs)
+    def __init__(self, a=0.6, kpivot=0.03, k=None, **kwargs):
+        super(ShapeFitPowerSpectrumTemplate, self).__init__(k=k, **kwargs)
         ShapeFitPowerSpectrumExtractor.__init__(self, kpivot=kpivot, **kwargs)
         self.a = float(a)
 
@@ -126,31 +127,35 @@ class BandVelocityPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
     _baseparamname = 'rptt'
 
-    def __init__(self, kpoints=None, **kwargs):
-        super(BandVelocityPowerSpectrumTemplate, self).__init__(**kwargs)
-        BandVelocityPowerSpectrumTemplate.__init__(self, kpoints=kpoints, **kwargs)
+    def __init__(self, kpoints=None, k=None, zeff=1., **kwargs):
+        super(BandVelocityPowerSpectrumTemplate, self).__init__(k=k, zeff=zeff, **kwargs)
+        BandVelocityPowerSpectrumExtractor.__init__(self, kpoints=kpoints, **kwargs)
 
     def set_params(self, params):
-        params = params.select(basename=['{}*'.format(self._baseparamname)])
+        params = params.select(basename='{}*'.format(self._baseparamname))
         npoints = len(params)
-        if not npoints:
-            raise ValueError('No parameter {}* found'.format(self._baseparamname))
         if self.kpoints is None:
+            if not npoints:
+                raise ValueError('No parameter {}* found'.format(self._baseparamname))
             step = (self.k[-1] - self.k[0]) / npoints
             self.kpoints = (self.k[0] + step / 2., self.k[-1] - step / 2.)
-        if len(self.kpoints) == 2:
-            self.kpoints = np.linspace(*self.kpoints, num=npoints)
-        self.kpoints = np.array(self.kpoints)
-        if self.kpoints.size != npoints:
-            raise ValueError('{:d} (!= {:d} parameters {}*) points have been provided'.format(self.kpoints.size, npoints, self._baseparamname))
+        if npoints:
+            if len(self.kpoints) == 2:
+                self.kpoints = np.linspace(*self.kpoints, num=npoints)
+            self.kpoints = np.array(self.kpoints)
+            if self.kpoints.size != npoints:
+                raise ValueError('{:d} (!= {:d} parameters {}*) points have been provided'.format(self.kpoints.size, npoints, self._baseparamname))
 
-        if self.kpoints is not None:
-            for ikp, kp in enumerate(self.kpoints):
-                basename = '{}{:d}'.format(self._baseparamname, ikp)
-                param = params.select(basename=[basename])[0]
-                if param.latex is None:
-                    param.latex = r'P_{\{{0}\{0}}}(k={1:.3f})'.format('theta', kp)
-
+        for ikp, kp in enumerate(self.kpoints):
+            basename = '{}{:d}'.format(self._baseparamname, ikp)
+            param = params.select(basename=[basename])
+            if param:
+                param = param[0]
+            else:
+                param = Parameter(basename, value=0.,
+                                  prior={'dist': 'norm', 'loc': 0., 'scale': 1.},
+                                  latex=r'P_{{\{0}\{0}}}(k={1:.3f})'.format('theta', kp))
+            params.set(param)
         zeros = (self.kpoints[:-1] + self.kpoints[1:]) / 2.
         if self.kpoints[0] < self.k[0]:
             raise ValueError('Theory k starts at {0:.2e} but first point is {1:.2e} < {0:.2e}'.format(self.k[0], self.kpoints[0]))
@@ -181,6 +186,7 @@ class BasePowerSpectrumParameterization(BaseCalculator):
     _parambasenames = ()
 
     def __init__(self, k=None, zeff=1., fiducial=None, **kwargs):
+        self.zeff = float(zeff)
         self.requires = {'template': {'class': self.__class__.__name__.replace('Parameterization', 'Template'), 'init': {'k': k, 'zeff': zeff, **kwargs}},
                          'effectap': {'class': EffectAP, 'init': {'zeff': zeff, 'fiducial': fiducial}}}
 
@@ -263,6 +269,7 @@ class BAOWigglesPowerSpectrumParameterization(BasePowerSpectrumParameterization)
     _parambasenames = ('f',)
 
     def __init__(self, zeff=1., fiducial=None, wiggles='BasePowerSpectrumWiggles', **kwargs):
+        self.zeff = float(zeff)
         self.requires = {'template': {'class': wiggles, 'init': {'zeff': zeff, 'fiducial': fiducial, **kwargs}},
                          'effectap': {'class': EffectAP, 'init': {'zeff': zeff, 'fiducial': fiducial, 'mode': 'qparqper'}}}
 

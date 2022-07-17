@@ -24,8 +24,19 @@ pipeline:
     #    save: f'{output_dir}/emulator.npy'
     #shapefit:
     #  class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
-    ptheta:
+    pthetap:
       class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
+      init:
+        kpoints: e'np.linspace(0.02, 0.2, 4)'
+    #ptheta:
+    #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumTemplate
+    #  params:
+    #    rptt*:
+    #      value: 0.
+    #      prior:
+    #        dist: norm
+    #        loc: 0.
+    #        scale: 2.
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 

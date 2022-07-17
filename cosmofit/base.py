@@ -242,7 +242,16 @@ class CalculatorConfig(SectionConfig):
             except TypeError as exc:
                 raise PipelineError('Error in {}'.format(new.__class__)) from exc
         if hasattr(new, 'set_params'):
-            self_params = new.set_params(self_params)
+            tmp_params = new.set_params(self_params.copy())
+            new_params = ParameterCollection([param for param in tmp_params if param not in self_params])
+            new_basenames = new_params.basenames()
+            new_params = ParameterConfig(new_params)
+            for name, conf in new_params.items(): conf['namespace'] = None
+            new_params = new_params.clone(self['params']).init(namespace=namespace).select(basename=new_basenames)
+            self_params = ParameterCollection([param for param in tmp_params if param in self_params]).clone(new_params)
+            print(self['params'])
+            for param in new_params:
+                print(param.name, param.value, param.prior)
         new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=self_params, **kwargs)
         new.runtime_info._derived_names = derived
         save_fn = self['save']
@@ -448,25 +457,17 @@ class BasePipeline(BaseClass):
                     config_config = CalculatorConfig(calcdict)
                     config_config_fn = clone_from_config_fn(config_config)
                     calculators_in_namespace[basename] = config_config_fn
-                    auto_derived = config_config_fn['params'].derived.copy()
-                    for name, b in auto_derived.items():
-                        if b:
-                            if name not in ParameterConfig._keywords['derived'] and find_names(list(config_config_fn['params'].keys()), name):
-                                auto_derived[name] = False
                     self_params = config_config_fn['params'].init(namespace=namespace)
                     config_params = config_config['params'].init(namespace=namespace)
                     for param in self_params:
-                        param_in_config = config_config['params'].get(param.basename, None)
                         if updated(param, config_params.get(param.name, None)):
                             params.set(param)
                         else:
-                            if param not in params:
+                            match_param = _best_match_parameter(namespace, param.basename, params)
+                            if match_param is None:
                                 params.set(param)
-                            param = _best_match_parameter(namespace, param.basename, params)
-                            if param is not None:
-                                self_params[self_params.index(param)] = param
-                    config_config_fn['params'] = ParameterConfig(self_params)
-                    config_config_fn['params'].derived = auto_derived
+                            else:
+                                config_config_fn['params'][param.basename] = match_param.__getstate__()
 
             params.update(final_params)
 

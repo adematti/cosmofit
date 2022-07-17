@@ -150,10 +150,10 @@ info:
   long_description:
 
 init:
-  kpoints: [0.02, 0.2]
+  kpoints: e'np.linspace(0.02, 0.2, 11)'
 
 params:
-  rptt[:20]:
+  rptt*:
     value: 0.
     prior:
       dist: norm
