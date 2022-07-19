@@ -11,7 +11,7 @@ pipeline:
           0: [0.02, 0.2]
           2: [0.02, 0.2]
         kstep: 0.01
-        zeff: 2.0
+        zeff: 0.5
         fiducial: DESI
       save: f'{output_dir}/pnglike_QSO_NGC.npy'
       #load: True
@@ -75,5 +75,5 @@ profile:
   class: cosmofit.profilers.MinuitProfiler
   save: f'{output_dir}/profiles.npy'
 
-data_dir: pk
-output_dir: tmp
+data_dir: .pk
+output_dir: .png

@@ -9,41 +9,52 @@ pipeline:
         klim:
           0: [0.05, 0.2]
           2: [0.05, 0.2]
-          4: [0.05, 0.2]
-        kstep: 0.01
-        zeff: 2.0
+        kstep: 0.02
+        zeff: 0.5
         fiducial: DESI
       save: f'{output_dir}/QSO.like.npy'
       load: True
+      plot: f'{output_dir}/power.png'
+    window:
+      class: cosmofit.theories.base.WindowedPowerSpectrumMultipoles
+      plot: f'{output_dir}/window.png'
     theory:
-      class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
-    #lpt:
-    #  class: cosmofit.theories.full_shape.LPTPowerSpectrumMultipoles
+      class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
+      params:
+        .fixed: ['al*']
+        .derived: [.varied]
       #load: f'{output_dir}/emulator.npy'
+      #emulator:
+      #  save: f'{output_dir}/emulator.npy'
+    #theory.bao:
+    #  class: cosmofit.theories.bao.DampedBAOWigglesPowerSpectrumMultipoles
+    #  load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
-    #shapefit:
-    #  class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
-    pthetap:
-      class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
-      init:
-        kpoints: e'np.linspace(0.02, 0.2, 4)'
-    #ptheta:
-    #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumTemplate
-    #  params:
-    #    rptt*:
-    #      value: 0.
-    #      prior:
-    #        dist: norm
-    #        loc: 0.
-    #        scale: 2.
+    param:
+      class: cosmofit.theories.power_template.BAOWigglesPowerSpectrumParameterization
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 
 emulate:
-  class: TaylorEmulatorEngine
+  class: MLPEmulatorEngine
+  sample: #f'{output_dir}/samples.npy'
+    save: f'{output_dir}/samples.npy'
   fit:
-    order: 1
+    epochs: 10
+  init:
+    npcs: 20
+
+emulate:
+  class: TaylorEmulatorEngine
+  init:
+    order: 2
+
+do:
+  source:
+    #profiles: f'{output_dir}/profiles.npy'
+    chain: f'{output_dir}/chain_0.npy'
+  do: plot
 
 summarize:
   chain:
@@ -62,20 +73,20 @@ summarize:
 #   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
 
 sample:
-  class: cosmofit.samplers.QMCSampler
-  run:
-    niterations: 2
-  save: f'{output_dir}/grid.npy'
-
-sample:
   class: cosmofit.samplers.DynestySampler
   init:
     mode: static
   run:
-    max_iterations: 10000
+    max_iterations: 100000
     check_every: 100
   check: True
   save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.GridSampler
+  init:
+    ngrid: 2
+  save: f'{output_dir}/grid.npy'
 
 sample:
   class: cosmofit.samplers.EmceeSampler
@@ -84,12 +95,15 @@ sample:
   run:
     max_iterations: 10000
     check_every: 100
-  check: True
+  check:
+    eigen_gr_stop: 0.01
   save: f'{output_dir}/chain_*.npy'
 
 profile:
   class: cosmofit.profilers.MinuitProfiler
   save: f'{output_dir}/profiles.npy'
+  run:
+    niterations: 2
 
-data_dir: pk
-output_dir: tmp
+data_dir: .pk
+output_dir: .bao

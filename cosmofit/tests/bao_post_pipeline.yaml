@@ -1,0 +1,53 @@
+pipeline:
+  like:
+    class: cosmofit.likelihoods.BAOParameterizationLikelihood
+    init:
+      chains: f'{data_dir}/chain_0.npy'
+      burnin: 0.5
+    save: f'{output_dir}/bao_like.npy'
+    #load: True
+  cosmo:
+    class: cosmofit.theories.primordial_cosmology.Cosmoprimo
+    init:
+      fiducial: DESI
+    params:
+      .delete: '*'
+      Omega_m:
+        value: 0.3
+        fixed: False
+        prior:
+          dist: uniform
+          limits: [0.05, 0.6]
+        latex: \Omega_{m}
+
+summarize:
+  chain:
+    fn: f'{output_dir}/chain_0.npy'
+    burnin: 0.3
+  plot_triangle: f'{output_dir}/triangle.png'
+  plot_trace: f'{output_dir}/trace.png'
+  plot_autocorrelation_time: f'{output_dir}/autocorrelation_time.png'
+  plot_gelman_rubin:
+    fn: f'{output_dir}/gelman_rubin.png'
+    nsplits: 4
+  plot_geweke: f'{output_dir}/geweke.png'
+
+sample:
+  class: cosmofit.samplers.EmceeSampler
+  init:
+    nwalkers: 10
+  run:
+    max_iterations: 10000
+    check_every: 100
+  check:
+    eigen_gr_stop: 0.01
+  save: f'{output_dir}/chain_*.npy'
+
+profile:
+  class: cosmofit.profilers.MinuitProfiler
+  save: f'{output_dir}/profiles.npy'
+  run:
+    niterations: 2
+
+data_dir: .bao
+output_dir: .post

@@ -11,7 +11,7 @@ from mpi4py.MPI import COMM_SELF
 
 from . import utils
 from .utils import BaseClass
-from .parameter import Parameter, ParameterArray, ParameterCollection, ParameterConfig, find_names
+from .parameter import Parameter, ParameterArray, ParameterCollectionConfig, ParameterCollection, find_names
 from .io import BaseConfig
 from .samples import ParameterValues
 from .samples.utils import outputs_to_latex
@@ -138,7 +138,9 @@ class SectionConfig(BaseConfig):
     def __init__(self, *args, **kwargs):
         super(SectionConfig, self).__init__(*args, **kwargs)
         for name in self._sections:
-            self.data[name] = self.data.get(name, None) or {}
+            value = self.data.get(name, {})
+            if value is None: value = {}
+            self.data[name] = value
 
     def update(self, *args, **kwargs):
         if len(args) == 1 and isinstance(args[0], self.__class__):
@@ -154,20 +156,21 @@ class SectionConfig(BaseConfig):
 
 
 def _best_match_parameter(namespace, basename, params):
-    splitnamespace = [] if namespace is None else namespace.split(namespace_delimiter)
-    match_names = params.names(basename=basename)
-    nnamespaces_in_common, bestmatch_name = -1, None
-    for match_name in match_names:
+    splitnamespace = [] if not isinstance(namespace, str) else namespace.split(namespace_delimiter)
+    params = [param for param in params if param.basename == basename]
+    nnamespaces_in_common, ibestmatch = -1, -1
+    for iparam, param in enumerate(params):
+        name = param.name
         nm = -1
-        for nm, (match_ns, this_ns) in enumerate(zip(match_name.split(namespace_delimiter), splitnamespace)):
+        for nm, (match_ns, this_ns) in enumerate(zip(name.split(namespace_delimiter), splitnamespace)):
             if match_ns != this_ns: break
         nm += 1
         if nm >= nnamespaces_in_common:
             nnamespaces_in_common = nm
-            bestmatch_name = match_name
-    if bestmatch_name is None:
+            ibestmatch = iparam
+    if ibestmatch == -1:
         return None
-    return params[bestmatch_name]
+    return params[ibestmatch]
 
 
 class CalculatorConfig(SectionConfig):
@@ -191,7 +194,7 @@ class CalculatorConfig(SectionConfig):
         super(CalculatorConfig, self).__init__(data)
         self['class'] = import_cls(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
         self['info'] = Info(**self['info'])
-        self['params'] = ParameterConfig(self['params'])
+        self['params'] = ParameterCollectionConfig(self['params'])
         load_fn = data.get('load', None)
         save_fn = data.get('save', None)
         if not isinstance(load_fn, str):
@@ -214,18 +217,13 @@ class CalculatorConfig(SectionConfig):
         else:
             cls_params = getattr(self['class'], 'params', None)
         if cls_params is not None:
-            tmp = ParameterConfig(cls_params)
-            if isinstance(cls_params, ParameterCollection):
-                for name in tmp:
-                    tmp[name]['namespace'] = None
-                    tmp.namespace[name] = None
-            self['params'] = tmp.clone(self['params'])
+            self['params'] = ParameterCollectionConfig(cls_params).clone(self['params'])
         self['load'], self['save'] = load_fn, save_fn
 
     def init(self, namespace=None, params=None, **kwargs):
-        derived = [param for param, b in self['params'].derived.items() if b]
         self_params = self['params'].with_namespace(namespace=namespace)
-        self_params = self_params.init()
+        derived = [param for param, b in self_params.derived.items() if b]
+        self_params.derived = {}
         if params is None:
             params = self_params
         for iparam, param in enumerate(self_params):
@@ -242,17 +240,10 @@ class CalculatorConfig(SectionConfig):
             except TypeError as exc:
                 raise PipelineError('Error in {}'.format(new.__class__)) from exc
         if hasattr(new, 'set_params'):
-            tmp_params = new.set_params(self_params.copy())
-            new_params = ParameterCollection([param for param in tmp_params if param not in self_params])
-            new_basenames = new_params.basenames()
-            new_params = ParameterConfig(new_params)
-            for name, conf in new_params.items(): conf['namespace'] = None
-            new_params = new_params.clone(self['params']).init(namespace=namespace).select(basename=new_basenames)
-            self_params = ParameterCollection([param for param in tmp_params if param in self_params]).clone(new_params)
-            print(self['params'])
-            for param in new_params:
-                print(param.name, param.value, param.prior)
-        new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=self_params, **kwargs)
+            self_params = new.set_params(self_params)
+            if isinstance(self_params, ParameterCollectionConfig):
+                self_params = self_params.with_namespace(namespace=namespace)
+        new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=ParameterCollection(self_params), **kwargs)
         new.runtime_info._derived_names = derived
         save_fn = self['save']
         if save_fn is not None:
@@ -336,7 +327,7 @@ class RuntimeInfo(BaseClass):
 
     @property
     def derived(self):
-        if self.torun or getattr(self, '_derived', None) is None:
+        if getattr(self, '_derived', None) is None:
             self._derived = ParameterValues()
             if self.derived_params:
                 state = self.calculator.__getstate__()
@@ -359,13 +350,14 @@ class RuntimeInfo(BaseClass):
     def torun(self, torun):
         self._torun = torun
         if torun:
+            self._derived = None
             for inst in self.required_by:
                 inst.runtime_info.torun = True
 
     @property
     def params(self):
         if getattr(self, '_params', None) is None:
-            self._params = {param.basename: param.value for param in self.full_params if not param.derived}
+            self.params = {param.basename: param.value for param in self.full_params if not param.derived}
         return self._params
 
     @params.setter
@@ -404,19 +396,21 @@ class BasePipeline(BaseClass):
                 raise PipelineError('Need at least one calculator')
             is_config = not isinstance(calculators[0], BaseCalculator)
 
-        final_params = params = ParameterCollection(params)
+        final_params = params = ParameterCollectionConfig(params, identifier='name')
 
         if is_config:
 
-            namespaces_deepfirst = [None]
+            namespaces_deepfirst = ['']
             calculators_by_namespace = {}
 
-            def sort_by_namespace(calculators_in_namespace, namespace=None):
+            def sort_by_namespace(calculators_in_namespace, namespace=''):
                 for basename, calcdict in calculators_in_namespace.items():
+                    if not basename:
+                        raise PipelineError('Give non-empty namespace / calculator name')
                     if 'class' in calcdict:
                         calculators_by_namespace[namespace] = {**calculators_by_namespace.get(namespace, {}), basename: calcdict}
                     else:
-                        if namespace is None:
+                        if not namespace:
                             newnamespace = basename
                         else:
                             newnamespace = namespace_delimiter.join([namespace, basename])
@@ -447,36 +441,36 @@ class BasePipeline(BaseClass):
                 # Is new different to old? (other than namespace)
                 if old is None:
                     return True
-                return all(getattr(new, name) == getattr(old, name) for name in new._attrs if name not in ['namespace'])
+                return all(getattr(new, name, None) == getattr(old, name, None) for name in Parameter._attrs if name not in ['namespace'])
 
-            params = ParameterCollection()
+            params = ParameterCollectionConfig(params, identifier='name')
             for namespace in namespaces_deepfirst:
-                splitnamespace = [] if namespace is None else namespace.split(namespace_delimiter)
                 calculators_in_namespace = calculators_by_namespace[namespace] = calculators_by_namespace.get(namespace, {})
                 for basename, calcdict in calculators_in_namespace.items():
                     config_config = CalculatorConfig(calcdict)
                     config_config_fn = clone_from_config_fn(config_config)
                     calculators_in_namespace[basename] = config_config_fn
-                    self_params = config_config_fn['params'].init(namespace=namespace)
-                    config_params = config_config['params'].init(namespace=namespace)
+                    self_params = config_config_fn['params'].with_namespace(namespace=namespace)
+                    config_params = config_config['params'].with_namespace(namespace=namespace)
                     for param in self_params:
-                        if updated(param, config_params.get(param.name, None)):
+                        if updated(param, config_params.get(param.basename, None)):
                             params.set(param)
                         else:
-                            match_param = _best_match_parameter(namespace, param.basename, params)
+                            match_param = _best_match_parameter(namespace, param.basename, params.values())
                             if match_param is None:
                                 params.set(param)
                             else:
-                                config_config_fn['params'][param.basename] = match_param.__getstate__()
+                                config_config_fn['params'][param.basename] = match_param
 
-            params.update(final_params)
+            for param in final_params:
+                params.set(param)
 
             def search_parent_namespace(namespace):
                 toret = []
-                splitnamespace = namespace.split(namespace_delimiter) if namespace is not None else [None]
+                splitnamespace = namespace.split(namespace_delimiter) if namespace else []
                 for tmpnamespace in reversed(namespaces_deepfirst):
-                    tmpsplitnamespace = tmpnamespace.split(namespace_delimiter) if tmpnamespace is not None else None
-                    if tmpsplitnamespace is None or tmpsplitnamespace == splitnamespace[:len(tmpsplitnamespace)]:
+                    tmpsplitnamespace = tmpnamespace.split(namespace_delimiter) if tmpnamespace else []
+                    if tmpsplitnamespace == splitnamespace[:len(tmpsplitnamespace)]:
                         for basename, config in calculators_by_namespace[tmpnamespace].items():
                             toret.append((tmpnamespace, basename, config))
                 return toret
@@ -567,7 +561,7 @@ class BasePipeline(BaseClass):
         self._set_auto_derived()
         for calculator in self.calculators:
             for name in getattr(calculator.runtime_info, '_derived_names', []):
-                if name not in ParameterConfig._keywords['derived'] and name not in calculator.runtime_info.base_params:
+                if name not in ParameterCollectionConfig._keywords['derived'] and name not in calculator.runtime_info.base_params:
                     param = Parameter(name, namespace=calculator.runtime_info.namespace, derived=True)
                     calculator.runtime_info.full_params.set(param)
                     calculator.runtime_info.full_params = calculator.runtime_info.full_params
@@ -697,7 +691,7 @@ class BasePipeline(BaseClass):
             calculators = []
             for calculator in self.calculators:
                 derived = getattr(calculator.runtime_info, '_derived_names', {})
-                if any(kw in derived for kw in ParameterConfig._keywords['derived']):
+                if any(kw in derived for kw in ParameterCollectionConfig._keywords['derived']):
                     calculators.append(calculator)
 
         states = [{} for i in range(len(calculators))]
@@ -730,9 +724,9 @@ class BasePipeline(BaseClass):
             derived = getattr(calculator.runtime_info, '_derived_names', {})
             derived_names = set()
             for derived_name in derived:
-                if derived_name == 'fixed':
+                if derived_name == '.fixed':
                     derived_names |= set(fixed_names)
-                elif derived_name == 'varied':
+                elif derived_name == '.varied':
                     derived_names |= set(varied_names)
                 else:
                     derived_names.add(derived_name)
@@ -746,32 +740,33 @@ class BasePipeline(BaseClass):
 
 class LikelihoodPipeline(BasePipeline):
 
+    _likelihood_name = 'loglikelihood'
+
     def __init__(self, *args, **kwargs):
         super(LikelihoodPipeline, self).__init__(*args, **kwargs)
         # Check end_calculators are likelihoods
         # for calculator in self.end_calculators:
-        #     likelihood_name = 'loglikelihood'
-        #     if not hasattr(calculator, likelihood_name):
-        #         raise PipelineError('End calculator {} has no attribute {}'.format(calculator, likelihood_name))
-        #     loglikelihood = getattr(calculator, likelihood_name)
+        #     self._likelihood_name = 'loglikelihood'
+        #     if not hasattr(calculator, self._likelihood_name):
+        #         raise PipelineError('End calculator {} has no attribute {}'.format(calculator, self._likelihood_name))
+        #     loglikelihood = getattr(calculator, self._likelihood_name)
         #     if not np.ndim(loglikelihood) == 0:
-        #         raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, likelihood_name))
+        #         raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, self._likelihood_name))
         # Select end_calculators with loglikelihood
-        likelihood_name = 'loglikelihood'
         end_calculators = []
         for calculator in self.end_calculators:
-            if hasattr(calculator, likelihood_name):
+            if hasattr(calculator, self._likelihood_name):
                 end_calculators.append(calculator)
                 if self.mpicomm.rank == 0:
                     self.log_info('Found likelihood {}.'.format(calculator.runtime_info.name))
-                loglikelihood = getattr(calculator, likelihood_name)
+                loglikelihood = getattr(calculator, self._likelihood_name)
                 if not np.ndim(loglikelihood) == 0:
-                    raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, likelihood_name))
+                    raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, self._likelihood_name))
         self.__dict__.update(self.select(end_calculators).__dict__)
         from .samples.utils import outputs_to_latex
         for calculator in self.end_calculators:
-            if likelihood_name not in calculator.runtime_info.base_params:
-                param = Parameter('loglikelihood', namespace=calculator.runtime_info.namespace, latex=outputs_to_latex('loglikelihood'), derived=True)
+            if self._likelihood_name not in calculator.runtime_info.base_params:
+                param = Parameter(self._likelihood_name, namespace=calculator.runtime_info.namespace, latex=outputs_to_latex(self._likelihood_name), derived=True)
                 calculator.runtime_info.full_params.set(param)
                 calculator.runtime_info.full_params = calculator.runtime_info.full_params
                 self.params.set(param)
@@ -780,10 +775,15 @@ class LikelihoodPipeline(BasePipeline):
         super(LikelihoodPipeline, self).run(**params)
         from .samples.utils import outputs_to_latex
         loglikelihood = 0.
+        params = []
         for calculator in self.end_calculators:
-            loglikelihood += calculator.runtime_info.derived[calculator.runtime_info.base_params['loglikelihood']]
-        param = Parameter('loglikelihood', namespace=None, latex=outputs_to_latex('loglikelihood'), derived=True)
-        if param in self.derived: raise PipelineError('loglikelihood is a reserved parameter name, do not use it!')
+            params.append(calculator.runtime_info.base_params[self._likelihood_name])
+            loglikelihood += calculator.runtime_info.derived[params[-1]]
+        if len(params) == 1 and not params[0].namespace:
+            return
+        param = Parameter(self._likelihood_name, namespace=None, latex=outputs_to_latex(self._likelihood_name), derived=True)
+        if param in self.derived:
+            raise PipelineError('{} is a reserved parameter name, do not use it!'.format(self._likelihood_name))
         self.derived.set(ParameterArray(loglikelihood, param))
 
     @property

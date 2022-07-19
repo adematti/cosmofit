@@ -8,6 +8,21 @@ import yaml
 from .utils import BaseClass
 
 
+def _deepeq(obj1, obj2):
+    if type(obj2) is type(obj1):
+        if isinstance(obj1, dict):
+            if obj2.keys() == obj1.keys():
+                return all(_deepeq(obj1[name], obj2[name]) for name in obj1)
+        elif isinstance(obj1, (tuple, list)):
+            if len(obj2) == len(obj1):
+                return all(_deepeq(o1, o2) for o1, o2 in zip(obj1, obj2))
+        elif isinstance(obj1, np.ndarray):
+            return np.all(obj2 == obj1)
+        else:
+            return obj2 == obj1
+    return False
+
+
 class YamlLoader(yaml.SafeLoader):
     """
     *yaml* loader that correctly parses numbers.
@@ -122,7 +137,8 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         if isinstance(data, str):
             if string is None: string = ''
             # if base_dir is None: self.base_dir = os.path.dirname(data)
-            string += self.read_file(data)
+            with open(data, 'r') as file:
+                string += file.read()
         elif data is not None:
             datad = dict(data)
 
@@ -131,13 +147,6 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
 
         self.data = datad
         if decode: self.decode()
-
-    @staticmethod
-    def read_file(filename):
-        """Read file at path ``filename``."""
-        with open(filename, 'r') as file:
-            toret = file.read()
-        return toret
 
     def decode(self):
 
@@ -243,19 +252,4 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         return new
 
     def __eq__(self, other):
-
-        def callback(obj1, obj2):
-            if type(obj2) is type(obj1):
-                if isinstance(obj1, dict):
-                    if obj2.keys() == obj1.keys():
-                        return all(callback(obj1[name], obj2[name]) for name in obj1)
-                elif isinstance(obj1, (tuple, list)):
-                    if len(obj2) == len(obj1):
-                        return all(callback(o1, o2) for o1, o2 in zip(obj1, obj2))
-                elif isinstance(obj1, np.ndarray):
-                    return np.all(obj2 == obj1)
-                else:
-                    return obj2 == obj1
-            return False
-
-        return type(other) == type(self) and callback(self.data, other.data)
+        return type(other) == type(self) and _deepeq(self.data, other.data)

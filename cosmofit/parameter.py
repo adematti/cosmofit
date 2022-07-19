@@ -8,7 +8,7 @@ import numpy as np
 from scipy import stats
 
 from . import base, utils
-from .io import BaseConfig
+from .io import BaseConfig, _deepeq
 from .utils import BaseClass
 
 
@@ -153,12 +153,15 @@ def find_names(allnames, name, quiet=True):
         for nn in name: toret += find_names(allnames, nn, quiet=quiet)
         return toret
 
-    name = str(name)
     error = ParameterError('No match found for {}'.format(name))
 
-    name = fnmatch.translate(name)
-    strings, ranges = decode_name(name)
-    pattern = re.compile(r'(-?\d*)'.join(strings))
+    if isinstance(name, re.Pattern):
+        pattern = name
+        ranges = []
+    else:
+        name = fnmatch.translate(name)
+        strings, ranges = decode_name(name)
+        pattern = re.compile(r'(-?\d*)'.join(strings))
     toret = []
     for paramname in allnames:
         match = re.match(pattern, paramname)
@@ -290,7 +293,7 @@ class Parameter(BaseClass):
     """
     _attrs = ['basename', 'namespace', 'value', 'fixed', 'derived', 'prior', 'ref', 'proposal', '_latex']
 
-    def __init__(self, basename, namespace=None, value=None, fixed=None, derived=False, prior=None, ref=None, proposal=None, latex=None):
+    def __init__(self, basename, namespace='', value=None, fixed=None, derived=False, prior=None, ref=None, proposal=None, latex=None):
         """
         Initialize :class:`Parameter`.
 
@@ -324,13 +327,15 @@ class Parameter(BaseClass):
         if isinstance(basename, Parameter):
             self.__dict__.update(basename.__dict__)
             return
-        basename = str(basename)
-        names = basename.split(base.namespace_delimiter)
-        if namespace: names = [namespace] + names
-        if len(names) >= 2:
-            self.basename, self.namespace = names[-1], base.namespace_delimiter.join(names[:-1])
+        self.namespace = namespace
+        names = str(basename).split(base.namespace_delimiter)
+        self.basename, namespace = names[-1], base.namespace_delimiter.join(names[:-1])
+        if self.namespace:
+            if namespace:
+                self.namespace = base.namespace_delimiter.join([self.namespace, namespace])
         else:
-            self.basename, self.namespace = names[0], None
+            if namespace:
+                self.namespace = namespace
         self.value = value
         self.prior = prior if isinstance(prior, ParameterPrior) else ParameterPrior(**(prior or {}))
         if value is None:
@@ -476,7 +481,7 @@ class BaseParameterCollection(BaseClass):
             param = item
         else:
             param = cls._get_param(item)
-        return getattr(param, 'name', str(param))
+        return param.name
 
     @classmethod
     def _get_param(cls, item):
@@ -578,6 +583,14 @@ class BaseParameterCollection(BaseClass):
         except TypeError:
             del self.data[self.index(name)]
 
+    def pop(self, name, *args, **kwargs):
+        toret = self.get(name, *args, **kwargs)
+        try:
+            del self[name]
+        except IndexError:
+            pass
+        return toret
+
     def get(self, name, *args, **kwargs):
         """
         Return parameter of name ``name`` in collection.
@@ -616,11 +629,9 @@ class BaseParameterCollection(BaseClass):
         If there is already a parameter with same name in collection, replace this stored parameter by the input one.
         Else, append parameter to collection.
         """
-        if not isinstance(item, self._type):
-            raise TypeError('{} is not a {} instance.'.format(item, self._type))
-        if item in self:
-            self[self._get_name(item)] = item
-        else:
+        try:
+            self.data[self.index(item)] = item
+        except IndexError:
             self.data.append(item)
 
     def index(self, name):
@@ -649,7 +660,7 @@ class BaseParameterCollection(BaseClass):
 
     def __contains__(self, name):
         """Whether collection contains parameter ``name``."""
-        return self._get_name(name) in self.names()
+        return self._get_name(name) in (self._get_name(item) for item in self.data)
 
     def setdefault(self, item):
         """Set parameter ``param`` in collection if not already in it."""
@@ -657,33 +668,6 @@ class BaseParameterCollection(BaseClass):
             raise TypeError('{} is not a {} instance.'.format(item, self._type))
         if item in self:
             self.set(item)
-
-    def params(self, **kwargs):
-        toret = []
-        for item in self:
-            param = self._get_param(item)
-            match = True
-            for key, value in kwargs.items():
-                param_value = getattr(param, key)
-                if key in ['name', 'basename', 'namespace']:
-                    key_match = value is None or bool(find_names([param_value], value))
-                else:
-                    key_match = value == param_value
-                match &= key_match
-                if not key_match: break
-            if match:
-                toret.append(param)
-        return toret
-
-    def names(self, **kwargs):
-        """Return parameter names in collection."""
-        params = self.params(**kwargs)
-        return [str(param) for param in params]
-
-    def basenames(self, **kwargs):
-        """Return base parameter names in collection."""
-        params = self.params(**kwargs)
-        return [param.basename for param in params]
 
     def select(self, **kwargs):
         """
@@ -698,12 +682,37 @@ class BaseParameterCollection(BaseClass):
 
         returns a collection of varied parameters, with name in ``['a_0', 'a_1']``.
         """
-        toret = self.__class__()
-        names = self.names(**kwargs)
-        for name in names:
-            if name in self:
-                toret.set(self[name])
+        toret = self.copy()
+        if not kwargs:
+            return toret
+        toret.clear()
+        for item in self:
+            param = self._get_param(item)
+            match = True
+            for key, value in kwargs.items():
+                param_value = getattr(param, key)
+                if key in ['name', 'basename', 'namespace']:
+                    key_match = value is None or bool(find_names([param_value], value))
+                else:
+                    key_match = value == param_value
+                match &= key_match
+                if not key_match: break
+            if match:
+                toret.data.append(item)
         return toret
+
+    def params(self, **kwargs):
+        return ParameterCollection([self._get_param(item) for item in self.select(**kwargs)])
+
+    def names(self, **kwargs):
+        """Return parameter names in collection."""
+        params = self.params(**kwargs)
+        return [param.name for param in params]
+
+    def basenames(self, **kwargs):
+        """Return base parameter names in collection."""
+        params = self.params(**kwargs)
+        return [param.basename for param in params]
 
     @classmethod
     def concatenate(cls, *others):
@@ -779,8 +788,8 @@ class BaseParameterCollection(BaseClass):
         new.update(*args, **kwargs)
         return new
 
-    def items(self):
-        return [(self._get_name(item), item) for item in self]
+    def items(self, **kwargs):
+        return [(self._get_name(item), item) for item in self.select(**kwargs)]
 
     def deepcopy(self):
         import copy
@@ -788,9 +797,279 @@ class BaseParameterCollection(BaseClass):
 
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
-        return type(other) == type(self) and other.params() == self.params() and all(np.all(other_value == self_value) for other_value, self_value in zip(other, self))
+        return type(other) == type(self) and list(other.params()) == list(self.params()) and all(np.all(other_value == self_value) for other_value, self_value in zip(other, self))
 
 
+class ParameterConfig(BaseClass):
+
+    def __init__(self, conf=None, **kwargs):
+        if isinstance(conf, self.__class__):
+            self.__dict__.update(conf.__dict__)
+        elif isinstance(conf, Parameter):
+            state = conf.__getstate__()
+            if state['namespace'] is None:
+                state.pop('namespace')
+            kwargs = {**state, **kwargs}
+        elif conf is not None:
+            raise ValueError('Unrecognized {} {}'.format(self.__class__.__name__, conf))
+        for name, value in kwargs.items():
+            self[name] = value
+
+    def init(self):
+        state = self.__getstate__()
+        if not isinstance(self.get('namespace', None), str):
+            state['namespace'] = None
+        return Parameter(**state)
+
+    @property
+    def param(self):
+        return self.init()
+
+    @property
+    def name(self):
+        namespace = self.get('namespace', None)
+        if isinstance(namespace, str) and namespace:
+            return base.namespace_delimiter.join([namespace, self.basename])
+        return self.basename
+
+    @name.setter
+    def name(self, name):
+        names = str(name).split(base.namespace_delimiter)
+        if len(names) >= 2:
+            self.basename, self.namespace = names[-1], base.namespace_delimiter.join(names[:-1])
+        else:
+            self.basename = names[0]
+
+    def get(self, *args, **kwargs):
+        return getattr(self, *args, **kwargs)
+
+    def __getitem__(self, *args, **kwargs):
+        return getattr(self, *args, **kwargs)
+
+    def __setitem__(self, *args, **kwargs):
+        return setattr(self, *args, **kwargs)
+
+    def __delitem__(self, *args, **kwargs):
+        return delattr(self, *args, **kwargs)
+
+    def update(self, *args, exclude=(), **kwargs):
+        other = self.__class__(*args, **kwargs)
+        for name, value in other.items():
+            if name not in exclude:
+                self[name] = value
+
+    def clone(self, *args, **kwargs):
+        new = self.copy()
+        new.update(*args, **kwargs)
+        return new
+
+    def items(self):
+        return self.__dict__.items()
+
+    def __getstate__(self):
+        return self.__dict__.copy()
+
+    def __contains__(self, name):
+        return name in self.__dict__
+
+    def pop(self, *args, **kwargs):
+        return self.__dict__.pop(*args, **kwargs)
+
+    def __eq__(self, other):
+        """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
+        return type(other) == type(self) and _deepeq(other.__getstate__(), self.__getstate__())
+
+    def __repr__(self):
+        return str(self.__getstate__())
+
+
+class ParameterCollectionConfig(BaseParameterCollection):
+
+    _type = ParameterConfig
+    _attrs = ['fixed', 'derived', 'namespace', 'delete', 'wildcard', 'identifier']
+    _keywords = {'fixed': [], 'derived': ['.fixed', '.varied'], 'namespace': []}
+
+    def _get_name(self, item):
+        if isinstance(item, str):
+            return item.split(base.namespace_delimiter)[-1]
+        return getattr(item, self.identifier)
+
+    @classmethod
+    def _get_param(cls, item):
+        return item.param
+
+    def __init__(self, data=None, identifier='basename', **kwargs):
+        if isinstance(data, self.__class__):
+            self.__dict__.update(data.copy().__dict__)
+            self.identifier = identifier
+            return
+        self.identifier = identifier
+        if isinstance(data, ParameterCollection):
+            dd = data
+            data = {getattr(param, self.identifier): ParameterConfig(param) for param in data}
+            if len(data) != len(dd):
+                raise ValueError('Found different parameters with same {} in {}'.format(self.identifier, dd))
+        else:
+            data = BaseConfig(data, **kwargs).data
+
+        self.fixed, self.derived, self.namespace, self.delete, self.wildcard = {}, {}, {}, {}, []
+        for meta_name in ['fixed', 'varied', 'derived', 'namespace', 'delete']:
+            meta = data.pop('.{}'.format(meta_name), {})
+            if utils.is_sequence(meta):
+                meta = {name: True for name in meta}
+            elif not isinstance(meta, dict):
+                meta = {meta: True}
+            if meta_name in ['fixed', 'varied']:
+                self.fixed.update({name: (meta_name == 'fixed' and value) or (meta_name == 'varied' and not value) for name, value in meta.items()})
+            else:
+                getattr(self, meta_name).update({name: bool(value) for name, value in meta.items()})
+        self.data = []
+        for name, conf in data.items():
+            conf = conf.copy()
+            latex = conf.pop('latex', None)
+            for name, latex in yield_names_latex(name, latex=latex):
+                tmp = conf.__getstate__() if isinstance(conf, ParameterConfig) else conf
+                tmp = ParameterConfig(name=name, **tmp)
+                if latex is not None: tmp.latex = latex
+                if '*' in tmp[self.identifier]:
+                    self.wildcard.append(tmp)
+                    continue
+                self.set(tmp)
+                #for meta_name in ['fixed', 'derived', 'namespace']:
+                #    meta = getattr(self, meta_name)
+                #    if meta_name in tmp:
+                #        meta.pop(name, None)
+                #        meta[name] = tmp[meta_name]
+        self._set_meta()
+
+    def _set_meta(self):
+        for meta_name in ['fixed', 'derived', 'namespace']:
+            meta = getattr(self, meta_name)
+            for name in reversed(meta):
+                for tmpconf in self.select(**{self.identifier: name}):
+                    if meta_name not in tmpconf:
+                        tmpconf[meta_name] = meta[name]
+        # Wildcard
+        for conf in reversed(self.wildcard):
+            for tmpconf in self.select(**{self.identifier: conf[self.identifier]}):
+                tmpconf.update(conf.clone(tmpconf))
+        for conf in self:
+            if 'namespace' not in conf:
+                conf.namespace = True
+
+    def select(self, **kwargs):
+        """
+        Return new collection, after selection of parameters whose attribute match input values::
+
+            collection.select(fixed=True)
+
+        returns collection of fixed parameters.
+        If 'name' is provided, consider all matching parameters, e.g.::
+
+            collection.select(varied=True, name='a_[0:2]')
+
+        returns a collection of varied parameters, with name in ``['a_0', 'a_1']``.
+        """
+        toret = self.copy()
+        if not kwargs:
+            return toret
+        toret.clear()
+        for item in self:
+            param = item
+            match = True
+            for key, value in kwargs.items():
+                param_value = getattr(param, key)
+                if key in ['name', 'basename', 'namespace']:
+                    key_match = value is None or bool(find_names([param_value], value))
+                else:
+                    key_match = value == param_value
+                match &= key_match
+                if not key_match: break
+            if match:
+                toret.data.append(item)
+        return toret
+
+    def update(self, *args, **kwargs):
+        other = self.__class__(*args, **kwargs)
+
+        for name, b in other.delete.items():
+            if b:
+                for name in (param[self.identifier] for param in self.select(**{self.identifier: name})):
+                    del self[name]
+
+        for meta_name in ['fixed', 'derived', 'namespace']:
+            meta = getattr(other, meta_name)
+            for name in meta:
+                for tmpconf in self.select(**{self.identifier: name}):
+                    tmpconf[meta_name] = meta[name]
+
+        for conf in other.wildcard:
+            for tmpconf in self.select(**{self.identifier: conf[self.identifier]}):
+                self[tmpconf[self.identifier]] = tmpconf.clone(conf, exclude=(self.identifier,))
+
+        for conf in other:
+            new = self.pop(conf[self.identifier], ParameterConfig()).clone(conf)
+            self.set(new)
+
+        def update_order(d1, d2):
+            toret = {name: value for name, value in d1.items() if name not in d2}
+            for name, value in d2.items():
+                toret[name] = value
+            return toret
+
+        self.delete = {}
+        for meta_name in ['fixed', 'derived', 'namespace']:
+            setattr(self, meta_name, update_order(getattr(self, meta_name), getattr(other, meta_name)))
+        self.wildcard = self.wildcard + other.wildcard
+        self._set_meta()
+
+    def with_namespace(self, namespace=None):
+        new = self.deepcopy()
+        new._set_meta()
+        for name, param in new.items():
+            if not isinstance(param.namespace, str) and param.namespace:
+                param.namespace = namespace
+                #self.namespace.pop(name, None)
+                #self.namespace[name] = namespace
+        return new
+
+    def init(self, namespace=None):
+        return ParameterCollection([conf.param for conf in self.with_namespace(namespace=namespace)])
+
+    def set(self, item):
+        if not isinstance(item, ParameterConfig):
+            item = ParameterConfig(item)
+        try:
+            self.data[self.index(item)] = item
+        except IndexError:
+            self.data.append(item)
+
+    def __setitem__(self, name, item):
+        """
+        Update parameter in collection (a parameter with same name must already exist).
+        See :meth:`set` to set a new parameter.
+
+        Parameters
+        ----------
+        name : Parameter, string, int
+            Parameter name.
+            If :class:`Parameter` instance, search for parameter with same name.
+            If integer, index in collection.
+
+        item : Parameter
+            Parameter.
+        """
+        if not isinstance(item, ParameterConfig):
+            item = ParameterConfig(item)
+        try:
+            self.data[name] = item
+        except TypeError:
+            item_name = str(self._get_name(item))
+            if str(name) != item_name:
+                raise KeyError('Parameter {} must be indexed by name (incorrect {})'.format(item_name, name))
+            self.data[self._index_name(name)] = item
+
+'''
 class ParameterConfig(BaseConfig):
 
     _attrs = BaseConfig._attrs + ['fixed', 'derived', 'namespace']
@@ -907,7 +1186,7 @@ class ParameterConfig(BaseConfig):
     def init(self, namespace=None):
         data = {name: conf for name, conf in self.with_namespace(namespace=namespace).data.items() if '*' not in name}
         return ParameterCollection(data)
-
+'''
 
 class ParameterCollection(BaseParameterCollection):
 
@@ -930,6 +1209,12 @@ class ParameterCollection(BaseParameterCollection):
             If not ``None``, *yaml* format string to decode.
             Added on top of ``data``.
         """
+        if isinstance(data, str):
+            data = ParameterCollectionConfig(data)
+
+        if isinstance(data, ParameterCollectionConfig):
+            data = data.init()
+
         if isinstance(data, self.__class__):
             self.__dict__.update(data.copy().__dict__)
             return
@@ -938,12 +1223,6 @@ class ParameterCollection(BaseParameterCollection):
         self.data = []
         if data is None:
             return
-
-        if isinstance(data, str):
-            data = ParameterConfig(data)
-
-        if isinstance(data, ParameterConfig):
-            self.__dict__.update(data.init())
 
         if utils.is_sequence(data):
             dd = data
@@ -955,7 +1234,6 @@ class ParameterCollection(BaseParameterCollection):
                     data[name['name']] = name
                 else:
                     data[name] = {}  # only name is provided
-        data = {name: conf for name, conf in data.items()}
 
         for name, conf in data.items():
             if isinstance(conf, Parameter):
@@ -1016,6 +1294,9 @@ class ParameterCollection(BaseParameterCollection):
     def __iadd__(self, other):
         if other == 0: return self.copy()
         return self.__add__(other)
+
+    def params(self, **kwargs):
+        return self.select(**kwargs)
 
 
 class ParameterPriorError(Exception):

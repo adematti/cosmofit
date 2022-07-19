@@ -48,6 +48,20 @@ class LPTTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
         self.power = self.pt.combine_bias_terms_power_poles(**params)
 
 
+class KaiserTracerPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles):
+
+    kin = np.logspace(-3., 1., 200)
+
+    def run(self, b1=1.):
+        f = self.template.f
+        pdd = self.template.power_dd
+        beta = f / b1
+        factors = {0: (b1**2 + 2. / 3. * b1 * f + 1. / 5. * f**2),
+                   2: (4. / 3. * b1 * f + 4. / 7. * f**2),
+                   4: 8. / 35. * f**2}
+        self.power = np.array([factors.get(ell, 0) for ell in self.ells])[:, None] * pdd
+
+
 class BaseTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMultipoles):
 
     def __init__(self, s=None, zeff=1., ells=(0, 2, 4), fiducial=None, **kwargs):
@@ -70,5 +84,10 @@ class BaseTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMulti
 
 
 class LPTTracerCorrelationFunctionMultipoles(BaseTracerCorrelationFunctionMultipoles):
+
+    pass
+
+
+class KaiserTracerCorrelationFunctionMultipoles(BaseTracerCorrelationFunctionMultipoles):
 
     pass

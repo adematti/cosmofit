@@ -30,6 +30,7 @@ def test_misc():
 
     chain['like.a'].param.latex = 'a'
     chain['like.a'].param.prior = ParameterPrior(limits=(-10., 10.))
+    assert isinstance(list(chain), list)
     pb = chain['like.b'].param
     pb.prior = ParameterPrior(dist='norm', loc=1., limits=(-10., 10.))
     pb = Parameter.from_state(pb.__getstate__())

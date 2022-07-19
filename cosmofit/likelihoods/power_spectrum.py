@@ -116,7 +116,6 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             nout = sl.stop
         return toret
 
-    @property
     def flatmodel(self):
         return self.theory.flatpower
 

@@ -31,8 +31,9 @@ class Cosmoprimo(BasePrimordialCosmology):
             from .base import get_cosmo
             cosmo = get_cosmo(self.fiducial)
             for param in params:
+                #print(param)
                 param.value = get_from_cosmo(cosmo, param.basename)
-                param.fixed = True
+                param.fixed = param.get('fixed', True)
         return params
 
     def run(self, **params):

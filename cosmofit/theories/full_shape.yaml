@@ -20,7 +20,7 @@ params:
     value: 1.69
     prior:
       dist: uniform
-      limits: [-0.5, 2.0]
+      limits: [-0.5, 3.0]
     latex: b_{1}
   b2:
     value: -1.17
@@ -58,3 +58,29 @@ params:
       loc: 0.
       scale: 1000.
     latex: s_{n, []}
+
+
+class: KaiserTracerPowerSpectrumMultipoles
+
+info:
+  version: 0.0.1
+  date: 05/04/2022
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Compute Kaiser power spectrum
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description:
+
+init:
+  ells: [0, 2, 4]
+
+params:
+  b1:
+    value: 1.69
+    prior:
+      dist: uniform
+      limits: [-0.5, 3.0]
+    latex: b_{1}

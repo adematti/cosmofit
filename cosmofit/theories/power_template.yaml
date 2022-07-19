@@ -84,6 +84,7 @@ info:
   long_description:
 
 init:
+  fiducial: DESI
   a: 0.6
   kpivot: 0.03
 
@@ -131,8 +132,15 @@ params:
       dist: uniform
       limits: [0.8, 1.2]
     latex: '\alpha_{\perp}'
-
-
+  DM_over_rd:
+    derived: True
+    latex: 'D_{\mathrm{M}}/r_{d}'
+  DH_over_rd:
+    derived: True
+    latex: 'D_{\mathrm{H}}/r_{d}'
+  zeff:
+    derived: True
+    latex: 'z_{\mathrm{eff}}'
 ---
 
 class: BandVelocityPowerSpectrumParameterization
@@ -150,6 +158,7 @@ info:
   long_description:
 
 init:
+  fiducial: DESI
   kpoints: e'np.linspace(0.02, 0.2, 11)'
 
 params:
@@ -159,6 +168,13 @@ params:
       dist: norm
       loc: 0.
       scale: 1.
+      limits: [-1., 5]
+  ptt:
+    derived: True
+    latex: 'P_{\theta\theta}'
+  kptt:
+    derived: True
+    latex: 'k'
   f:
     value: 0.8
     prior:
@@ -171,7 +187,9 @@ params:
       dist: uniform
       limits: [0.8, 1.2]
     latex: '\alpha_{ap}'
-
+  zeff:
+    derived: True
+    latex: 'z_{\mathrm{eff}}'
 ---
 
 class: BAOWigglesPowerSpectrumParameterization
@@ -189,14 +207,9 @@ info:
   long_description:
 
 init:
+  fiducial: DESI
 
 params:
-  f:
-    value: 0.8
-    prior:
-      dist: uniform
-      limits: [0.1, 1.2]
-    latex: 'f'
   qpar:
     value: 1.
     prior:
@@ -209,3 +222,12 @@ params:
       dist: uniform
       limits: [0.8, 1.2]
     latex: '\alpha_{\perp}'
+  DM_over_rd:
+    derived: True
+    latex: 'D_{\mathrm{M}}/r_{d}'
+  DH_over_rd:
+    derived: True
+    latex: 'D_{\mathrm{H}}/r_{d}'
+  zeff:
+    derived: True
+    latex: 'z_{\mathrm{eff}}'

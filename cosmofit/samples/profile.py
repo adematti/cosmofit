@@ -57,14 +57,13 @@ class ParameterValues(BaseParameterCollection):
     def __len__(self):
         return self.shape[0]
 
-    def params(self, output=None, **kwargs):
-        params = super(ParameterValues, self).params(**kwargs)
+    def select(self, output=None, **kwargs):
+        toret = super(ParameterValues, self).select(**kwargs)
         if output is not None:
-            if output:
-                params = [param for param in params if str(param) in self.outputs]
-            else:
-                params = [param for param in params if str(param) not in self.outputs]
-        return params
+            for name in toret.names():
+                if (output and name not in self.outputs) or (not output and name in self.outputs):
+                    del toret[name]
+        return toret
 
     def ravel(self):
         new = self.copy()
@@ -79,9 +78,9 @@ class ParameterValues(BaseParameterCollection):
         Concatenate input collections.
         Unique items only are kept.
         """
-        if not others: return cls()
         if len(others) == 1 and is_sequence(others[0]):
             others = others[0]
+        if not others: return cls()
         new = cls(others[0])
         new_names = new.names()
         for other in others:

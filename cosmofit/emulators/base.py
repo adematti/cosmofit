@@ -63,13 +63,22 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         if len(self.pipeline.end_calculators) > 1:
             raise PipelineError('For emulator, pipeline must have a single end calculator; use pipeline.select()')
 
-        calculator = self.pipeline.end_calculators[0]
         self.params = self.pipeline.params.clone(namespace=None).select(derived=False)
         self.varied_params = self.params.names(varied=True)
 
+        calculators = []
+        for calculator in self.pipeline.calculators:
+            if calculator.runtime_info.derived_params and calculator is not self.pipeline.end_calculators[0]:
+                calculators.append(calculator)
+
+        calculator = self.pipeline.end_calculators[0]
         calculator.runtime_info._derived_names = {'fixed': True, 'varied': True}
-        fixed, varied = self.pipeline._set_auto_derived([calculator])[1:]
-        self.fixed, self.varied = fixed[0], varied[0]
+        calculators.append(calculator)
+        calculators, fixed, varied = self.pipeline._set_auto_derived(calculators)
+        self.fixed, self.varied = set(), set()
+        for ff, vv, cc in zip(fixed, varied):
+            self.fixed |= set(fixed)
+            self.varied |= set(varied)
 
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params))
@@ -93,9 +102,9 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             self.samples = ParameterValues(attrs=samples.attrs)
             for param in self.pipeline.params.select(varied=True, derived=False):
                 self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)))
-            for name in self.varied:
-                param = self.pipeline.end_calculators[0].runtime_info.base_params[name]
-                self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)), output=True)
+            for param in self.pipeline.params.select(derived=True):
+                if param.basename in self.varied:
+                    self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)), output=True)
             self.samples = self.samples.ravel()
 
     def get_default_samples(self):

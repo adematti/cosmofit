@@ -2,7 +2,6 @@ import numpy as np
 from scipy import constants
 
 from cosmofit.base import BaseCalculator
-from cosmofit.parameter import Parameter
 from .primordial_cosmology import BasePrimordialCosmology
 from .base import EffectAP
 
@@ -107,13 +106,13 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
 class BandVelocityPowerSpectrumExtractor(BaseCalculator):
 
-    def __init__(self, kpoints=None, **kwargs):
-        self.kpoints = kpoints
+    def __init__(self, kptt=None, **kwargs):
+        self.kptt = kptt
         self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
 
     def run(self):
         self.power_tt = self.cosmo.get_fourier().pk_interpolator(of='theta_cb').to_1d(z=self.zeff)
-        self.ptt = self.power_tt(self.kpoints)
+        self.ptt = self.power_tt(self.kptt)
 
     def __getstate__(self):
         state = {}
@@ -127,43 +126,41 @@ class BandVelocityPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
     _baseparamname = 'rptt'
 
-    def __init__(self, kpoints=None, k=None, zeff=1., **kwargs):
+    def __init__(self, kptt=None, k=None, zeff=1., **kwargs):
         super(BandVelocityPowerSpectrumTemplate, self).__init__(k=k, zeff=zeff, **kwargs)
-        BandVelocityPowerSpectrumExtractor.__init__(self, kpoints=kpoints, **kwargs)
+        BandVelocityPowerSpectrumExtractor.__init__(self, kptt=kptt, **kwargs)
 
     def set_params(self, params):
-        params = params.select(basename='{}*'.format(self._baseparamname))
+        import re
+        params = params.select(basename=re.compile(r'{}(-?\d+)'.format(self._baseparamname)))
         npoints = len(params)
-        if self.kpoints is None:
+        if self.kptt is None:
             if not npoints:
                 raise ValueError('No parameter {}* found'.format(self._baseparamname))
             step = (self.k[-1] - self.k[0]) / npoints
-            self.kpoints = (self.k[0] + step / 2., self.k[-1] - step / 2.)
+            self.kptt = (self.k[0] + step / 2., self.k[-1] - step / 2.)
         if npoints:
-            if len(self.kpoints) == 2:
-                self.kpoints = np.linspace(*self.kpoints, num=npoints)
-            self.kpoints = np.array(self.kpoints)
-            if self.kpoints.size != npoints:
-                raise ValueError('{:d} (!= {:d} parameters {}*) points have been provided'.format(self.kpoints.size, npoints, self._baseparamname))
-
-        for ikp, kp in enumerate(self.kpoints):
+            if len(self.kptt) == 2:
+                self.kptt = np.linspace(*self.kptt, num=npoints)
+            self.kptt = np.array(self.kptt)
+            if self.kptt.size != npoints:
+                raise ValueError('{:d} (!= {:d} parameters {}*) points have been provided'.format(self.kptt.size, npoints, self._baseparamname))
+        self_params = params.__class__()
+        for ikp, kp in enumerate(self.kptt):
             basename = '{}{:d}'.format(self._baseparamname, ikp)
-            param = params.select(basename=[basename])
-            if param:
-                param = param[0]
-            else:
-                param = Parameter(basename, value=0.,
-                                  prior={'dist': 'norm', 'loc': 0., 'scale': 1.},
-                                  latex=r'P_{{\{0}\{0}}}(k={1:.3f})'.format('theta', kp))
-            params.set(param)
-        zeros = (self.kpoints[:-1] + self.kpoints[1:]) / 2.
-        if self.kpoints[0] < self.k[0]:
-            raise ValueError('Theory k starts at {0:.2e} but first point is {1:.2e} < {0:.2e}'.format(self.k[0], self.kpoints[0]))
-        if self.kpoints[-1] > self.k[-1]:
-            raise ValueError('Theory k ends at {0:.2e} but last point is {1:.2e} > {0:.2e}'.format(self.k[-1], self.kpoints[-1]))
+            self_params[basename] = dict(value=0.,
+                                         prior={'dist': 'norm', 'loc': 0., 'scale': 1.},
+                                         latex=r'(\Delta P / P)_{{\{0}\{0}}}(k={1:.3f})'.format('theta', kp))
+        params = self_params.clone(params)
+
+        zeros = (self.kptt[:-1] + self.kptt[1:]) / 2.
+        if self.kptt[0] < self.k[0]:
+            raise ValueError('Theory k starts at {0:.2e} but first point is {1:.2e} < {0:.2e}'.format(self.k[0], self.kptt[0]))
+        if self.kptt[-1] > self.k[-1]:
+            raise ValueError('Theory k ends at {0:.2e} but last point is {1:.2e} > {0:.2e}'.format(self.k[-1], self.kptt[-1]))
         zeros = np.concatenate([[self.k[0]], zeros, [self.k[-1]]], axis=0)
         self.templates = []
-        for ip, kp in enumerate(self.kpoints):
+        for ip, kp in enumerate(self.kptt):
             diff = self.k - kp
             mask_neg = diff < 0
             diff[mask_neg] /= (zeros[ip] - kp)
@@ -222,14 +219,14 @@ class BAOExtractor(BaseCalculator):
         self.requires = {'cosmo': (BasePrimordialCosmology, kwargs)}
 
     def run(self, qpar=1., qper=1.):
-        rs = self.cosmo.rs_drag
-        self.DH_over_rs_drag = qpar * constants.c / 1e3 / self.cosmo.hubble_function(self.zeff) / rs
-        self.DM_over_rs_drag = qper * self.cosmo.comoving_angular_distance(self.zeff) / rs
+        rd = self.cosmo.rs_drag
+        self.DH_over_rd = qpar * constants.c / 1e3 / self.cosmo.hubble_function(self.zeff) / rd
+        self.DM_over_rd = qper * self.cosmo.comoving_angular_distance(self.zeff) / rd
 
 
 class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
-    _parambasenames = ('f', 'A_p', 'f_sqrt_A_p', 'n', 'm')
+    _parambasenames = ('f', 'A_p', 'f_sqrt_A_p', 'n', 'm', 'DM_over_rd', 'DH_over_rd')
 
     def __init__(self, *args, **kwargs):
         super(ShapeFitPowerSpectrumParameterization, self).__init__(*args, **kwargs)
@@ -244,12 +241,12 @@ class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
         self.f_sqrt_A_p = self.f * self.A_p**0.5
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
         self.cosmo = self.template.cosmo
-        BAOExtractor.run(self, qpar=self.qper, qper=self.qper)
+        BAOExtractor.run(self, qpar=self.qpar, qper=self.qper)
 
 
 class BandVelocityPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
-    _parambasenames = ('f',)
+    _parambasenames = ('f', 'ptt')
 
     def __init__(self, *args, **kwargs):
         super(BandVelocityPowerSpectrumParameterization, self).__init__(*args, **kwargs)
@@ -266,7 +263,7 @@ class BandVelocityPowerSpectrumParameterization(BasePowerSpectrumParameterizatio
 
 class BAOWigglesPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
-    _parambasenames = ('f',)
+    _parambasenames = ('f', 'DM_over_rd', 'DH_over_rd')
 
     def __init__(self, zeff=1., fiducial=None, wiggles='BasePowerSpectrumWiggles', **kwargs):
         self.zeff = float(zeff)
@@ -280,4 +277,4 @@ class BAOWigglesPowerSpectrumParameterization(BasePowerSpectrumParameterization)
         if f is None: self.f = self.template.fsigma8 / self.template.sigma8
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
         self.cosmo = self.template.cosmo
-        BAOExtractor.run(self, qpar=self.qper, qper=self.qper)
+        BAOExtractor.run(self, qpar=self.qpar, qper=self.qper)

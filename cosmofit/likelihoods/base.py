@@ -48,9 +48,10 @@ class BaseGaussianLikelihood(BaseCalculator):
             self.requires = {'synthetic': ('GaussianSyntheticDataGenerator', {'covariance': self.covariance})}
 
     def run(self):
+        flatmodel = self.flatmodel()
         if self.flatdata is None:
-            self.flatdata = self.synthetic.flatdata + self.flatmodel
-        diff = self.flatdata - self.flatmodel
+            self.flatdata = self.synthetic.flatdata + flatmodel
+        diff = self.flatdata - flatmodel
         self.loglikelihood = -0.5 * diff.dot(self.precision).T.dot(diff)
 
     def __getstate__(self):

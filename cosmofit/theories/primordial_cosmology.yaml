@@ -27,7 +27,7 @@ params:
     prior:
       dist: uniform
       limits: [0.05, 0.2]
-    latex: \omega_{c}
+    latex: \omega_{cdm}
   omega_b:
     value: 0.02237
     prior:
