@@ -8,7 +8,7 @@ import numpy as np
 
 from cosmofit.parameter import ParameterCollection, Parameter, ParameterArray
 
-from .profile import ParameterValues
+from .profile import ParameterValues, _reshape
 from . import utils
 
 
@@ -61,12 +61,6 @@ class Chain(ParameterValues):
     @property
     def weight(self):
         return ParameterArray(self.aweight * self.fweight, Parameter(self._weight, latex=utils.outputs_to_latex(self._weight)))
-
-    def ravel(self):
-        new = self.copy()
-        for param in self.names():
-            new[param] = self[param].ravel()
-        return new
 
     def remove_burnin(self, burnin=0):
         """
@@ -126,7 +120,7 @@ class Chain(ParameterValues):
         return 'Chain(shape={}, params={})'.format(self.shape, self.params())
 
     @classmethod
-    def read_cosmomc(cls, base_filename, ichains=None):
+    def read_cosmomc(cls, base_fn, ichains=None):
         """
         Load samples in *CosmoMC* format, i.e.:
 
@@ -136,12 +130,12 @@ class Chain(ParameterValues):
 
         Parameters
         ----------
-        base_filename : string
+        base_fn : string
             Base *CosmoMC* file name. Will be prepended by '_{ichain}.txt' for sample values,
             '.paramnames' for parameter names and '.ranges' for parameter ranges.
 
         ichains : int, tuple, list, default=None
-            Chain numbers to load. Defaults to all chains matching pattern '{base_filename}*.txt'
+            Chain numbers to load. Defaults to all chains matching pattern '{base_fn}*.txt'
 
         Returns
         -------
@@ -149,10 +143,10 @@ class Chain(ParameterValues):
         """
         self = cls()
 
-        params_filename = '{}.paramnames'.format(base_filename)
-        self.log_info('Loading params file: {}.'.format(params_filename))
+        params_fn = '{}.paramnames'.format(base_fn)
+        self.log_info('Loading params file: {}.'.format(params_fn))
         params = ParameterCollection()
-        with open(params_filename) as file:
+        with open(params_fn) as file:
             for line in file:
                 name, latex = line.split()
                 name = name.strip()
@@ -160,10 +154,10 @@ class Chain(ParameterValues):
                 latex = latex.strip().replace('\n', '')
                 params.set(Parameter(basename=name.strip(), latex=latex, fixed=False))
 
-            ranges_filename = '{}.ranges'.format(base_filename)
-            if os.path.exists(ranges_filename):
-                self.log_info('Loading parameter ranges from {}.'.format(ranges_filename))
-                with open(ranges_filename) as file:
+            ranges_fn = '{}.ranges'.format(base_fn)
+            if os.path.exists(ranges_fn):
+                self.log_info('Loading parameter ranges from {}.'.format(ranges_fn))
+                with open(ranges_fn) as file:
                     for line in file:
                         name, low, high = line.split()
                         latex = latex.replace('\n', '')
@@ -175,22 +169,22 @@ class Chain(ParameterValues):
                             limits.append(lh)
                         params[name.strip()].prior.set_limits(limits=limits)
             else:
-                self.log_info('Parameter ranges file {} does not exist.'.format(ranges_filename))
+                self.log_info('Parameter ranges file {} does not exist.'.format(ranges_fn))
 
-            chain_filename = '{}{{}}.txt'.format(base_filename)
-            chain_filenames = []
+            chain_fn = '{}{{}}.txt'.format(base_fn)
+            chain_fns = []
             if ichains is not None:
                 if np.ndim(ichains) == 0:
                     ichains = [ichains]
                 for ichain in ichains:
-                    chain_filenames.append(chain_filename.format('_{:d}'.format(ichain)))
+                    chain_fns.append(chain_fn.format('_{:d}'.format(ichain)))
             else:
-                chain_filenames = glob.glob(chain_filename.format('*'))
+                chain_fns = glob.glob(chain_fn.format('*'))
 
             samples = []
-            for chain_filename in chain_filenames:
-                self.log_info('Loading chain file: {}.'.format(chain_filename))
-                samples.append(np.loadtxt(chain_filename, unpack=True))
+            for chain_fn in chain_fns:
+                self.log_info('Loading chain file: {}.'.format(chain_fn))
+                samples.append(np.loadtxt(chain_fn, unpack=True))
 
             samples = np.concatenate(samples, axis=-1)
             self.aweight = samples[0]
@@ -200,13 +194,13 @@ class Chain(ParameterValues):
 
         return self
 
-    def write_cosmomc(self, base_filename, params=None, ichain=None, fmt='%.18e', delimiter=' ', **kwargs):
+    def write_cosmomc(self, base_fn, params=None, ichain=None, fmt='%.18e', delimiter=' ', **kwargs):
         """
         Save samples to disk in *CosmoMC* format.
 
         Parameters
         ----------
-        base_filename : string
+        base_fn : string
             Base *CosmoMC* file name. Will be prepended by '_{ichain}.txt' for sample values,
             '.paramnames' for parameter names and '.ranges' for parameter ranges.
 
@@ -214,8 +208,8 @@ class Chain(ParameterValues):
             Parameters to save samples of. Defaults to all parameters (weight and logposterior treated separatey).
 
         ichain : int, default=None
-            Chain number to append to file name, i.e. sample values will be saved as '{base_filename}_{ichain}.txt'.
-            If ``None``, does not append any number, sample values will be saved as '{base_filename}.txt'.
+            Chain number to append to file name, i.e. sample values will be saved as '{base_fn}_{ichain}.txt'.
+            If ``None``, does not append any number, sample values will be saved as '{base_fn}.txt'.
 
         kwargs : dict
             Arguments for :func:`numpy.savetxt`.
@@ -228,19 +222,19 @@ class Chain(ParameterValues):
         data = self.to_array(params=outputs_columns + columns, struct=False).reshape(-1, self.size)
         data[1] *= -1
         data = data.T
-        utils.mkdir(os.path.dirname(base_filename))
-        chain_filename = '{}.txt'.format(base_filename) if ichain is None else '{}_{:d}.txt'.format(base_filename, ichain)
-        self.log_info('Saving chain to {}.'.format(chain_filename))
-        np.savetxt(chain_filename, data, header='', fmt=fmt, delimiter=delimiter, **kwargs)
+        utils.mkdir(os.path.dirname(base_fn))
+        chain_fn = '{}.txt'.format(base_fn) if ichain is None else '{}_{:d}.txt'.format(base_fn, ichain)
+        self.log_info('Saving chain to {}.'.format(chain_fn))
+        np.savetxt(chain_fn, data, header='', fmt=fmt, delimiter=delimiter, **kwargs)
 
         output = ''
         params = self.params(name=columns)
         for param in params:
             tmp = '{}* {}\n' if getattr(param, 'derived', getattr(param, 'fixed')) else '{} {}\n'
             output += tmp.format(param.name, param.latex())
-        params_filename = '{}.paramnames'.format(base_filename)
-        self.log_info('Saving parameter names to {}.'.format(params_filename))
-        with open(params_filename, 'w') as file:
+        params_fn = '{}.paramnames'.format(base_fn)
+        self.log_info('Saving parameter names to {}.'.format(params_fn))
+        with open(params_fn, 'w') as file:
             file.write(output)
 
         output = ''
@@ -248,9 +242,9 @@ class Chain(ParameterValues):
             limits = param.prior.limits
             limits = tuple('N' if limit is None or np.abs(limit) == np.inf else limit for limit in limits)
             output += '{} {} {}\n'.format(param.name, limits[0], limits[1])
-        ranges_filename = '{}.ranges'.format(base_filename)
-        self.log_info('Saving parameter ranges to {}.'.format(ranges_filename))
-        with open(ranges_filename, 'w') as file:
+        ranges_fn = '{}.ranges'.format(base_fn)
+        self.log_info('Saving parameter ranges to {}.'.format(ranges_fn))
+        with open(ranges_fn, 'w') as file:
             file.write(output)
 
     def to_getdist(self, params=None, label=None):
@@ -272,65 +266,8 @@ class Chain(ParameterValues):
         labels = [param.latex() for param in params]
         samples = self.to_array(params=params, struct=False).reshape(-1, self.size)
         names = [str(param) for param in params]
-        toret = MCSamples(samples=samples.T, weights=self.weight.ravel(), loglikes=-self.logposterior.ravel(), names=names, labels=labels, label=label)
+        toret = MCSamples(samples=samples.T, weights=np.asarray(self.weight.ravel()), loglikes=-np.asarray(self.logposterior.ravel()), names=names, labels=labels, label=label)
         return toret
-
-    def var(self, param, ddof=1):
-        """
-        Estimate weighted param variance.
-
-        Parameters
-        ----------
-        columns : list, ParameterCollection, default=None
-            Parameters to compute variance for.
-
-        ddof : int, default=1
-            Number of degrees of freedom.
-
-        Returns
-        -------
-        var : scalar, array
-            If single parameter provided as ``columns``, returns variance for that parameter (scalar).
-            Else returns variance array.
-        """
-        return np.cov(self[param].ravel(), fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof)
-
-    def std(self, param, ddof=1):
-        return self.var(param, ddof=ddof) ** 0.5
-
-    def mean(self, param):
-        """Return weighted mean."""
-        return np.average(self[param].ravel(), weights=self.weight.ravel())
-
-    def argmax(self, param):
-        """Return parameter value for maximum of ``cost.``"""
-        return self[param].ravel()[np.argmax(self.logposterior.ravel())]
-
-    def median(self, param):
-        """Return weighted quantiles."""
-        return utils.weighted_quantile(self[param].ravel(), q=0.5, weights=self.weight.ravel())
-
-    def quantile(self, param, q=(0.1587, 0.8413)):
-        """Return weighted quantiles."""
-        return utils.weighted_quantile(self[param].ravel(), q=q, weights=self.weight.ravel())
-
-    def interval(self, param, **kwargs):
-        """
-        Return n-sigmas confidence interval(s).
-
-        Parameters
-        ----------
-        columns : list, ParameterCollection, default=None
-            Parameters to compute confidence interval for.
-
-        nsigmas : int
-            Return interval for this number of sigmas.
-
-        Returns
-        -------
-        interval : array
-        """
-        return utils.interval(self[param].ravel(), self.weight.ravel(), **kwargs)
 
     def cov(self, params=None, ddof=1):
         """
@@ -355,7 +292,8 @@ class Chain(ParameterValues):
             params = self.params()
         if not utils.is_sequence(params):
             params = [params]
-        return np.atleast_2d(np.cov([self[param].ravel() for param in params], fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof))
+        values = np.concatenate([self[param].reshape(self.size, -1) for param in params], axis=-1)
+        return np.atleast_2d(np.cov(values, rowvar=False, fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof))
 
     def invcov(self, params=None, ddof=1):
         """
@@ -377,6 +315,65 @@ class Chain(ParameterValues):
             Else returns inverse covariance (2D array).
         """
         return utils.inv(self.cov(params, ddof=ddof))
+
+    def var(self, param, ddof=1):
+        """
+        Estimate weighted param variance.
+
+        Parameters
+        ----------
+        columns : list, ParameterCollection, default=None
+            Parameters to compute variance for.
+
+        ddof : int, default=1
+            Number of degrees of freedom.
+
+        Returns
+        -------
+        var : scalar, array
+            If single parameter provided as ``columns``, returns variance for that parameter (scalar).
+            Else returns variance array.
+        """
+        var = np.diag(self.cov(param, ddof=1))
+        var.shape = self[param].shape[self.ndim:]
+        return var
+
+    def std(self, param, ddof=1):
+        return np.std(_reshape(self[param], self.size), ddof=ddof, axis=0) ** 0.5
+
+    def mean(self, param):
+        """Return weighted mean."""
+        return np.average(_reshape(self[param], self.size), weights=self.weight.ravel(), axis=0)
+
+    def argmax(self, param):
+        """Return parameter value for maximum of ``cost.``"""
+        return _reshape(self[param], self.size)[np.argmax(self.logposterior.ravel())]
+
+    def median(self, param):
+        """Return weighted quantiles."""
+        return utils.weighted_quantile(_reshape(self[param], self.size), q=0.5, weights=self.weight.ravel(), axis=0)
+
+    def quantile(self, param, q=(0.1587, 0.8413)):
+        """Return weighted quantiles."""
+        return utils.weighted_quantile(_reshape(self[param], self.size), q=q, weights=self.weight.ravel(), axis=0)
+
+    def interval(self, param, **kwargs):
+        """
+        Return n-sigmas confidence interval(s).
+
+        Parameters
+        ----------
+        columns : list, ParameterCollection, default=None
+            Parameters to compute confidence interval for.
+
+        nsigmas : int
+            Return interval for this number of sigmas.
+
+        Returns
+        -------
+        interval : array
+        """
+        return utils.interval(self[param].ravel(), self.weight.ravel(), **kwargs)
 
     def corrcoef(self, params=None, **kwargs):
         """
@@ -421,8 +418,7 @@ class Chain(ParameterValues):
         is_latex = 'latex_raw' in tablefmt
 
         def round_errors(low, up):
-            low, up = utils.round_measurement(0.0, low, up, sigfigs=sigfigs)[1:]
-            low, up = [val if val.startswith('-') else '+{}'.format(val) for val in [low, up]]
+            low, up = utils.round_measurement(0.0, low, up, sigfigs=sigfigs, positive_sign='u')[1:]
             if is_latex: return '${{}}_{{{}}}^{{{}}}$'.format(low, up)
             return '{}/{}'.format(low, up)
 

@@ -6,12 +6,15 @@ from cosmofit.samples.profile import Profiles, ParameterValues, ParameterBestFit
 from .base import BaseProfiler
 
 
-class MinuitProfiler(BaseProfiler):
+def _get_options(name, **kwargs):
+    if name in kwargs:
+        toret = kwargs[name]
+        if toret is None: toret = {}
+        return toret
+    return None
 
-    def __init__(self, *args, migrad=None, minos=None, **kwargs):
-        self.migrad_params = dict(migrad or {})
-        self.minos_params = dict(minos or {})
-        super(MinuitProfiler, self).__init__(*args, **kwargs)
+
+class MinuitProfiler(BaseProfiler):
 
     def chi2(self, *values):
         return super(MinuitProfiler, self).chi2(values)
@@ -27,26 +30,46 @@ class MinuitProfiler(BaseProfiler):
             if param.ref.is_proper():
                 self.minuit.errors[str(param)] = param.proposal
 
-    def _run_one(self, start, algorithms=('migrad',)):
-        if not utils.is_sequence(algorithms): algorithms = [algorithms]
-        algorithms = list(algorithms)
-
+    def _maximize_one(self, start, **kwargs):
         profiles = Profiles()
-        if 'migrad' in algorithms:
-            for param, value in zip(self.varied_params, start):
-                self.minuit.values[str(param)] = value
-            profiles.set(start=ParameterValues(start, params=self.varied_params))
-            self.minuit.migrad(**self.migrad_params)
-            profiles.set(bestfit=ParameterBestFit([self.minuit.values[str(param)] for param in self.varied_params] + [self.minuit.fval], params=self.varied_params + ['logposterior']))
-            profiles.set(parabolic_errors=ParameterValues([self.minuit.errors[str(param)] for param in self.varied_params], params=self.varied_params))
-            profiles.set(covariance=ParameterCovariance(np.array(self.minuit.covariance), params=self.varied_params))
+        for param, value in zip(self.varied_params, start):
+            self.minuit.values[str(param)] = value
+        profiles.set(start=ParameterValues(start, params=self.varied_params))
+        self.minuit.migrad(**kwargs)
+        profiles.set(bestfit=ParameterBestFit([self.minuit.values[str(param)] for param in self.varied_params] + [- 0.5 * self.minuit.fval], params=self.varied_params + ['logposterior']))
+        profiles.set(error=ParameterValues([self.minuit.errors[str(param)] for param in self.varied_params], params=self.varied_params))
+        profiles.set(covariance=ParameterCovariance(np.array(self.minuit.covariance), params=self.varied_params))
+        return profiles
 
-        if 'minos' in algorithms:
-            errors = []
-            for param in self.varied_params:
-                param = str(param)
-                self.minuit.minos(param, **self.minos_params)
-                errors.append((self.minuit.merrors[param].lower, self.minuit.merrors[param].upper))
-            profiles.set(deltachi2_errors=ParameterValues(errors, params=self.varied_params))
+    def _set_start(self, start):
+        for param, value in zip(self.varied_params, start):
+            self.minuit.values[str(param)] = value
 
+    def _interval_one(self, start, param, **kwargs):
+        self._set_start(start)
+        profiles = Profiles()
+        name = str(param)
+        self.minuit.minos(name, **kwargs)
+        interval = (self.minuit.merrors[name].lower, self.minuit.merrors[name].upper)
+        profiles.set(interval=ParameterValues([interval], params=[param]))
+
+        return profiles
+
+    def _profile_one(self, start, param, **kwargs):
+        self._set_start(start)
+        profiles = Profiles()
+        if 'cl' in kwargs:
+            kwargs['bound'] = kwargs.pop('cl')
+        if not np.isinf(param.prior.limits).any():
+            kwargs.setdefault('bound', param.prior.limits)
+        x, chi2 = self.minuit.mnprofile(param.name, **kwargs)[:2]
+        profiles.set(profile=ParameterValues([(x, chi2)], params=[param]))
+
+        return profiles
+
+    def _contour_one(self, start, param1, param2, **contour):
+        self._set_start(start)
+        profiles = Profiles()
+        x1, x2 = self.minuit.mncontour(str(param1), str(param2), **contour)
+        profiles.set(profile=ParameterContours([(ParameterArray(x1, param1), ParameterArray(x2, param2))]))
         return profiles

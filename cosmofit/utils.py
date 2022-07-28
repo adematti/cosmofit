@@ -157,7 +157,7 @@ class BaseClass(object, metaclass=BaseMetaClass):
 
 def is_sequence(item):
     """Whether input item is a tuple or list."""
-    return isinstance(item, (list, tuple))
+    return isinstance(item, (list, tuple, set))
 
 
 def _check_valid_inv(mat, invmat, rtol=1e-04, atol=1e-05, check_valid='raise'):

@@ -23,7 +23,7 @@ def load_samples(source='profiles', fn=None, choice=None, burnin=None):
         if choice == 'argmax':
             profiles = Profiles.concatenate(profiles)
             argmax = profiles.bestfit.logposterior.argmax()
-            return {param.name: profiles.bestfit[param][argmax] for param in profiles.bestfit.params()}
+            return {str(param): profiles.bestfit[param][argmax] for param in profiles.bestfit.params()}
         return profiles
     if source == 'chain':
         chains = [Chain.load(fn) for fn in fns]
@@ -32,7 +32,7 @@ def load_samples(source='profiles', fn=None, choice=None, burnin=None):
         if choice == 'argmax':
             chain = Chain.concatenate(chains)
             argmax = chain.logposterior.argmax()
-            return {param.name: chain[param].flat[argmax] for param in chain.params()}
+            return {str(param): chain[param].flat[argmax] for param in chain.params()}
         return chains
     raise ConfigError('source must be one of ["profiles", "chain"]')
 
@@ -45,9 +45,9 @@ class SourceConfig(BaseConfig):
             if isinstance(value, str):
                 value = {'fn': value}
             if source == 'params':
-                params.update({param.name: param.value for param in ParameterCollection(value)})
+                params.update({param.name: param.value for param in ParameterCollection(value) if param.name in params})
             else:
-                params.update(load_samples(source=source, **{'choice': 'argmax', **value}))
+                params.update({param: value for param, value in load_samples(source=source, **{'choice': 'argmax', **value}).items() if param in params})
         return params
 
 
@@ -72,16 +72,25 @@ class SummaryConfig(BaseConfig):
 
     def run(self):
         from . import plotting
-        for section, value in self.items():
+        for section, options in self.items():
             if section == 'stats':
-                self.source.to_stats(self.source, **value)
+                if not utils.is_sequence(options):
+                    options = [options]
+                for source, option in zip(self.source, options):
+                    if isinstance(option, str):
+                        option = {'fn': option}
+                    source.to_stats(**option)
             elif section not in self._allowed_sources:
                 if section == 'plot_triangle':
-                    source = Chain.concatenate(self.source)
+                    sources = [Chain.concatenate(self.source)]
+                elif section == 'plot_profile_comparison':
+                    nsources = len(self.source)
+                    if nsources % 2:
+                        raise ConfigError('Number of profiles must be even (profiles + profiles_ref) for {}'.format(section))
+                    sources = [self.source[:nsources // 2], self.source[nsources // 2:]]
                 else:
-                    source = self.source
+                    sources = [self.source]
                 func = getattr(plotting, section)
-                if isinstance(value, dict):
-                    func(source, **value)
-                else:
-                    func(source, fn=value)
+                if isinstance(options, str):
+                    options = {'fn': options}
+                func(*sources, **options)

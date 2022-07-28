@@ -107,8 +107,8 @@ def autocorrelation(chains, params=None):
 
     toret = 0
     for chain in chains:
-        value = chain[params]
-        weight = chain.weight
+        value = chain[params].ravel()
+        weight = chain.weight.ravel()
         x = (value - np.average(value, weights=weight)) * weight
         toret += _autocorrelation_1d(x)
     return toret / len(chains)

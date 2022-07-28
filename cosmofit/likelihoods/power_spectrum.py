@@ -43,7 +43,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
                 ells.append(ell)
             return list_k, tuple(ells), list_data
 
-        self.k, self.ells, self.flatdata, self.nobs = None, None, None, None
+        self.k, self.ells, flatdata, nobs = None, None, None, None
         data_is_mean = data == 'mean'
         if isinstance(covariance, str):
             covariance = [covariance]
@@ -81,7 +81,9 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         self.k, self.ells, flatdata, nobs = self.mpicomm.bcast((self.k, self.ells, flatdata, nobs) if self.mpicomm.rank == 0 else None, root=0)
 
         super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=flatdata, nobs=nobs)
-        self.requires['theory'] = ('WindowedPowerSpectrumMultipoles', {'k': self.k, 'ells': self.ells, 'zeff': zeff, 'fiducial': fiducial, 'wmatrix': wmatrix})
+        self.requires['theory'] = ('cosmofit.theories.base.WindowedPowerSpectrumMultipoles',
+                                   {'k': self.k, 'ells': self.ells, 'wmatrix': wmatrix, 'theory': {'init': {'zeff': zeff, 'fiducial': fiducial}}})
+        self.globals['kdata'] = self.k
 
     def plot(self, fn=None, kw_save=None):
         from matplotlib import pyplot as plt
@@ -92,7 +94,6 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         data, model, std = self.data, self.model, self.std
         for ill, ell in enumerate(self.ells):
             lax[0].errorbar(self.k[ill], self.k[ill] * data[ill], yerr=self.k[ill] * std[ill], color='C{:d}'.format(ill), linestyle='none', marker='o', label=r'$\ell = {:d}$'.format(ell))
-        for ill, ell in enumerate(self.ells):
             lax[0].plot(self.k[ill], self.k[ill] * model[ill], color='C{:d}'.format(ill))
         for ill, ell in enumerate(self.ells):
             lax[ill + 1].plot(self.k[ill], (data[ill] - model[ill]) / std[ill], color='C{:d}'.format(ill))
@@ -102,6 +103,32 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         for ax in lax: ax.grid(True)
         lax[0].legend()
         lax[0].set_ylabel(r'$k P_{\ell}(k)$ [$(\mathrm{Mpc}/h)^{2}$]')
+        lax[-1].set_xlabel(r'$k$ [$h/\mathrm{Mpc}$]')
+        if fn is not None:
+            plotting.savefig(fn, fig=fig, **(kw_save or {}))
+        return lax
+
+    def plot_bao(self, fn=None, kw_save=None):
+        from matplotlib import pyplot as plt
+        height_ratios = [1] * len(self.ells)
+        figsize = (6, 2 * sum(height_ratios))
+        fig, lax = plt.subplots(len(height_ratios), sharex=True, sharey=False, gridspec_kw={'height_ratios': height_ratios}, figsize=figsize, squeeze=True)
+        fig.subplots_adjust(hspace=0)
+        data, model, std = self.data, self.model, self.std
+        try:
+            mode = self.theory.theory.mode
+        except AttributeError as exc:
+            raise ValueError('Theory {} has no mode nowiggle'.format(self.theory.theory.__class__)) from exc
+        self.theory.theory.mode = 'nowiggle'
+        for calc in self.runtime_info.pipeline.calculators: calc.runtime_info.torun = True
+        self.run()
+        nowiggle = self.model
+        self.theory.theory.mode = mode
+        for ill, ell in enumerate(self.ells):
+            lax[ill].errorbar(self.k[ill], self.k[ill] * (data[ill] - nowiggle[ill]), yerr=self.k[ill] * std[ill], color='C{:d}'.format(ill), linestyle='none', marker='o')
+            lax[ill].plot(self.k[ill], self.k[ill] * (model[ill] - nowiggle[ill]), color='C{:d}'.format(ill))
+            lax[ill].set_ylabel(r'$k \Delta P_{{{:d}}}(k)$ [$(\mathrm{{Mpc}}/h)^{{2}}$]'.format(ell))
+        for ax in lax: ax.grid(True)
         lax[-1].set_xlabel(r'$k$ [$h/\mathrm{Mpc}$]')
         if fn is not None:
             plotting.savefig(fn, fig=fig, **(kw_save or {}))

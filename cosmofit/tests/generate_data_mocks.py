@@ -92,8 +92,8 @@ if __name__ == '__main__':
 
     setup_logging()
 
-    power_dir = '.pk'
-    corr_dir = '.xi'
+    power_dir = '_pk'
+    corr_dir = '_xi'
     power_fn, mock_power_fn = os.path.join(power_dir, 'data.npy'), os.path.join(power_dir, 'mock_{:d}.npy')
     corr_fn, mock_corr_fn = os.path.join(corr_dir, 'data.npy'), os.path.join(corr_dir, 'mock_{:d}.npy')
     window_fn = os.path.join(power_dir, 'window.npy')

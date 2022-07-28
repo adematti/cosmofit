@@ -10,9 +10,11 @@ pipeline:
           value: 1
           namespace: True  # by default
       init:
-        answer_str: f'{filesystem.answer_str} or {filesystem.answer_dig:.2f} is 42? {{test}}'
+        answer_str: f'{filesystem.answer_str} or {test_config2.yaml::filesystem.answer_dig:.2f} is 42? {{test}}'
         answer_int: e'{filesystem.answer_dig}'
         answer_int_p2: e'{filesystem.answer_dig} + 2'
+        answer_str_test: e'{filesystem.answer_str} + "/42" if {filesystem.answer_dig} > 0 else 0'
+        #answer_str_test2: e'"{filesystem.answer_str}/42" if {filesystem.answer_dig} > 0 else 0'
     theory1:
       class:
       params:

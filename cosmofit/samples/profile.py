@@ -11,6 +11,19 @@ from .utils import outputs_to_latex
 from . import utils
 
 
+def _reshape(array, shape):
+    if np.ndim(shape) == 0:
+        shape = (shape, )
+    shape = tuple(shape)
+    ashape = array.shape
+    for i in range(1, array.ndim + 1):
+        try:
+            return array.reshape(shape + ashape[i:])
+        except ValueError:
+            continue
+    raise ValueError('Cannot match array of shape {} into shape {}'.format(ashape, shape))
+
+
 class ParameterValues(BaseParameterCollection):
 
     """Class that holds samples drawn from likelihood."""
@@ -42,9 +55,23 @@ class ParameterValues(BaseParameterCollection):
 
     @property
     def shape(self):
-        if len(self.data):
+        if len(self.inputs):
             return self[self.inputs[0]].shape
         return ()
+
+    @shape.setter
+    def shape(self, shape):
+        for array in self:
+            self.set(_reshape(array, shape))
+
+    def reshape(self, shape):
+        new = self.copy()
+        new.shape = shape
+        return new
+
+    def ravel(self):
+        # Flatten along iteration axis
+        return self.reshape(self.size)
 
     @property
     def ndim(self):
@@ -65,13 +92,6 @@ class ParameterValues(BaseParameterCollection):
                     del toret[name]
         return toret
 
-    def ravel(self):
-        new = self.copy()
-        for name in self.names():  # flatten along iteration axis
-            array = self[name]
-            new[name] = array.reshape((self.size,) + array.shape[self.ndim:])
-        return new
-
     @classmethod
     def concatenate(cls, *others):
         """
@@ -81,20 +101,34 @@ class ParameterValues(BaseParameterCollection):
         if len(others) == 1 and is_sequence(others[0]):
             others = others[0]
         if not others: return cls()
-        new = cls(others[0])
-        new_names = new.names()
+        new = cls()
+        new_params = others[0].params()
+        new_names = new_params.names()
         for other in others:
             other_names = other.names()
             if new_names and other_names and set(other_names) != set(new_names):
                 raise ValueError('Cannot concatenate values as parameters do not match: {} != {}.'.format(other_names, new_names))
-        for param in new.params():
+        for param in new_params:
             new[param] = np.concatenate([np.atleast_1d(other[param]) for other in others], axis=0)
         return new
 
-    def set(self, item, output=False):
+    def set(self, item, output=None):
         super(ParameterValues, self).set(item)
+        if output is None:
+            param = self._get_param(item)
+            output = param.derived and param.fixed
         if output:
             self.outputs.add(self._get_name(item))
+
+    def update(self, *args, **kwargs):
+        """Update collection with new one."""
+        if len(args) == 1 and isinstance(args[0], self.__class__):
+            other = args[0]
+        else:
+            other = self.__class__(*args, **kwargs)
+        self.outputs |= other.outputs
+        for item in other:
+            self.set(item, output=False)
 
     def __setitem__(self, name, item):
         """
@@ -112,21 +146,25 @@ class ParameterValues(BaseParameterCollection):
             Parameter.
         """
         if not isinstance(item, self._type):
+            try:
+                name = self.data[name].param  # list index
+            except TypeError:
+                pass
             is_output = str(name) in self.outputs
             param = Parameter(name, latex=outputs_to_latex(str(name)) if is_output else None, derived=is_output)
             if param in self:
                 param = self[param].param.clone(param)
             item = ParameterArray(item, param, **self._enforce)
+        shape = self.shape
+        if shape:
+            item = _reshape(item, shape)
         try:
-            self.data[name] = item
+            self.data[name] = item  # list index
         except TypeError:
             item_name = str(self._get_name(item))
             if str(name) != item_name:
                 raise KeyError('Parameter {} must be indexed by name (incorrect {})'.format(item_name, name))
-            try:
-                self.data[self._index_name(name)] = item
-            except IndexError:
-                self.set(item)
+            self.set(item)
 
     def __getitem__(self, name):
         """
@@ -144,7 +182,7 @@ class ParameterValues(BaseParameterCollection):
 
     def __repr__(self):
         """Return string representation, including shape and columns."""
-        return 'ParameterValues(shape={}, params={})'.format(self.shape, self.params())
+        return '{}(shape={}, params={})'.format(self.__class__.__name__, self.shape, self.params())
 
     def to_array(self, params=None, struct=True):
         """
@@ -255,7 +293,7 @@ class ParameterCovariance(BaseClass):
 
     """Class that represents a parameter covariance."""
 
-    def __init__(self, covariance, params):
+    def __init__(self, covariance, params=None):
         """
         Initialize :class:`ParameterCovariance`.
 
@@ -267,11 +305,24 @@ class ParameterCovariance(BaseClass):
         params : list, ParameterCollection
             Parameters corresponding to input ``covariance``.
         """
+        if isinstance(covariance, self.__class__):
+            self.__dict__.update(covariance.__dict__)
+            return
         self._value = np.atleast_2d(covariance)
+        if params is None:
+            raise ValueError('Provide covariance parameters')
         self._params = ParameterCollection(params)
 
     def params(self, *args, **kwargs):
         return self._params.params(*args, **kwargs)
+
+    def select(self, params=None, **kwargs):
+        new = self.copy()
+        if params is None:
+            params = self._params.select(**kwargs)
+        new._value = self.cov(params=params)
+        new._params = params
+        return new
 
     def cov(self, params=None):
         """Return covariance matrix for input parameters ``params``."""
@@ -287,7 +338,7 @@ class ParameterCovariance(BaseClass):
 
     def corrcoef(self, params=None):
         """Return correlation matrix for input parameters ``params``."""
-        return utils.cov_to_corrcoef(self.cov(parmeters=params))
+        return utils.cov_to_corrcoef(self.cov(params=params))
 
     def __getstate__(self):
         """Return this class state dictionary."""
@@ -320,6 +371,168 @@ class ParameterCovariance(BaseClass):
         return cls.from_state(state)
 
 
+class ParameterContours(BaseParameterCollection):
+
+    """Class that holds samples drawn from likelihood."""
+
+    _type = None
+    _attrs = BaseParameterCollection._attrs
+
+    @classmethod
+    def _get_name(cls, items):
+        toret = []
+        for item in items:
+            if isinstance(item, str):
+                toret.append(item)
+                continue
+            if isinstance(item, Parameter):
+                param = item
+            else:
+                param = item.param
+            toret.append(param.name)
+        return tuple(toret)
+
+    @staticmethod
+    def _get_param(items):
+        return (items[0].param, items[1].param)
+
+    def __init__(self, data=None, params=None, attrs=None):
+        self.attrs = dict(attrs or {})
+        self.data = []
+        if params is not None:
+            if len(params) != len(data):
+                raise ValueError('Provide as many parameters as arrays')
+            for param, value in zip(params, data):
+                self[param] = value
+        else:
+            super(ParameterContours, self).__init__(data=data, attrs=attrs)
+
+    def __setitem__(self, name, item):
+        """
+        Update parameter in collection (a parameter with same name must already exist).
+        See :meth:`set` to set a new parameter.
+
+        Parameters
+        ----------
+        name : Parameter, string, int
+            Parameter name.
+            If :class:`Parameter` instance, search for parameter with same name.
+            If integer, index in collection.
+
+        item : Parameter
+            Parameter.
+        """
+        if not utils.is_sequence(item):
+            raise TypeError('{} is not a tuple')
+        items, params = list(item), []
+        for ii, item in enumerate(items):
+            if not isinstance(item, ParameterArray):
+                try:
+                    param = self.data[name][ii].param  # list index
+                except TypeError:
+                    param = Parameter(name[ii])
+                params.append(param)
+        if params in self:
+            tmp = self[params]
+            params = [tmp[ii].param.clone(param) for ii, param in enumerate(params)]
+        for ii, param in enumerate(params):
+            items[ii] = ParameterArray(item, param)
+        item = tuple(items)
+        try:
+            self.data[name] = item  # list index
+        except TypeError:
+            item_name = self._get_name(item)
+            if self._get_name(name) != item_name:
+                raise KeyError('Parameter {} must be indexed by name (incorrect {})'.format(item_name, name))
+            self.set(item)
+
+    def setdefault(self, item):
+        """Set parameter ``param`` in collection if not already in it."""
+        if not utils.is_sequence(item) or not all(isinstance(it, ParameterArray) for it in item):
+            raise TypeError('{} is not a tuple of {}.'.format(item, ParameterArray.__call__.__name__))
+        item = tuple(item)
+        if item not in self:
+            self.set(item)
+
+    def __getstate__(self):
+        """Return this class state dictionary."""
+        state = {'data': [tuple(item.__getstate__() for item in items) for items in self]}
+        for name in self._attrs:
+            #if hasattr(self, name):
+            state[name] = getattr(self, name)
+        return state
+
+    def __setstate__(self, state):
+        """Set this class state dictionary."""
+        BaseClass.__setstate__(self, state)
+        self.data = [tuple(ParameterArray.from_state(item) for item in items) for items in state['data']]
+
+    def params(self, **kwargs):
+        sel = self.select(**kwargs)
+        return tuple(ParameterCollection([self._get_param(item)[i] for item in sel]) for i in range(2))
+
+    def names(self, **kwargs):
+        """Return parameter names in collection."""
+        return [tuple(param.name for param in params) for params in self.params(**kwargs)]
+
+    def basenames(self, **kwargs):
+        """Return base parameter names in collection."""
+        return [tuple(param.basename for param in params) for params in self.params(**kwargs)]
+
+    def __repr__(self):
+        """Return string representation, including shape and columns."""
+        return '{}(params={})'.format(self.__class__.__name__, self.params())
+
+    @classmethod
+    def bcast(cls, value, mpicomm=None, mpiroot=0):
+        import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
+        state = None
+        if mpicomm.rank == mpiroot:
+            state = value.__getstate__()
+            state['data'] = [tuple(array['param'] for array in arrays) for arrays in state['data']]
+        state = mpicomm.bcast(state, root=mpiroot)
+        for ivalue, params in enumerate(state['data']):
+            state['data'][ivalue] = tuple({'value': mpy.bcast(value.data[ivalue][i] if mpicomm.rank == mpiroot else None, mpicomm=mpicomm, mpiroot=mpiroot), 'param': params[i]} for i in range(2))
+        return cls.from_state(state)
+
+    def send(self, dest, tag=0, mpicomm=None):
+        import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
+        state = self.__getstate__()
+        state['data'] = [tuple(array['param'] for array in arrays) for arrays in state['data']]
+        mpicomm.send(state, dest=dest, tag=tag)
+        for arrays in self:
+            for array in arrays:
+                mpy.send(array, dest=dest, tag=tag)
+
+    @classmethod
+    def recv(cls, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, mpicomm=None):
+        import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
+        state = mpicomm.recv(source=source, tag=tag)
+        for ivalue, params in enumerate(state['data']):
+            state['data'][ivalue] = tuple({'value': mpy.recv(source, tag=tag, mpicomm=mpicomm), 'param': params[i]} for i in range(2))
+        return cls.from_state(state)
+
+    @classmethod
+    def sendrecv(cls, value, source=0, dest=0, tag=0, mpicomm=None):
+        import mpytools as mpy
+        if mpicomm is None:
+            mpicomm = mpy.CurrentMPIComm.get()
+        if dest == source:
+            return value.copy()
+        if mpicomm.rank == source:
+            value.send(dest=dest, tag=tag, mpicomm=mpicomm)
+        toret = None
+        if mpicomm.rank == dest:
+            toret = cls.recv(source=source, tag=tag, mpicomm=mpicomm)
+        return toret
+
+
 class Profiles(BaseClass):
     r"""
     Class holding results of likelihood profiling.
@@ -332,16 +545,17 @@ class Profiles(BaseClass):
     bestfit : ParamDict
         Best fit parameters.
 
-    parabolic_errors : ParamDict
+    error : ParamDict
         Parameter parabolic errors.
 
-    deltachi2_errors : ParamDict
+    interval : ParamDict
         Lower and upper errors corresponding to :math:`\Delta \chi^{2} = 1`.
 
     covariance : ParameterCovariance
         Parameter covariance at best fit.
     """
-    _attrs = {'start': ParameterValues, 'bestfit': ParameterBestFit, 'parabolic_errors': ParameterBestFit, 'deltachi2_errors': ParameterBestFit, 'covariance': ParameterCovariance}
+    _attrs = {'start': ParameterValues, 'bestfit': ParameterBestFit, 'error': ParameterValues, 'covariance': ParameterCovariance,
+              'interval': ParameterValues, 'profile': ParameterValues, 'contour': ParameterContours}
 
     def __init__(self, attrs=None, **kwargs):
         """
@@ -355,27 +569,41 @@ class Profiles(BaseClass):
         self.attrs = attrs or {}
         self.set(**kwargs)
 
-    def params(self, *args, **kwargs):
-        return self.start.params(*args, **kwargs)
-
-    def set(self, params=None, **kwargs):
+    def set(self, **kwargs):
         for name, cls in self._attrs.items():
             if name in kwargs:
-                item = kwargs[name]
-                if name == 'covariance':
-                    if not isinstance(item, cls):
-                        item = cls(item, params=self.params() if params is None else params)
-                else:
-                    item = cls(item)
+                item = cls(kwargs[name])
                 setattr(self, name, item)
 
-    def get(self, name):
+    def get(self, *args, **kwargs):
         """Access attribute by name."""
-        return getattr(self, name)
+        return getattr(self, *args, **kwargs)
 
-    def has(self, name):
+    def __contains__(self, name):
         """Has this attribute?"""
         return hasattr(self, name)
+
+    def __copy__(self):
+        new = super(Profiles, self).__copy__()
+        import copy
+        for name in ['attrs'] + list(self._attrs.keys()):
+            if hasattr(self, name):
+                setattr(new, name, copy.copy(getattr(new, name)))
+        return new
+
+    def update(self, other):
+        self.attrs.update(other.attrs)
+        for name in other._attrs:
+            if name in other:
+                if name in self:
+                    self.get(name).update(other.get(name))
+                else:
+                    self.set(**{name: other.get(name)})
+
+    def clone(self, *args, **kwargs):
+        new = self.copy()
+        new.update(*args, **kwargs)
+        return new
 
     @classmethod
     def concatenate(cls, *others):
@@ -399,9 +627,10 @@ class Profiles(BaseClass):
         if len(others) == 1 and is_sequence(others[0]):
             others = others[0]
         new = others[0].copy()
-        attrs = [name for name in new._attrs if new.has(name) and name != 'covariance']
+        concatenable_attrs = list(new._attrs.keys())[:3]
+        attrs = [name for name in new._attrs if name in new and name in concatenable_attrs]
         for other in others:
-            if [name for name in other._attrs if other.has(name) and name != 'covariance'] != attrs:
+            if [name for name in other._attrs if name in other and name in concatenable_attrs] != attrs:
                 raise ValueError('Cannot concatenate two profiles if both do not have same attributes.')
         for name in attrs:
             setattr(new, name, new._attrs[name].concatenate(*[other.get(name) for other in others]))
@@ -428,7 +657,7 @@ class Profiles(BaseClass):
             if name in state:
                 setattr(self, name, cls.from_state(state[name]))
 
-    def to_stats(self, params=None, quantities=None, sigfigs=2, tablefmt='latex_raw', filename=None):
+    def to_stats(self, params=None, quantities=None, sigfigs=2, tablefmt='latex_raw', fn=None):
         """
         Export profiling quantities.
 
@@ -439,7 +668,7 @@ class Profiles(BaseClass):
             Defaults to all parameters.
 
         quantities : list, default=None
-            Quantities to export. Defaults to ``['bestfit','parabolic_errors','deltachi2_errors']``.
+            Quantities to export. Defaults to ``['bestfit','error','interval']``.
 
         sigfigs : int, default=2
             Number of significant digits.
@@ -449,7 +678,7 @@ class Profiles(BaseClass):
             Format for summary table.
             See :func:`tabulate.tabulate`.
 
-        filename : string default=None
+        fn : string default=None
             If not ``None``, file name where to save summary table.
 
         Returns
@@ -458,34 +687,43 @@ class Profiles(BaseClass):
             Summary table.
         """
         import tabulate
-        if params is None: params = self.params()
+        ref_params = self.start.params()
+        if params is None: params = ref_params
+        else: params = [ref_params[param] for param in params]
         data = []
-        if quantities is None: quantities = [quantity for quantity in ['bestfit', 'parabolic_errors', 'deltachi2_errors'] if self.has(quantity)]
+        allowed_quantities = ['bestfit', 'error', 'interval']
+        if quantities is None: quantities = [quantity for quantity in allowed_quantities if quantity in self]
+        for quantity in quantities:
+            if quantity not in allowed_quantities:
+                raise ValueError('Unknown quantity {}.'.format(quantity))
         is_latex = 'latex_raw' in tablefmt
         argmax = self.bestfit.logposterior.argmax()
 
         def round_errors(low, up):
-            low, up = utils.round_measurement(0.0, low, up, sigfigs=sigfigs)[1:]
-            if is_latex: return '${{}}_{{{}}}^{{+{}}}$'.format(low, up)
-            return '{}/+{}'.format(low, up)
+            low, up = utils.round_measurement(0.0, low, up, sigfigs=sigfigs, positive_sign='u')[1:]
+            if is_latex: return '${{}}_{{{}}}^{{{}}}$'.format(low, up)
+            return '{}/{}'.format(low, up)
 
         for iparam, param in enumerate(params):
             row = []
             if is_latex: row.append(param.latex(inline=True))
             else: row.append(str(param.name))
             row.append(str(param.varied))
-            ref_error = self.parabolic_errors[param][argmax]
+            ref_error = self.error[param][argmax]
             for quantity in quantities:
-                if quantity in ['bestfit', 'parabolic_errors']:
-                    value = self.get(quantity)[param][argmax]
+                value = self.get(quantity)
+                if param in value:
+                    value = value[param]
+                else:
+                    row.append('')
+                    continue
+                if quantity in allowed_quantities[:2]:
+                    value = value[argmax]
                     value = utils.round_measurement(value, ref_error, sigfigs=sigfigs)[0]
                     if is_latex: value = '${}$'.format(value)
                     row.append(value)
-                elif quantity == 'deltachi2_errors':
-                    low, up = self.get(quantity)[param][argmax]
-                    row.append(round_errors(low, up))
                 else:
-                    raise ValueError('Unknown quantity {}.'.format(quantity))
+                    row.append(round_errors(*value))
             data.append(row)
         headers = []
         chi2min = '{:.2f}'.format(-2. * self.bestfit.logposterior[argmax])
@@ -493,10 +731,10 @@ class Profiles(BaseClass):
         headers.append('varied')
         headers += [quantity.replace('_', ' ') for quantity in quantities]
         tab = tabulate.tabulate(data, headers=headers, tablefmt=tablefmt)
-        if filename is not None:
-            utils.mkdir(os.path.dirname(filename))
-            self.log_info('Saving to {}.'.format(filename))
-            with open(filename, 'w') as file:
+        if fn is not None:
+            utils.mkdir(os.path.dirname(fn))
+            self.log_info('Saving to {}.'.format(fn))
+            with open(fn, 'w') as file:
                 file.write(tab)
         return tab
 
@@ -511,7 +749,7 @@ class Profiles(BaseClass):
             for name in cls._attrs: state[name] = None
         state = mpicomm.bcast(state, root=mpiroot)
         for name, acls in cls._attrs.items():
-            if mpicomm.bcast(value.has(name) if mpicomm.rank == mpiroot else None, root=mpiroot):
+            if mpicomm.bcast(name in value if mpicomm.rank == mpiroot else None, root=mpiroot):
                 state[name] = acls.bcast(value.get(name) if mpicomm.rank == mpiroot else None, mpiroot=mpiroot).__getstate__()
             else:
                 del state[name]
@@ -519,4 +757,4 @@ class Profiles(BaseClass):
 
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
-        return all(getattr(other, name) == getattr(self, name) for name in self._attrs)
+        return all(other.get(name, None) == self.get(name, None) for name in self._attrs)

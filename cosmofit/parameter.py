@@ -327,6 +327,9 @@ class Parameter(BaseClass):
         if isinstance(basename, Parameter):
             self.__dict__.update(basename.__dict__)
             return
+        if isinstance(basename, ParameterConfig):
+            self.__dict__.update(basename.init().__dict__)
+            return
         self.namespace = namespace
         names = str(basename).split(base.namespace_delimiter)
         self.basename, namespace = names[-1], base.namespace_delimiter.join(names[:-1])
@@ -540,12 +543,12 @@ class BaseParameterCollection(BaseClass):
         if not isinstance(item, self._type):
             raise TypeError('{} is not a {} instance.'.format(item, self._type))
         try:
-            self.data[name] = item
+            self.data[name] = item  # list index
         except TypeError:
-            item_name = str(self._get_name(item))
-            if str(name) != item_name:
+            item_name = self._get_name(item)
+            if self._get_name(name) != item_name:
                 raise KeyError('Parameter {} must be indexed by name (incorrect {})'.format(item_name, name))
-            self.data[self._index_name(name)] = item
+            self.set(item)
 
     def __getitem__(self, name):
         """
@@ -582,6 +585,17 @@ class BaseParameterCollection(BaseClass):
             del self.data[name]
         except TypeError:
             del self.data[self.index(name)]
+
+    def sort(self, key=None):
+        if key is not None:
+            data = []
+            indices = np.argsort(key)
+            for ii in indices:
+                data.append(self[ii])
+            self.data = data
+        else:
+            self.data = data.copy()
+        return self
 
     def pop(self, name, *args, **kwargs):
         toret = self.get(name, *args, **kwargs)
@@ -634,6 +648,13 @@ class BaseParameterCollection(BaseClass):
         except IndexError:
             self.data.append(item)
 
+    def setdefault(self, item):
+        """Set parameter ``param`` in collection if not already in it."""
+        if not isinstance(item, self._type):
+            raise TypeError('{} is not a {} instance.'.format(item, self._type))
+        if item not in self:
+            self.set(item)
+
     def index(self, name):
         """
         Return index of parameter ``name``.
@@ -661,13 +682,6 @@ class BaseParameterCollection(BaseClass):
     def __contains__(self, name):
         """Whether collection contains parameter ``name``."""
         return self._get_name(name) in (self._get_name(item) for item in self.data)
-
-    def setdefault(self, item):
-        """Set parameter ``param`` in collection if not already in it."""
-        if not isinstance(item, self._type):
-            raise TypeError('{} is not a {} instance.'.format(item, self._type))
-        if item in self:
-            self.set(item)
 
     def select(self, **kwargs):
         """
@@ -773,6 +787,7 @@ class BaseParameterCollection(BaseClass):
     def clear(self):
         """Empty collection."""
         self.data.clear()
+        return self
 
     def update(self, *args, **kwargs):
         """Update collection with new one."""
@@ -797,7 +812,7 @@ class BaseParameterCollection(BaseClass):
 
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
-        return type(other) == type(self) and list(other.params()) == list(self.params()) and all(np.all(other_value == self_value) for other_value, self_value in zip(other, self))
+        return type(other) == type(self) and list(other.params()) == list(self.params()) and all(_deepeq(other_value, self_value) for other_value, self_value in zip(other, self))
 
 
 class ParameterConfig(BaseClass):
@@ -806,10 +821,11 @@ class ParameterConfig(BaseClass):
         if isinstance(conf, self.__class__):
             self.__dict__.update(conf.__dict__)
         elif isinstance(conf, Parameter):
-            state = conf.__getstate__()
-            if state['namespace'] is None:
-                state.pop('namespace')
-            kwargs = {**state, **kwargs}
+            conf = conf.__getstate__()
+            if conf['namespace'] is None:
+                conf.pop('namespace')
+        elif isinstance(conf, dict):
+            kwargs = {**conf, **kwargs}
         elif conf is not None:
             raise ValueError('Unrecognized {} {}'.format(self.__class__.__name__, conf))
         for name, value in kwargs.items():
@@ -851,6 +867,10 @@ class ParameterConfig(BaseClass):
 
     def __delitem__(self, *args, **kwargs):
         return delattr(self, *args, **kwargs)
+
+    def setdefault(self, name, item):
+        if name not in self:
+            self[name] = item
 
     def update(self, *args, exclude=(), **kwargs):
         other = self.__class__(*args, **kwargs)
@@ -957,6 +977,15 @@ class ParameterCollectionConfig(BaseParameterCollection):
             if 'namespace' not in conf:
                 conf.namespace = True
 
+    def updated(self, param):
+        paramname = self._get_name(param)
+        for meta_name in ['fixed', 'derived', 'namespace', 'wildcard']:
+            meta = getattr(self, meta_name)
+            for name in meta:
+                if find_names([paramname], name):
+                    return True
+        return False
+
     def select(self, **kwargs):
         """
         Return new collection, after selection of parameters whose attribute match input values::
@@ -1061,6 +1090,7 @@ class ParameterCollectionConfig(BaseParameterCollection):
         """
         if not isinstance(item, ParameterConfig):
             item = ParameterConfig(item)
+            item.setdefault(self.identifier, name)
         try:
             self.data[name] = item
         except TypeError:
@@ -1069,124 +1099,6 @@ class ParameterCollectionConfig(BaseParameterCollection):
                 raise KeyError('Parameter {} must be indexed by name (incorrect {})'.format(item_name, name))
             self.data[self._index_name(name)] = item
 
-'''
-class ParameterConfig(BaseConfig):
-
-    _attrs = BaseConfig._attrs + ['fixed', 'derived', 'namespace']
-    _keywords = {'fixed': [], 'derived': ['fixed', 'varied'], 'namespace': []}
-
-    def __init__(self, data=None, **kwargs):
-        if isinstance(data, self.__class__):
-            self.__dict__.update(data.copy().__dict__)
-            return
-        if isinstance(data, ParameterCollection):
-            dd = {}
-            for name, param in data.items():
-                state = param.__getstate__()
-                state.pop('basename')
-                state['namespace'] = False
-                dd[name] = state
-            data = dd
-        if utils.is_sequence(data):
-            data = {name: {} for name in data}
-        super(ParameterConfig, self).__init__(data=data, **kwargs)
-        data = self.copy()
-        self.fixed, self.derived, self.namespace = {}, {}, {}
-        for meta_name in ['fixed', 'varied', 'derived', 'namespace']:
-            meta = data.pop(meta_name, {})
-            if utils.is_sequence(meta):
-                meta = {name: True for name in meta}
-            elif not isinstance(meta, dict):
-                meta = {meta: True}
-            if meta_name in ['derived', 'namespace']:
-                getattr(self, meta_name).update(meta)
-            else:
-                self.fixed.update({name: (meta_name == 'fixed' and value) or (meta_name == 'varied' and not value) for name, value in meta.items()})
-        self.data = {}
-        for name, conf in data.items():
-            conf = conf.copy()
-            latex = conf.pop('latex', None)
-            for name, latex in yield_names_latex(name, latex=latex):
-                tmp = conf.copy()
-                if latex is not None: tmp['latex'] = latex
-                tmp['namespace'] = namespace = tmp.get('namespace', None)
-                if isinstance(namespace, str):
-                    name = base.namespace_delimiter.join([namespace, name])
-                    tmp['namespace'] = False
-                self[name] = tmp
-                for meta_name in ['fixed', 'derived', 'namespace']:
-                    meta = getattr(self, meta_name)
-                    found = meta_name in tmp
-                    param_meta = tmp.pop(meta_name, None)
-                    if param_meta is None:
-                        for template in meta:
-                            if template not in self._keywords[meta_name] and find_names([name], template, quiet=True):
-                                param_meta = meta[template]
-                                found = True
-                    if found:
-                        #meta[name] =
-                        tmp[meta_name] = param_meta
-
-                # Wildcard
-                for name in find_names(list(self.keys()), name):
-                    new = self.get(name, {}).copy()
-                    new.update(tmp)
-                    self[name] = new
-
-    def update(self, *args, **kwargs):
-        other = self.__class__(*args, **kwargs)
-        for name in other:
-            tmp = other[name]
-            new = self.get(name, {}).copy()
-            new.update(tmp)
-            if name in self: del self[name]
-            self[name] = new
-        for name in self:
-            tmp = self[name]
-            for name in find_names(list(self.keys()), name):
-                new = self.get(name, {}).copy()
-                new.update(tmp)
-                self[name] = new
-
-        def update_order(d1, d2):
-            toret = {name: value for name, value in d1.items() if name not in d2}
-            for name, value in d2.items():
-                toret[name] = value
-            return toret
-
-        for meta_name in ['fixed', 'derived', 'namespace']:
-            setattr(self, meta_name, update_order(getattr(self, meta_name), getattr(other, meta_name)))
-            meta = getattr(self, meta_name)
-            for name in self:
-                for tmpname in meta:
-                    if find_names([name], tmpname, quiet=True):
-                        self[name][meta_name] = meta[tmpname]
-
-    def with_namespace(self, namespace=None):
-        if namespace is None:
-            new = self.deepcopy()
-            for name in new:
-                new[name]['namespace'] = False
-            return new
-        new = self.__class__()
-        for name, param in self.items():
-            newparam = param.copy()
-            newparam['namespace'] = False
-            if param['namespace'] or param['namespace'] is None:
-                name = base.namespace_delimiter.join([namespace, name])
-            new[name] = newparam
-        for meta_name in ['fixed', 'derived', 'namespace']:
-            tmp = {}
-            for name, value in getattr(self, meta_name).items():
-                key = base.namespace_delimiter.join([namespace, name]) if name not in self._keywords[meta_name] else name
-                tmp[key] = value
-            setattr(new, meta_name, tmp)
-        return new
-
-    def init(self, namespace=None):
-        data = {name: conf for name, conf in self.with_namespace(namespace=namespace).data.items() if '*' not in name}
-        return ParameterCollection(data)
-'''
 
 class ParameterCollection(BaseParameterCollection):
 

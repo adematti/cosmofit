@@ -2,6 +2,7 @@ import numpy as np
 import scipy as sp
 
 from .base import BaseEmulatorEngine
+from cosmofit import mpi
 
 
 def _make_tuple(obj, length=None):
@@ -177,6 +178,8 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
                                  validation_data=(samples['X_validation'], samples['Y_validation']), callbacks=[es], verbose=2)
                 self.operations['M'] = self.tfmodel.operations()
             self.operations = self.operations['X'] + self.operations['M'] + self.operations['Y']
+
+        mpi.barrier_idle(self.mpicomm)  # we rely on keras parallelisation; here we make MPI processes idle
 
         self.operations = self.mpicomm.bcast(self.operations, root=0)
         self.yshapes = self.mpicomm.bcast(self.yshapes, root=0)

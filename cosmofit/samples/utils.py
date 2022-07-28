@@ -205,7 +205,7 @@ def weighted_quantile(x, q, weights=None, axis=None, interpolation='lower'):
     return quantiles
 
 
-def std_notation(value, sigfigs, extra=None):
+def std_notation(value, sigfigs, positive_sign=False):
     """
     Standard notation (US version).
     Return a string corresponding to value with the number of significant digits ``sigfigs``.
@@ -227,10 +227,10 @@ def std_notation(value, sigfigs, extra=None):
     sig_digits, power, is_neg = _number_profile(value, sigfigs)
     if is_neg and all(d == '0' for d in sig_digits): is_neg = False
 
-    return ('-' if is_neg else '') + _place_dot(sig_digits, power)
+    return ('-' if is_neg else '+' if positive_sign else '') + _place_dot(sig_digits, power)
 
 
-def sci_notation(value, sigfigs, filler='e'):
+def sci_notation(value, sigfigs, filler='e', positive_sign=False):
     """
     Scientific notation.
 
@@ -254,7 +254,7 @@ def sci_notation(value, sigfigs, filler='e'):
 
     dot_power = min(-(sigfigs - 1), 0)
     ten_power = power + sigfigs - 1
-    return ('-' if is_neg else '') + _place_dot(sig_digits, dot_power) + filler + str(ten_power)
+    return ('-' if is_neg else '+' if positive_sign else '') + _place_dot(sig_digits, dot_power) + filler + str(ten_power)
 
 
 def _place_dot(digits, power):
@@ -329,11 +329,8 @@ def _number_profile(value, sigfigs):
         is_neg = False
 
     else:
-        if value < 0:
-            value = abs(value)
-            is_neg = True
-        else:
-            is_neg = False
+        is_neg = value < 0
+        if is_neg: value = abs(value)
 
         power = -1 * math.floor(math.log10(value)) + sigfigs - 1
         sig_digits = str(int(round(abs(value) * 10.0**power)))
@@ -341,7 +338,7 @@ def _number_profile(value, sigfigs):
     return sig_digits, int(-power), is_neg
 
 
-def round_measurement(x, u=0.1, v=None, sigfigs=2, notation='auto'):
+def round_measurement(x, u=0.1, v=None, sigfigs=2, positive_sign=False, notation='auto'):
     """
     Return string representation of input central value ``x`` with uncertainties ``u`` and ``v``.
 
@@ -386,7 +383,7 @@ def round_measurement(x, u=0.1, v=None, sigfigs=2, notation='auto'):
     else: logv = math.floor(math.log10(abs(v)))
     if x == 0.: logx = max(logu, logv)
 
-    def round_notation(val, sigfigs, notation='auto', center=False):
+    def round_notation(val, sigfigs, notation='auto', positive_sign=False):
         if notation == 'auto':
             # if 1e-3 < abs(val) < 1e3 or center and (1e-3 - abs(u) < abs(x) < 1e3 + abs(v)):
             if (1e-3 - abs(u) < abs(x) < 1e3 + abs(v)):
@@ -395,17 +392,17 @@ def round_measurement(x, u=0.1, v=None, sigfigs=2, notation='auto'):
                 notation = 'sci'
         notation_dict = {'std': std_notation, 'sci': sci_notation}
         if notation in notation_dict:
-            return notation_dict[notation](val, sigfigs=sigfigs)
-        return notation(val, sigfigs=sigfigs)
+            return notation_dict[notation](val, sigfigs=sigfigs, positive_sign=positive_sign)
+        return notation(val, sigfigs=sigfigs, positive_sign=positive_sign)
 
     if logv > logu:
-        xr = round_notation(x, sigfigs=logx - logu + sigfigs, notation=notation, center=True)
-        ur = round_notation(u, sigfigs=sigfigs, notation=notation)
-        vr = round_notation(v, sigfigs=logv - logu + sigfigs, notation=notation)
+        sigfigs = (logx - logu + sigfigs, sigfigs, logv - logu + sigfigs)
     else:
-        xr = round_notation(x, sigfigs=logx - logv + sigfigs, notation=notation, center=True)
-        ur = round_notation(u, sigfigs=logu - logv + sigfigs, notation=notation)
-        vr = round_notation(v, sigfigs=sigfigs, notation=notation)
+        sigfigs = (logx - logv + sigfigs, logu - logv + sigfigs, sigfigs)
+
+    xr = round_notation(x, sigfigs=sigfigs[0], notation=notation, positive_sign=bool(positive_sign) and positive_sign != 'u')
+    ur = round_notation(u, sigfigs=sigfigs[1], notation=notation, positive_sign=bool(positive_sign))
+    vr = round_notation(v, sigfigs=sigfigs[2], notation=notation, positive_sign=bool(positive_sign))
 
     if return_v: return xr, ur, vr
     return xr, ur

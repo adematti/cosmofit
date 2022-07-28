@@ -12,7 +12,8 @@ from cosmofit.parameter import ParameterConfig, ParameterCollectionConfig, Param
 def test_config():
 
     config = BaseConfig('test_config.yaml')
-    assert config['pipeline']['namespace1']['like1']['init']['answer_str'] == '42 or 42.00 is 42? {test}'
+    assert config['pipeline']['namespace1']['like1']['init']['answer_str'] == '42 or 43.00 is 42? {test}'
+    assert config['pipeline']['namespace1']['like1']['init']['answer_str_test'] == '42/42'
     assert config['pipeline']['namespace1']['like1']['init']['answer_int'] == 42
     assert config['pipeline']['namespace1']['like1']['init']['answer_int_p2'] == 44
     assert np.allclose(config['pipeline']['namespace1']['theory1']['init']['k'], np.linspace(0., 10., 11))
@@ -73,6 +74,13 @@ def test_params():
     assert params['a2b'].value == 2 and params['a2b'].latex() == 'latex'
     config = config.clone({'.delete': '*'})
     assert not len(config.init())
+    params = ParameterCollection({'a': 0.2, 'n.a': 1., 'n.b': 2.})
+    from cosmofit.base import _best_match_parameter
+    assert _best_match_parameter('n.m', 'a', params, choice='max').name == 'n.a'
+    assert _best_match_parameter('n.m', 'a', params, choice='min').name == 'a'
+    assert _best_match_parameter('m', 'a', params, choice='min').name == 'a'
+    assert _best_match_parameter('m', 'b', params, choice='min') is None
+
 
 def test_pipeline():
     config = BaseConfig('bao_power_pipeline.yaml')
@@ -138,8 +146,7 @@ if __name__ == '__main__':
 
     setup_logging('info')
 
-    test_params()
-    # test_config()
+    test_config()
     # test_params()
     # test_pipeline()
     # test_likelihood()

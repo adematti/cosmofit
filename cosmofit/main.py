@@ -74,7 +74,7 @@ def sample_from_config(config, mpicomm=None):
 @CurrentMPIComm.enable
 def profile_from_args(args=None, mpicomm=None):
     config, config_fn = read_args(args=args, mpicomm=mpicomm, section='profile')
-    return sample_from_config(config, mpicomm=mpicomm)
+    return profile_from_config(config, mpicomm=mpicomm)
 
 
 @CurrentMPIComm.enable
@@ -109,7 +109,7 @@ def do_from_config(config, mpicomm=None):
         raise ConfigError('Provide pipeline')
     pipeline = BasePipeline(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
 
-    params = SourceConfig(config_do['source']).choice(params=pipeline.params)
+    params = SourceConfig(config_do['source']).choice(params=pipeline.params.select(derived=False))
     pipeline.run(**params)
     config_do.run(pipeline)
 

@@ -158,20 +158,27 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
             if m:
                 word = m.group(1)
                 placeholders = re.finditer(r'\{.*?\}', word)
-                word_letters = re.sub(r'[^a-zA-Z]', '', word)
+                word_letters = re.sub(r'[^a-zA-Z]', '_', word)
                 di = {}
                 for placeholder in placeholders:
                     placeholder = placeholder.group()
-                    key = placeholder[1:-1]
-                    freplace = replace = self.search(key)
-                    if isinstance(replace, str):
-                        freplace = decode_eval(replace)
-                        if freplace is None: freplace = replace
-                    key = '__variable_of_{}_{:d}__'.format(word_letters, len(di) + 1)
-                    assert key not in word
-                    di[key] = freplace
-                    word = word.replace(placeholder, key)
+                    key = placeholder_nobrackets = placeholder[1:-1]
+                    if placeholder.startswith('{{'):
+                        word = word.replace(placeholder, placeholder_nobrackets)
+                    else:
+                        freplace = replace = self.search(key)
+                        if isinstance(replace, str):
+                            freplace = decode_eval(replace)
+                            if freplace is None: freplace = replace
+                        #if isinstance(freplace, str):
+                        #    word = word.replace(placeholder, freplace)
+                        #else:
+                        key = '__variable_of_{}_{:d}__'.format(word_letters, len(di) + 1)
+                        assert key not in word
+                        di[key] = freplace
+                        word = word.replace(placeholder, key)
                 return eval(word, {'np': np}, di)
+                #return eval(word, {'np': np})
             return None
 
         def decode_format(word):
@@ -181,12 +188,13 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
                 placeholders = re.finditer(r'\{.*?\}', word)
                 for placeholder in placeholders:
                     placeholder = placeholder.group()
+                    placeholder_nobrackets = placeholder[1:-1]
                     if placeholder.startswith('{{'):
-                        word = word.replace(placeholder, placeholder[1:-1])
+                        word = word.replace(placeholder, placeholder_nobrackets)
                     else:
-                        keyfmt = placeholder[1:-1].split(':', 2)
-                        if len(keyfmt) == 2: key, fmt = keyfmt[0], ':' + keyfmt[1]
-                        else: key, fmt = keyfmt[0], ''
+                        keyfmt = re.match(r'^(.*[^:])(:[^:]*)$', placeholder_nobrackets)
+                        if keyfmt: key, fmt = keyfmt.groups()
+                        else: key, fmt = placeholder_nobrackets, ''
                         freplace = replace = self.search(key)
                         if isinstance(replace, str):
                             freplace = decode_format(replace)
@@ -207,12 +215,20 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         callback(self.data, decode_eval)
         callback(self.data, decode_format)
 
-    def search(self, namespaces, delimiter=None):
+    def search(self, namespaces, delimiter=None, fn=None):
         if isinstance(namespaces, str):
+            if fn is None:
+                try:
+                    fn, namespaces = namespaces.split('::', 1)
+                except ValueError:
+                    pass
             if delimiter is None:
                 from .base import namespace_delimiter as delimiter
             namespaces = namespaces.split(delimiter)
-        d = self
+        if fn is None:
+            d = self
+        else:
+            d = BaseConfig(fn)
         for namespace in namespaces:
             d = d[namespace]
         return d

@@ -34,3 +34,9 @@ params:
       dist: uniform
       limits: [0.8, 1.2]
     latex: '\alpha_{\mathrm{iso}}'
+  qap:
+    value: 1.
+    prior:
+      dist: uniform
+      limits: [0.8, 1.2]
+    latex: '\alpha_{\mathrm{ap}}'

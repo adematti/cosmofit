@@ -4,6 +4,7 @@ from scipy.stats import qmc
 from scipy.stats.qmc import Sobol, Halton, LatinHypercube
 
 from cosmofit.samples import ParameterValues
+from cosmofit.parameter import ParameterArray
 from cosmofit.utils import BaseClass
 from .base import RegisteredSampler
 
@@ -72,6 +73,8 @@ class QMCSampler(BaseClass, metaclass=RegisteredSampler):
         self.pipeline.mpirun(**(samples.to_dict() if self.mpicomm.rank == 0 else {}))
         self.pipeline.mpicomm = mpicomm
         if self.mpicomm.rank == 0:
+            for param in self.pipeline.params.select(fixed=True, derived=False):
+                samples.set(ParameterArray(np.full(samples.shape, param.value, dtype='f8'), param))
             samples.update(self.pipeline.derived)
             if self.samples is None:
                 self.samples = samples

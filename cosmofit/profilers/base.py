@@ -3,12 +3,13 @@ import mpytools as mpy
 
 from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
-from cosmofit.samples import Profiles,ParameterValues
+from cosmofit.samples import Profiles, ParameterValues
+from cosmofit.parameter import ParameterArray
 
 
 class ProfilerConfig(SectionConfig):
 
-    _sections = ['init', 'run']
+    _sections = ['init']
 
     def __init__(self, *args, **kwargs):
         # cls, init kwargs
@@ -19,7 +20,12 @@ class ProfilerConfig(SectionConfig):
         profiler = self['class'](likelihood, **self['init'])
         save_fn = self.get('save', None)
 
-        profiler.run(**self['run'])
+        for name in ['maximize', 'interval', 'profile', 'contour']:
+            if name in self:
+                tmp = self[name]
+                if tmp is None: tmp = {}
+                getattr(profiler, name)(**tmp)
+
         if save_fn is not None and profiler.mpicomm.rank == 0:
             profiler.profiles.save(save_fn)
 
@@ -130,36 +136,86 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         pass
 
-    def run(self, niterations=10, **kwargs):
-        self.derived = None
+    def maximize(self, niterations=None, **kwargs):
         if niterations is None: niterations = max(self.mpicomm.size - 1, 1)
         niterations = int(niterations)
         nprocs_per_iteration = max((self.mpicomm.size - 1) // niterations, 1)
-        profiles = [None] * niterations
+        list_profiles = [None] * niterations
         with TaskManager(nprocs_per_task=nprocs_per_iteration, use_all_nprocs=True, mpicomm=self.mpicomm) as tm:
             self.likelihood.mpicomm = tm.mpicomm
             for ii in tm.iterate(range(niterations)):
-                start = self._get_start()
                 self.derived = None
-                profile = self._run_one(start, **kwargs)
+                start = self._get_start()
+                profile = self._maximize_one(start, **kwargs)
                 if self.likelihood.mpicomm.rank == 0:
-                    if profile.has('bestfit'):
-                        index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, name=self.varied_params.names())
-                        assert index_in_profile[0].size == 1
-                        for array in self.derived[0]:
-                            profile.set(array[index], output=True)
+                    for param in self.likelihood.params.select(fixed=True, derived=False):
+                        profile.bestfit.set(ParameterArray(np.array(param.value, dtype='f8'), param))
+                    index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, name=self.varied_params.names())
+                    assert index_in_profile[0].size == 1
+                    for array in self.derived[0]:
+                        profile.bestfit.set(array[index], output=True)
                 else:
                     profile = None
-                profiles[ii] = profile
-        for iprofile, profile in enumerate(profiles):
+                list_profiles[ii] = profile
+        for iprofile, profile in enumerate(list_profiles):
             mpiroot_worker = self.mpicomm.rank if profile is not None else None
             for mpiroot_worker in self.mpicomm.allgather(mpiroot_worker):
                 if mpiroot_worker is not None: break
             assert mpiroot_worker is not None
-            profiles[iprofile] = Profiles.bcast(profile, mpicomm=self.mpicomm, mpiroot=mpiroot_worker)
-        profiles = Profiles.concatenate(profiles)
+            list_profiles[iprofile] = Profiles.bcast(profile, mpicomm=self.mpicomm, mpiroot=mpiroot_worker)
+        profiles = Profiles.concatenate(list_profiles)
 
         if self.profiles is None:
             self.profiles = profiles
         else:
             self.profiles = Profiles.concatenate(self.profiles, profiles)
+
+    def _iterate_over_params(self, params, method, **kwargs):
+        nparams = len(params)
+        nprocs_per_param = max((self.mpicomm.size - 1) // nparams, 1)
+        if self.profiles is None:
+            start = self._get_start()
+        else:
+            argmax = self.profiles.bestfit.logposterior.argmax()
+            start = [self.profiles.bestfit[param][argmax] for param in self.varied_params]
+        list_profiles = [None] * nparams
+        with TaskManager(nprocs_per_task=nprocs_per_param, use_all_nprocs=True, mpicomm=self.mpicomm) as tm:
+            self.likelihood.mpicomm = tm.mpicomm
+            for iparam, param in tm.iterate(enumerate(params)):
+                self.derived = None
+                list_profiles[iparam] = method(start, param, **kwargs)
+        profiles = Profiles()
+        for iprofile, profile in enumerate(list_profiles):
+            mpiroot_worker = self.mpicomm.rank if profile is not None else None
+            for mpiroot_worker in self.mpicomm.allgather(mpiroot_worker):
+                if mpiroot_worker is not None: break
+            assert mpiroot_worker is not None
+            profiles.update(Profiles.bcast(profile, mpicomm=self.mpicomm, mpiroot=mpiroot_worker))
+
+        if self.profiles is None:
+            self.profiles = profiles
+        else:
+            self.profiles.update(profiles)
+
+    def interval(self, params=None, **kwargs):
+        if params is None:
+            params = self.varied_params
+        else:
+            params = ParameterCollection([self.varied_params[param] for param in params])
+        self._iterate_over_params(params, self._interval_one, **kwargs)
+
+    def profile(self, params=None, **kwargs):
+        if params is None:
+            params = self.varied_params
+        else:
+            params = ParameterCollection([self.varied_params[param] for param in params])
+        self._iterate_over_params(params, self._profile_one, **kwargs)
+
+    def contour(self, params=None, **kwargs):
+        if params is None:
+            params = self.varied_params
+        params = list(params)
+        if not utils.is_sequence(params[0]):
+            params = [(param1, param2) for param2 in params[iparam1 + 1:] for iparam1, param1 in enumerate(params1)]
+        params = [(self.varied_params[param1], self.varied_params[param2]) for param1, param2 in params]
+        self._iterate_over_params(params, self._contour_one, **kwargs)

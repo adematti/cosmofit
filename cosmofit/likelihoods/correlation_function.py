@@ -29,7 +29,7 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
             elif not isinstance(slim, dict):
                 raise ValueError('Unknown slim format; provide e.g. {0: (0.01, 0.2), 2: (0.01, 0.15)}')
             ells = tuple(slim.keys())
-            s, data = corr(ells=ells, return_std=False)
+            s, data = corr(ells=ells, return_sep=True, return_std=False)
             list_s, list_data = [], []
             for ell, lim in slim.items():
                 mask = (s >= lim[0]) & (s < lim[1])
@@ -37,7 +37,7 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
                 list_data.append(data[ells.index(ell)][mask])
             return list_s, ells, list_data
 
-        self.s, poles, nobs = None, None, None
+        self.s, self.ells, flatdata, nobs = None, None, None, None
         data_is_mean = data == 'mean'
         if isinstance(covariance, str):
             covariance = [covariance]
@@ -74,8 +74,9 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
 
         self.s, self.ells, flatdata, nobs = self.mpicomm.bcast((self.s, self.ells, flatdata, nobs) if self.mpicomm.rank == 0 else None, root=0)
 
-        super(CorrelationFunctionMultipolesLikelihood, self).__init__(covariance=covariance, data=poles, nobs=nobs)
-        self.requires['theory'] = ('BaseTheoryCorrelationFunctionMultipoles', {'s': self.s, 'ells': self.ells, 'zeff': zeff, 'fiducial': fiducial})
+        super(CorrelationFunctionMultipolesLikelihood, self).__init__(covariance=covariance, data=flatdata, nobs=nobs)
+        self.requires['theory'] = ('cosmofit.theories.base.WindowedCorrelationFunctionMultipoles',
+                                   {'s': self.s, 'ells': self.ells, 'theory': {'init': {'zeff': zeff, 'fiducial': fiducial}}})
 
     def plot(self, fn=None, kw_save=None):
         from matplotlib import pyplot as plt
@@ -86,7 +87,6 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
         data, model, std = self.data, self.model, self.std
         for ill, ell in enumerate(self.ells):
             lax[0].errorbar(self.s[ill], self.s[ill]**2 * data[ill], yerr=self.s[ill]**2 * std[ill], color='C{:d}'.format(ill), linestyle='none', marker='o', label=r'$\ell = {:d}$'.format(ell))
-        for ill, ell in enumerate(self.ells):
             lax[0].plot(self.s[ill], self.s[ill]**2 * model[ill], color='C{:d}'.format(ill))
         for ill, ell in enumerate(self.ells):
             lax[ill + 1].plot(self.s[ill], (data[ill] - model[ill]) / std[ill], color='C{:d}'.format(ill))

@@ -5,6 +5,7 @@ import numpy as np
 
 from cosmofit.samples import ParameterValues
 from cosmofit.base import PipelineError, SectionConfig, import_cls
+from cosmofit import utils, plotting
 from cosmofit.utils import BaseClass
 from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError, ParameterCollection
 
@@ -38,6 +39,11 @@ class EmulatorConfig(SectionConfig):
                     emulator.samples.save(save_samples_fn)
                 emulator.fit(**emudict['fit'])
                 emulator.check(**emudict['check'])
+                plot = emudict.get('plot', None)
+                if plot is not None:
+                    if not isinstance(plot, dict):
+                        plot = {'fn': plot}
+                    emulator.plot(**plot)
                 if save_fn is not None and emulator.mpicomm.rank == 0:
                     emulator.save(save_fn)
 
@@ -72,13 +78,15 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
                 calculators.append(calculator)
 
         calculator = self.pipeline.end_calculators[0]
-        calculator.runtime_info._derived_names = {'fixed': True, 'varied': True}
+        calculator.runtime_info._derived_names = ['.fixed', '.varied']
         calculators.append(calculator)
         calculators, fixed, varied = self.pipeline._set_auto_derived(calculators)
-        self.fixed, self.varied = set(), set()
-        for ff, vv, cc in zip(fixed, varied):
-            self.fixed |= set(fixed)
-            self.varied |= set(varied)
+        #self.pipeline.set_params()
+        self.fixed, self.varied = {}, set()
+
+        for ff, vv in zip(fixed, varied):
+            self.fixed.update(ff)
+            self.varied |= set(vv)
 
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params))
@@ -105,7 +113,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             for param in self.pipeline.params.select(derived=True):
                 if param.basename in self.varied:
                     self.samples.set(ParameterArray(samples[param], param=param.clone(namespace=None)), output=True)
-            self.samples = self.samples.ravel()
+            #self.samples = self.samples.ravel()
 
     def get_default_samples(self):
         raise NotImplementedError
@@ -116,7 +124,18 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
     def predict(self, **params):
         raise NotImplementedError
 
-    def check(self, mse_stop=None, validation_frac=1.):
+    def subsamples(self, frac=1., nmax=np.inf, seed=42):
+        nsamples = self.mpicomm.bcast(self.samples.size if self.mpicomm.rank == 0 else None)
+        size = min(int(nsamples * frac + 0.5), nmax)
+        if size > nsamples:
+            raise ValueError('Cannot use {:d} subsamples (> {:d} total samples)'.format(size, nsamples))
+        rng = np.random.RandomState(seed=seed)
+        samples = None
+        if self.mpicomm.rank == 0:
+            samples = self.samples.ravel()[rng.choice(nsamples, size=size, replace=False)]
+        return samples
+
+    def check(self, mse_stop=None, **kwargs):
 
         def add_diagnostics(name, value):
             if name not in self.diagnostics:
@@ -129,19 +148,8 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             self.log_info('Diagnostics:')
         item = '- '
         toret = True
-        nsamples = self.mpicomm.bcast(self.samples.size if self.mpicomm.rank == 0 else None)
-        nvalidation = int(nsamples * validation_frac + 0.5)
-        if nvalidation > nsamples:
-            raise ValueError('Cannot use {:d} validation samples (> {:d} total samples)'.format(nvalidation, nsamples))
-        rng = np.random.RandomState(seed=42)
-        if self.mpicomm.rank == 0:
-            samples = self.samples[rng.choice(nsamples, size=nvalidation, replace=False)]
-        calculator = self.to_calculator()
-        for name in self.varied:
-            if name not in calculator.runtime_info.base_params:
-                param = Parameter(name, namespace=None, derived=True)
-                calculator.runtime_info.full_params.set(param)
-                calculator.runtime_info.full_params = calculator.runtime_info.full_params
+        samples = self.subsamples(**kwargs)
+        calculator = self.to_calculator(derived=self.varied)
         derived = calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
 
         if self.mpicomm.rank == 0:
@@ -162,8 +170,45 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
 
         return self.mpicomm.bcast(toret, root=0)
 
-    def to_calculator(self):
-        return BaseEmulator.from_state(self.__getstate__())
+    def plot(self, fn=None, name=None, kw_save=None, nmax=100, **kwargs):
+        names = name
+        if names is None:
+            names = self.varied
+        if utils.is_sequence(names):
+            if fn is not None and not utils.is_sequence(fn):
+                fn = [fn.replace('*', '{}').format(name) for name in names]
+        else:
+            names = [names]
+            fn = [fn]
+        samples = self.subsamples(nmax=nmax, **kwargs)
+        calculator = self.to_calculator(derived=names)
+        derived = calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
+
+        from matplotlib import pyplot as plt
+        if self.mpicomm.rank == 0:
+            for name, fn in zip(names, fn):
+                plt.close(plt.gcf())
+                fig, lax = plt.subplots(2, sharex=True, sharey=False, gridspec_kw={'height_ratios': (2, 1)}, figsize=(6, 6), squeeze=True)
+                fig.subplots_adjust(hspace=0)
+                for d, s in zip(derived[name], samples[name]):
+                    lax[0].plot(d.ravel(), color='k', marker='+', markersize=1, alpha=0.2)
+                    lax[1].plot((d - s).ravel(), color='k', marker='+',  markersize=1, alpha=0.2)
+                lax[0].set_ylabel(name)
+                lax[1].set_ylabel(r'$\Delta$ {}'.format(name))
+                for ax in lax: ax.grid(True)
+                if fn is not None:
+                    plotting.savefig(fn, fig=fig, **(kw_save or {}))
+        return lax
+
+    def to_calculator(self, derived=None):
+        calculator = BaseEmulator.from_state(self.__getstate__())
+        if derived is not None:
+            for name in derived:
+                if name not in calculator.runtime_info.base_params:
+                    param = Parameter(name, namespace=None, derived=True)
+                    calculator.runtime_info.full_params.set(param)
+                    calculator.runtime_info.full_params = calculator.runtime_info.full_params
+        return calculator
 
     def __getstate__(self):
         state = {}
@@ -186,7 +231,7 @@ class PointEmulatorEngine(BaseEmulatorEngine):
         return sampler.samples
 
     def fit(self):
-        self.point = {name: np.asarray(self.samples[name][0]) for name in self.samples.outputs}
+        self.point = {name: np.asarray(self.samples[name].flat[0]) for name in self.samples.outputs}
 
     def predict(self, **params):
         # Dumb prediction

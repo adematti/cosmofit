@@ -19,12 +19,7 @@ doc/_build/
 **/_results
 **/_chains
 **/_profiles
-**/.pk
-**/.xi
-**/.bao
-**/.png
-**/.post
-**/*.npy
+**/_*
 
 # Unit test / coverage reports
 **/.coverage

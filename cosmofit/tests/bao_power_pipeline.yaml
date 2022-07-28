@@ -15,24 +15,31 @@ pipeline:
       save: f'{output_dir}/QSO.like.npy'
       load: True
       plot: f'{output_dir}/power.png'
+      plot_bao: f'{output_dir}/power_bao.png'
     window:
       class: cosmofit.theories.base.WindowedPowerSpectrumMultipoles
       plot: f'{output_dir}/window.png'
     theory:
       class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
+      init:
+        mode: ''
+        #mode: 'nowiggle'
       params:
         .fixed: ['al*']
         .derived: [.varied]
       #load: f'{output_dir}/emulator.npy'
-      #emulator:
-      #  save: f'{output_dir}/emulator.npy'
+      emulator:
+        plot: f'{output_dir}/emulator_*.png'
+        save: f'{output_dir}/emulator.npy'
     #theory.bao:
     #  class: cosmofit.theories.bao.DampedBAOWigglesPowerSpectrumMultipoles
     #  load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
     param:
-      class: cosmofit.theories.power_template.BAOWigglesPowerSpectrumParameterization
+      class: cosmofit.theories.power_template.BAOPowerSpectrumParameterization
+      init:
+        mode: qiso
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 
@@ -52,9 +59,9 @@ emulate:
 
 do:
   source:
-    #profiles: f'{output_dir}/profiles.npy'
-    chain: f'{output_dir}/chain_0.npy'
-  do: plot
+    profiles: f'{output_dir}/profiles.npy'
+    #chain: f'{output_dir}/chain_0.npy'
+  #do: plot
 
 summarize:
   chain:
@@ -68,9 +75,13 @@ summarize:
     nsplits: 4
   plot_geweke: f'{output_dir}/geweke.png'
 
-#summarize:
-#   profiles: f'{output_dir}/profiles.npy'
-#   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
+summarize:
+   profiles:
+     - f'{output_dir}/profiles.npy'
+     - f'{output_dir}/profiles_nowiggle.npy'
+   stats: [stats.tex, stats_nowiggle.tex]
+   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
+   plot_profile_comparison: f'{output_dir}/profile_comparison.png'
 
 sample:
   class: cosmofit.samplers.DynestySampler
@@ -101,9 +112,11 @@ sample:
 
 profile:
   class: cosmofit.profilers.MinuitProfiler
-  save: f'{output_dir}/profiles.npy'
-  run:
-    niterations: 2
+  save: e'{output_dir} + ("/profiles_nowiggle.npy" if {pipeline.QSO.theory.init.mode} == "nowiggle" else "/profiles.npy")'
+  maximize:
+    niterations: 1
+  interval:
+  profile:
 
-data_dir: .pk
-output_dir: .bao
+data_dir: _pk
+output_dir: _bao

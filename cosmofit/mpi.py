@@ -51,6 +51,26 @@ def split_ranks(nranks, nranks_per_worker, include_all=False):
                 yield i + 1, ranks
 
 
+def barrier_idle(mpicomm, tag=0, sleep=0.01):
+    """
+    MPI barrier fonction that solve the problem that Idle process occupies 100% CPU.
+    See: https://goo.gl/NofOO9.
+    """
+    size = mpicomm.size
+    if size == 1: return
+    rank = mpicomm.rank
+    mask = 1
+    while mask < size:
+        dst = (rank + mask) % size
+        src = (rank - mask + size) % size
+        req = mpicomm.isend(None, dst, tag)
+        while not mpicomm.Iprobe(src, tag):
+            time.sleep(sleep)
+        mpicomm.recv(None, src, tag)
+        req.Wait()
+        mask <<= 1
+
+
 class MPITaskManager(BaseClass):
     """
     A MPI task manager that distributes tasks over a set of MPI processes,

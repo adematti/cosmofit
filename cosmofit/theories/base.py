@@ -34,10 +34,67 @@ class BaseTheoryCorrelationFunctionMultipoles(BaseCalculator):
 
     def __getstate__(self):
         state = {}
-        for name in ['s', 'zeff', 'ells', 'corr']:
+        for name in ['s', 'zeff', 'ells', 'corr', 'fiducial']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
+
+
+class BaseTheoryCorrelationFunctionFromPowerSpectrumMultipoles(BaseTheoryCorrelationFunctionMultipoles):
+
+    def __init__(self, s=None, ells=(0, 2, 4), **kwargs):
+        super(BaseTheoryCorrelationFunctionFromPowerSpectrumMultipoles, self).__init__(s=s, ells=ells, **kwargs)
+        self.k = np.logspace(min(-3, - np.log10(self.s[-1]) - 0.1), max(2, - np.log10(self.s[0]) + 0.1), 2000)
+        from cosmoprimo import PowerToCorrelation
+        self.fftlog = PowerToCorrelation(self.k, ell=self.ells, q=0, lowring=False)
+        self.kin = np.geomspace(self.k[0], 1., 300)
+        #self.kin = np.linspace(self.k[0], 0.5, 200)
+        mask = self.k > self.kin[-1]
+        self.lowk = self.k[~mask]
+        self.pad_highk = np.exp(-(self.k[mask] - self.kin[-1])**2 / (2. * (0.5)**2))
+        self.requires = {'power': {'init': {'k': self.kin, 'ells': self.ells, **kwargs}}}
+
+    def set_params(self, params):
+        self.requires['power']['params'] = params.copy()
+        return params.clear()
+
+    def run(self):
+        power = [np.interp(np.log10(self.lowk), np.log10(self.kin), p) for p in self.power.power]
+        power = [np.concatenate([p, p[-1] * self.pad_highk], axis=-1) for p in power]
+        s, corr = self.fftlog(power)
+        self.corr = np.array([np.interp(self.s, ss, cc) for ss, cc in zip(s, corr)])
+
+    def plot(self, fn=None, kw_save=None):
+        # Comparison to brute-force (non-fftlog) computation
+        # Convergence towards brute-force when decreasing amping sigma
+        # Difference between fftlog and brute-force: ~ effect of truncation / damping
+        corr = []
+        weights = utils.weights_trapz(np.log(self.kin))
+        for ill, ell in enumerate(self.ells):
+            # Integration in log, adding a k
+            tmp = np.sum(self.kin**3 * self.power.power[ill] * weights * special.spherical_jn(ell, self.s[:, None] * self.kin), axis=-1)
+            corr.append((-1) ** (ell // 2) / (2. * np.pi**2) * tmp)
+        from matplotlib import pyplot as plt
+        height_ratios = [max(len(self.ells), 3)] + [1] * len(self.ells)
+        figsize = (6, 1.5 * sum(height_ratios))
+        fig, lax = plt.subplots(len(height_ratios), sharex=True, sharey=False, gridspec_kw={'height_ratios': height_ratios}, figsize=figsize, squeeze=True)
+        fig.subplots_adjust(hspace=0)
+        lax[0].plot([], [], linestyle='-', color='k', label='fftlog')
+        lax[0].plot([], [], linestyle='--', color='k', label='brute-force')
+        for ill, ell in enumerate(self.ells):
+            color = 'C{:d}'.format(ill)
+            lax[0].plot(self.s, self.s**2 * self.corr[ill], color=color, linestyle='-', label=r'$\ell = {:d}$'.format(ell))
+            lax[0].plot(self.s, self.s**2 * corr[ill], linestyle='--', color=color)
+        for ill, ell in enumerate(self.ells):
+            lax[ill + 1].plot(self.s, self.s**2 * (self.corr[ill] - corr[ill]), color='C{:d}'.format(ill))
+            lax[ill + 1].set_ylabel(r'$\Delta s^{{2}}\xi_{{{0:d}}}$ [$(\mathrm{{Mpc}}/h)^{{2}}$]'.format(ell))
+        for ax in lax: ax.grid(True)
+        lax[0].legend()
+        lax[0].set_ylabel(r'$s^{2} \xi_{\ell}(s)$ [$(\mathrm{Mpc}/h)^{2}$]')
+        lax[-1].set_xlabel(r'$s$ [$\mathrm{Mpc}/h$]')
+        if fn is not None:
+            plotting.savefig(fn, fig=fig, **(kw_save or {}))
+        return lax
 
 
 class TrapzTheoryPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
@@ -74,33 +131,38 @@ class EffectAP(BaseCalculator):
         self.zeff = float(zeff)
         if fiducial is None:
             raise ValueError('Provide fiducial cosmology')
-        fiducial = get_cosmo(fiducial)
-        self.efunc_fid = fiducial.efunc(self.zeff)
-        self.comoving_angular_distance_fid = fiducial.comoving_angular_distance(self.zeff)
+        self.fiducial = get_cosmo(fiducial)
+        self.efunc_fid = self.fiducial.efunc(self.zeff)
+        self.comoving_angular_distance_fid = self.fiducial.comoving_angular_distance(self.zeff)
         self.mode = mode
         self.eta = float(eta)
         from .primordial_cosmology import BasePrimordialCosmology
         self.requires = {'cosmo': (BasePrimordialCosmology, {})}
 
+    @classmethod
+    def guess_mode(cls, params, default='distances'):
+        mode = default
+        if 'qiso' in params: mode = 'qiso'
+        if 'qap' in params: mode = 'qap'
+        if 'qiso' in params and 'qap' in params: mode = 'qisoqap'
+        if 'qpar' in params and 'qper' in params: mode = 'qparqper'
+        return mode
+
     def set_params(self, params):
         if self.mode is None:
-            self.mode = 'distances'
-            if 'qiso' in params:
-                self.mode = 'qiso'
-            elif 'qap' in params:
-                self.mode == 'qap'
-            elif 'qpar' in params.basenames() and 'qper' in params.basenames():
-                self.mode = 'qparqper'
+            self.mode = self.guess_mode(params, default='distances')
         if self.mode == 'qiso':
             params = params.select(basename=['qiso'])
         elif self.mode == 'qap':
             params = params.select(basename=['qap'])
+        elif self.mode == 'qisoqap':
+            params = params.select(basename=['qiso', 'qap'])
         elif self.mode == 'qparqper':
             params = params.select(basename=['qpar', 'qper'])
         elif self.mode == 'distances':
             params = params.clear()
         else:
-            raise ValueError('mode must be one of ["qiso", "qap", "qparqper", "distances"]')
+            raise ValueError('mode must be one of ["qiso", "qap", "qisoqap", "qparqper", "distances"]')
         return params
 
     def run(self, **params):
@@ -109,16 +171,19 @@ class EffectAP(BaseCalculator):
         elif self.mode == 'qiso':
             qpar = qper = params['qiso']
         elif self.mode == 'qap':
-            qap = params['qap']   # qpar / qper
+            qap = params['qap']  # qpar / qper
             qpar, qper = qap**(1 - self.eta), qap**(-self.eta)
+        elif self.mode == 'qisoqap':
+            qiso, qap = params['qiso'], params['qap']  # qpar / qper
+            qpar, qper = qiso * qap**(1 - self.eta), qiso * qap**(-self.eta)
         else:
             qpar, qper = params['qpar'], params['qper']
         self.qpar, self.qper = qpar, qper
         self.qap = self.qpar / self.qper
-        self.qiso = self.qpar**self.eta * self.qper*(1. - self.eta)
+        self.qiso = self.qpar**self.eta * self.qper**(1. - self.eta)
 
     def ap_k_mu(self, k, mu):
-        jac = 1. / (self.qpar * self.qper ** 2)
+        jac = 1. / (self.qpar * self.qper**2)
         factorap = np.sqrt(1 + mu**2 * (1. / self.qap**2 - 1))
         # Beutler 2016 (arXiv: 1607.03150v1) eq 44
         kap = k[..., None] / self.qper * factorap
@@ -129,13 +194,17 @@ class EffectAP(BaseCalculator):
 
 class WindowedPowerSpectrumMultipoles(BaseCalculator):
 
-    def __init__(self, k=None, ells=(0, 2, 4), zeff=None, fiducial=None, wmatrix=None):
+    def __init__(self, k=None, ells=(0, 2, 4), wmatrix=None, theory=None):
         if k is None: k = np.linspace(0.01, 0.2, 20)
         if np.ndim(k[0]) == 0:
             k = [k] * len(ells)
         self.k = [np.array(kk, dtype='f8') for kk in k]
-        self.zeff = float(zeff)
         self.ells = tuple(ells)
+
+        if theory is None: theory = {'init': {}}
+        theory = dict(theory)
+        theory.setdefault('class', 'BaseTheoryPowerSpectrumMultipoles')
+
         #wmatrix = None
         self.wmatrix = wmatrix
         if wmatrix is None:
@@ -146,7 +215,7 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
             else:
                 self.kmask = [np.searchsorted(self.kin, kk, side='left') for kk in self.k]
                 assert all(kmask.min() >= 0 and kmask.max() < kk.size for kk, kmask in zip(self.k, self.kmask))
-                self.kmask = np.concatenate([np.searchsorted(self.kin, kk, side='left') for kk in self.k], axis=0)
+                self.kmask = np.concatenate(self.kmask, axis=0)
         else:
             if isinstance(wmatrix, str):
                 from pypower import MeshFFTWindow, BaseMatrix
@@ -174,13 +243,12 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
                 if not np.allclose(wmatrix.xout[iout], kk):
                     raise ValueError('k-coordinates {} for ell = {:d} could not be found in input matrix (rebinning = {:d})'.format(kk, projout.ell, factorout))
             self.wmatrix = wmatrix.value
-            if zeff is None:
-                zeff = wmatrix.attrs.get('zeff', None)
-            if fiducial is None:
-                fiducial = wmatrix.attrs.get('fiducial', None)
-        self.zeff = zeff
-        self.fiducial = fiducial
-        self.requires = {'theory': ('BaseTheoryPowerSpectrumMultipoles', {'k': self.kin, 'ells': self.ellsin, 'zeff': self.zeff, 'fiducial': self.fiducial})}
+            for name in ['zeff', 'fiducial']:
+                if name in wmatrix.attrs and theory['init'].get(name, None) is None:
+                    theory['init'].setdefault(name, wmatrix.attrs[name])
+
+        theory['init'].update({'k': self.kin, 'ells': self.ellsin})
+        self.requires = {'theory': theory}
 
     def run(self):
         theory = np.ravel(self.theory.power)
@@ -227,3 +295,54 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
         if fn is not None:
             plotting.savefig(fn, fig=fig, **(kw_save or {}))
         return ax
+
+
+class WindowedCorrelationFunctionMultipoles(BaseCalculator):
+
+    def __init__(self, s=None, ells=(0, 2, 4), theory=None):
+        if s is None: s = np.linspace(20., 120., 101)
+        if np.ndim(s[0]) == 0:
+            s = [s] * len(ells)
+        self.s = [np.array(ss, dtype='f8') for ss in s]
+        self.ells = tuple(ells)
+
+        if theory is None: theory = {}
+        theory = dict(theory)
+        theory.setdefault('class', 'BaseTheoryCorrelationFunctionMultipoles')
+
+        # No matrix for the moment
+        self.ellsin = tuple(self.ells)
+        self.sin = np.unique(np.concatenate(self.s, axis=0))
+        if all(np.allclose(ss, self.sin) for ss in self.s):
+            self.smask = None
+        else:
+            self.smask = [np.searchsorted(self.sin, ss, side='left') for ss in self.k]
+            assert all(smask.min() >= 0 and smask.max() < ss.size for ss, smask in zip(self.s, self.smask))
+            self.smask = np.concatenate(self.smask, axis=0)
+
+        theory['init'].update({'s': self.sin, 'ells': self.ellsin})
+        self.requires = {'theory': theory}
+
+    def run(self):
+        theory = np.ravel(self.theory.corr)
+        if self.smask is not None:
+            self.flatcorr = theory[self.smask]
+        else:
+            self.flatcorr = theory
+
+    @property
+    def corr(self):
+        toret = []
+        nout = 0
+        for ss in self.s:
+            sl = slice(nout, nout + len(ss))
+            toret.append(self.flatcorr[sl])
+            nout = sl.stop
+        return toret
+
+    def __getstate__(self):
+        state = {}
+        for name in ['sin', 's', 'ells', 'smask', 'flatcorr']:
+            if hasattr(self, name):
+                state[name] = getattr(self, name)
+        return state

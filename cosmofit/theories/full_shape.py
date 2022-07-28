@@ -1,6 +1,7 @@
 import numpy as np
 
-from .bao import BaseTheoryPowerSpectrumMultipoles, BaseTheoryCorrelationFunctionMultipoles
+from .base import TrapzTheoryPowerSpectrumMultipoles
+from .bao import BaseTheoryPowerSpectrumMultipoles, BaseTheoryCorrelationFunctionFromPowerSpectrumMultipoles
 from .power_template import BasePowerSpectrumParameterization  # to add calculator in the registry
 
 
@@ -8,12 +9,11 @@ class BasePTPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, **kwargs):
         super(BasePTPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
+        self.kin = np.geomspace(min(1e-3, self.k[0] / 2), max(10., self.k[0] * 2), 200)  # margin for AP effect
         self.requires = {'template': (BasePowerSpectrumParameterization, {'k': self.kin, 'zeff': self.zeff, 'fiducial': self.fiducial})}
 
 
 class LPTPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles):
-
-    kin = np.logspace(-3., 1., 200)
 
     def run(self):
         from velocileptors.LPT.lpt_rsd_fftw import LPT_RSD
@@ -48,39 +48,24 @@ class LPTTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
         self.power = self.pt.combine_bias_terms_power_poles(**params)
 
 
-class KaiserTracerPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles):
+class KaiserTracerPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles):
 
-    kin = np.logspace(-3., 1., 200)
+    def __init__(self, *args, mu=200, **kwargs):
+        super(KaiserTracerPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
+        self.set_k_mu(k=self.k, mu=mu, ells=self.ells)
 
-    def run(self, b1=1.):
+    def run(self, b1=1., sn0=0.):
+        jac, kap, muap = self.template.ap_k_mu(self.k, self.mu)
         f = self.template.f
-        pdd = self.template.power_dd
-        beta = f / b1
-        factors = {0: (b1**2 + 2. / 3. * b1 * f + 1. / 5. * f**2),
-                   2: (4. / 3. * b1 * f + 4. / 7. * f**2),
-                   4: 8. / 35. * f**2}
-        self.power = np.array([factors.get(ell, 0) for ell in self.ells])[:, None] * pdd
+        pkmu = (b1 + f*muap)**2 * np.interp(np.log10(kap), np.log10(self.kin), self.template.power_dd) + sn0
+        self.power = self.to_poles(pkmu)
 
 
-class BaseTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMultipoles):
+class BaseTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionFromPowerSpectrumMultipoles):
 
     def __init__(self, s=None, zeff=1., ells=(0, 2, 4), fiducial=None, **kwargs):
-        super(LPTTracerCorrelationFunctionMultipoles, self).__init__(s=s, zeff=zeff, ells=ells, fiducial=fiducial)
-        self.k = np.logspace(min(-3, - np.log10(self.s[-1]) - 0.1), max(2, - np.log10(self.s[0]) + 0.1), 2000)
-        from cosmoprimo import PowerToCorrelation
-        self.fftlog = PowerToCorrelation(self.k, ell=self.ells, q=0, lowring=False)
-        kv = np.geomspace(self.k[0], 0.5, 200)
-        mask = self.k > kv[-1]
-        self.pad = np.ones((len(self.ells), mask.sum()), dtype='f8')
-        self.pad *= np.exp(-(self.k[mask] - kv)**2 / (2. * (0.5)**2))
-        self.requires = {'power': (self.__class__.__name__.replace('CorrelationFunction', 'PowerSpectrum'),
-                                  {'k': kv, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial, **kwargs})}
-
-    def run(self):
-        k, power = self.power.k, self.power.power
-        power = np.concatenate([power, power[:, -1:] * self.pad], axis=-1)
-        s, self.corr = self.fftlog([np.interp(np.log(self.k), np.log(kv), power)])
-        self.s = s[0]
+        super(BaseTracerCorrelationFunctionMultipoles, self).__init__(s=s, zeff=zeff, ells=ells, fiducial=fiducial)
+        self.requires['power']['class'] = self.__class__.__name__.replace('CorrelationFunction', 'PowerSpectrum')
 
 
 class LPTTracerCorrelationFunctionMultipoles(BaseTracerCorrelationFunctionMultipoles):

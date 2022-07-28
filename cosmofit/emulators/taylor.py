@@ -22,7 +22,8 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
         self.centers, self.derivatives = {}, {}
         if self.mpicomm.rank == 0:
             ndim = len(self.varied_params)
-            shape = tuple(self.samples.attrs['ngrid'])
+            shape = tuple(self.samples.attrs.get('ngrid', self.samples.shape))
+            assert len(shape) == ndim
             center_index = tuple([s // 2 for s in shape])
             axes, delta = [], []
             for name in self.varied_params:
@@ -44,7 +45,7 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
 
             for name in self.varied:
                 values = self.samples[name]
-                values = values.reshape(shape + values.shape[1:])
+                values = values.reshape(shape + values.shape[len(self.samples.shape):])
                 self.derivatives[name] = [values[center_index]]  # F(x=center)
                 for order in range(1, self.order + 1):
                     deriv = []
@@ -52,6 +53,7 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
                         dx = FinDiff(*[(axes[ii], delta[ii], 1) for ii in indices])
                         deriv.append(dx(values)[center_index])
                     self.derivatives[name].append(deriv)
+                    #if order == 1: print(name, self.varied_params, deriv)
 
         self.derivatives = self.mpicomm.bcast(self.derivatives, root=0)
         self.centers = self.mpicomm.bcast(self.centers, root=0)

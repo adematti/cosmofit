@@ -32,13 +32,22 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
             self.params = self.params.select(**select)
         if self._parambasenames is not None:
             self.params = self.params.select(basename=self._parambasenames)
+            for param in list(self.params):
+                if param.fixed and not param.derived:
+                    # if self.mpicomm.rank == 0:
+                    #     self.log_info('Parameter {} is found to be fixed, ignoring.'.format(param))
+                    del self.params[param]
+            self.params.sort([self._parambasenames.index(param.basename) for param in self.params if param.basename in self._parambasenames])
         self.requires = {'cosmo': ('BasePrimordialCosmology', {})}
 
     def _prepare(self):
-        mean = self.mpicomm.bcast(np.array([self.chain.mean(param) for param in self.params]) if self.mpicomm.rank == 0 else None, root=0)
+        if self.mpicomm.rank == 0:
+            self.log_info('Fitting input samples {}.'.format(list(self.params)))
+        mean = self.mpicomm.bcast(np.concatenate([self.chain.mean(param).ravel() for param in self.params]) if self.mpicomm.rank == 0 else None, root=0)
         covariance = self.mpicomm.bcast(self.chain.cov(self.params) if self.mpicomm.rank == 0 else None, root=0)
         super(BaseParameterizationLikelihood, self).__init__(covariance=covariance, data=mean)
         del self.chain
+        self.base_params = {param.basename: param for param in self.params}
 
     def _set_meta(self, **kwargs):
         for name, value in kwargs.items():
@@ -47,7 +56,8 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
                 if not param:
                     raise ValueError('{} must be provided either as arguments or input samples'.format(name))
                 value = self.chain.mean(param[0])
-            value = float(value)
+            else:
+                value = np.array(value, dtype='f8')
             setattr(self, name, value)
 
     def run(self):
@@ -59,11 +69,12 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
 class FullParameterizationLikelihood(BaseParameterizationLikelihood):
 
     def _prepare(self):
-        self.params = ParameterCollection()
-        for param in params:
+        params = ParameterCollection()
+        for param in self.params:
             value = getattr(self.cosmo, param.basename, None)
             if value is not None:
-                self.params.set(param)
+                params.set(param)
+        self.params = params
         super(FullParameterizationLikelihood, self)._prepare()
 
     def flatmodel(self):
@@ -72,7 +83,14 @@ class FullParameterizationLikelihood(BaseParameterizationLikelihood):
 
 class BAOParameterizationLikelihood(BaseParameterizationLikelihood):
 
-    _parambasenames = ('DH_over_rd', 'DM_over_rd')
+    @property
+    def _parambasenames(self):
+        params = self.params.basenames()
+        options = [('DM_over_rd', 'DH_over_rd'), ('DV_over_rd', 'DH_over_DM'), ('DV_over_rd',), ('DH_over_DM',)]
+        for ps in options:
+            if all(p in params for p in ps):
+                return ps
+        raise ValueError('No BAO measurements found (searching for {})'.format(options))
 
     def __init__(self, *args, zeff=None, **kwargs):
         super(BAOParameterizationLikelihood, self).__init__(*args, **kwargs)
@@ -86,7 +104,9 @@ class BAOParameterizationLikelihood(BaseParameterizationLikelihood):
 
 class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
 
-    _parambasenames = ('n', 'm', 'f_sqrt_A_p') + BAOParameterizationLikelihood._parambasenames
+    @property
+    def _parambasenames(self):
+        return ('n', 'm', 'f_sqrt_A_p') + super(ShapeFitParameterizationLikelihood, self)._parambasenames
 
     def __init__(self, *args, kpivot=0.03, **kwargs):
         super(ShapeFitParameterizationLikelihood, self).__init__(*args, **kwargs)
@@ -95,18 +115,46 @@ class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
         self.requires['shapefit'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff, 'kpivot': self.kpivot, 'of': 'theta_cb', 'n_varied': self.params[0].varied})
 
     def flatmodel(self):
-        values = [getattr(self.shapefit, name) for name in ['n', 'm', 'A_p']]
-        values[-1] **= 0.5
-        return np.concatenate([values, super(ShapeFitPowerSpectrumParameterization, self).flatmodel], axis=0)
+        values = [getattr(self.shapefit, name) for name in self._parambasenames[:2] if name in self.base_params]
+        if 'f_sqrt_A_p' in self.base_params:
+            values.append(self.shapefit.A_p**0.5)  # norm of velocity power spectrum
+        values += [getattr(self.bao, name) for name in self._parambasenames[3:] if name in self.base_params]
+        return np.array(values, dtype='f8')
+
+
+class WiggleSplitPowerSpectrumParameterizationLikelihood(BaseParameterizationLikelihood):
+
+    _parambasenames = ('fsigmar', 'qbao', 'qap')
+
+    def __init__(self, *args, r=None, zeff=None, fiducial=None, **kwargs):
+        super(WiggleSplitPowerSpectrumParameterizationLikelihood, self).__init__(*args, **kwargs)
+        self._set_meta(r=r, zeff=zeff)
+        from cosmofit.theories.base import EffectAP
+        self.requires['effectap'] = (EffectAP, {'zeff': self.zeff, 'fiducial': fiducial, 'mode': 'distances'})
+
+    def flatmodel(self):
+        qiso = self.effectap.qiso
+        fq = []
+        if 'fsigmar' in self.base_params:
+            fo = self.cosmo.get_fourier()
+            r = 8. * qiso
+            fsigmar = fo.sigma_rz(r, self.zeff, of='theta_cb')
+            fq.append(fsigmar)
+        if 'qbao' in self.base_params:
+            fq.append(qiso * self.cosmo.rs_drag / self.effectap.fiducial.rs_drag)
+        if 'qap' in self.base_params:
+            fq.append(self.effectap.qap)
+        return np.array(fq, dtype='f8')
 
 
 class BandVelocityPowerSpectrumParameterizationLikelihood(BaseParameterizationLikelihood):
 
     _parambasenames = ('ptt', 'f', 'qap')
 
-    def __init__(self, *args, kptt=None, fiducial=None, **kwargs):
-        super(ShapeFitParameterizationLikelihood, self).__init__(*args, **kwargs)
-        self._set_meta(kptt=kptt)
+    def __init__(self, *args, kptt=None, zeff=None, fiducial=None, **kwargs):
+        super(BandVelocityPowerSpectrumParameterizationLikelihood, self).__init__(*args, **kwargs)
+        self._set_meta(kptt=kptt, zeff=zeff)
+        from cosmofit.theories.base import EffectAP
         from cosmofit.theories.power_template import BandVelocityPowerSpectrumExtractor
         self.requires['bandpower'] = (BandVelocityPowerSpectrumExtractor, {'zeff': self.zeff, 'kptt': self.kptt})
         self.requires['effectap'] = (EffectAP, {'zeff': self.zeff, 'fiducial': fiducial, 'mode': 'distances'})
@@ -115,7 +163,12 @@ class BandVelocityPowerSpectrumParameterizationLikelihood(BaseParameterizationLi
         qiso = self.effectap.qiso
         self.bandpower.kptt = self.kptt / qiso
         ptt = self.bandpower.ptt / qiso**3
-        fo = self.cosmo.get_fourier()
-        r = 8. * qiso
-        f = fo.sigma_rz(r, self.zeff, of='theta_cb') / fo.sigma_rz(r, self.zeff, of='delta_cb')
-        return np.concatenate([ptt, [f, self.effectap.qap]], axis=0)
+        fq = []
+        if 'f' in self.base_params:
+            fo = self.cosmo.get_fourier()
+            r = 8. * qiso
+            f = fo.sigma_rz(r, self.zeff, of='theta_cb') / fo.sigma_rz(r, self.zeff, of='delta_cb')
+            fq.append(f)
+        if 'qap' in self.base_params:
+            fq.append(self.effectap.qap)
+        return np.concatenate([ptt, fq], axis=0)

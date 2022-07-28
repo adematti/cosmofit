@@ -5,29 +5,42 @@ pipeline:
       init:
         data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
-        wmatrix: f'{data_dir}/window.npy'
+        #wmatrix: f'{data_dir}/window.npy'
         klim:
-          0: [0.05, 0.2]
-          2: [0.05, 0.2]
-          4: [0.05, 0.2]
+          0: [0.02, 0.2]
+          2: [0.02, 0.2]
+          4: [0.02, 0.2]
         kstep: 0.01
         zeff: 0.5
         fiducial: DESI
       save: f'{output_dir}/QSO.like.npy'
       load: True
+      plot: f'{output_dir}/power.png'
     theory:
-      class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.full_shape.KaiserTracerPowerSpectrumMultipoles
+      params:
+        .derived: [.varied]
+      #  .fixed: '*'
+      #load: f'{output_dir}/kaiser_emulator.npy'
+      emulator:
+        plot: f'{output_dir}/fs_emulator_*.png'
+        save: f'{output_dir}/fs_emulator.npy'
     #lpt:
     #  class: cosmofit.theories.full_shape.LPTPowerSpectrumMultipoles
-      #load: f'{output_dir}/emulator.npy'
+    #  load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
     #shapefit:
     #  class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
+    #wiggle:
+    #  class: cosmofit.theories.power_template.WiggleSplitPowerSpectrumParameterization
     pthetap:
       class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
       init:
-        kpoints: e'np.linspace(0.02, 0.2, 4)'
+        kptt: e'np.linspace(0.03, 0.18, 4)'
+      params:
+        .fixed: [f, qap]
     #ptheta:
     #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumTemplate
     #  params:
@@ -42,13 +55,13 @@ pipeline:
 
 emulate:
   class: TaylorEmulatorEngine
-  fit:
+  init:
     order: 1
 
 summarize:
   chain:
     fn: f'{output_dir}/chain_0.npy'
-    burnin: 0.3
+    burnin: 0.5
   plot_triangle: f'{output_dir}/triangle.png'
   plot_trace: f'{output_dir}/trace.png'
   plot_autocorrelation_time: f'{output_dir}/autocorrelation_time.png'
@@ -91,5 +104,11 @@ profile:
   class: cosmofit.profilers.MinuitProfiler
   save: f'{output_dir}/profiles.npy'
 
-data_dir: .pk
-output_dir: .fs
+do:
+  source:
+    #profiles: f'{output_dir}/profiles.npy'
+    chain: f'{output_dir}/chain_0.npy'
+  do: plot
+
+data_dir: _pk
+output_dir: _fs

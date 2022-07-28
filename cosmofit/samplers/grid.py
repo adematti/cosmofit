@@ -1,6 +1,7 @@
 import numpy as np
 
 from cosmofit.samples import ParameterValues
+from cosmofit.parameter import ParameterArray
 from cosmofit.utils import BaseClass
 from .base import RegisteredSampler
 
@@ -29,13 +30,15 @@ class GridSampler(BaseClass, metaclass=RegisteredSampler):
             else:
                 raise ParameterPriorError('Provide parameter limits or proposal')
         if self.mpicomm.rank == 0:
-            samples = ParameterValues([value.ravel() for value in np.meshgrid(*grid, indexing='ij')], params=self.varied_params)
+            samples = ParameterValues([value for value in np.meshgrid(*grid, indexing='ij')], params=self.varied_params)
             samples.attrs['ngrid'] = self.ngrid
         mpicomm = self.pipeline.mpicomm
         self.pipeline.mpicomm = self.mpicomm
         self.pipeline.mpirun(**(samples.to_dict() if self.mpicomm.rank == 0 else {}))
         self.pipeline.mpicomm = mpicomm
         if self.mpicomm.rank == 0:
+            for param in self.pipeline.params.select(fixed=True, derived=False):
+                samples.set(ParameterArray(np.full(samples.shape, param.value, dtype='f8'), param))
             samples.update(self.pipeline.derived)
             self.samples = samples
 

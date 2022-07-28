@@ -9,7 +9,7 @@ from cosmofit.io import ConfigError
 from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
 from cosmofit.samples import diagnostics, Chain, ParameterValues
-from cosmofit.parameter import ParameterPriorError
+from cosmofit.parameter import ParameterPriorError, ParameterArray
 
 
 class SamplerConfig(SectionConfig):
@@ -218,6 +218,8 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
                 self.derived = None
                 chain = self._run_one(start[ichain], niterations=niterations, thin_by=thin_by, **kwargs)
                 if self.likelihood.mpicomm.rank == 0:
+                    for param in self.likelihood.params.select(fixed=True, derived=False):
+                        chain.set(ParameterArray(np.full(chain.shape, param.value, dtype='f8'), param))
                     indices_in_chain, indices = ParameterValues(self.derived[1]).match(chain, name=self.varied_params.names())
                     assert indices_in_chain[0].size == chain.size
                     for array in self.derived[0]:

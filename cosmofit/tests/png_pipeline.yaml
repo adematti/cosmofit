@@ -75,5 +75,5 @@ profile:
   class: cosmofit.profilers.MinuitProfiler
   save: f'{output_dir}/profiles.npy'
 
-data_dir: .pk
-output_dir: .png
+data_dir: _pk
+output_dir: _png

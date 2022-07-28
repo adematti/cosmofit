@@ -1,9 +1,10 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib import gridspec
+from matplotlib import gridspec, transforms
 
 from cosmofit import utils
 from cosmofit.plotting import savefig
+from .utils import nsigmas_to_deltachi2
 from . import diagnostics
 
 
@@ -301,12 +302,12 @@ def plot_triangle(chains, params=None, labels=None, fn=None, kw_save=None, **kwa
     return lax
 
 
-def _get_default_profiles_params(profiles, varied=True, output=False, **kwargs):
-    list_params = [profile.bestfit.names(varied=varied, output=output, **kwargs) for profile in profiles]
+def _get_default_profiles_params(profiles, of='bestfit', varied=True, output=False, **kwargs):
+    list_params = [profile.get(of).names(varied=varied, output=output, **kwargs) for profile in profiles]
     return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]
 
 
-def plot_aligned(profiles, param, ids=None, labels=None, colors=None, truth=None, errors='parabolic_errors',
+def plot_aligned(profiles, param, ids=None, labels=None, colors=None, truth=None, errors='error',
                  labelsize=None, ticksize=None, kw_scatter=None, yband=None, kw_mean=None, kw_truth=None, kw_yband=None,
                  kw_legend=None, ax=None, fn=None, kw_save=None):
     """
@@ -477,3 +478,69 @@ def plot_aligned_stacked(profiles, params=None, ids=None, labels=None, truths=No
     if fn is not None:
         savefig(fn, fig=fig, **(kw_save or {}))
     return np.array(lax)
+
+
+def plot_profile(profiles, params=None, offsets=0., nrows=1, labels=None, colors=None, linestyles=None,
+                 cl=(1, 2, 3), labelsize=None, ticksize=None, kw_profile=None, kw_cl=None,
+                 kw_legend=None, figsize=None, fn=None, kw_save=None, **kwargs):
+
+    profiles = _make_list(profiles)
+    if params is None:
+        params = _get_default_profiles_params(profiles, of='profile')
+    params = [profiles[0].profile[param].param for param in _make_list(params)]
+    nprofiles = len(profiles)
+    offsets = _make_list(offsets, length=nprofiles, default=0.)
+    labels = _make_list(labels, length=nprofiles, default=None)
+    colors = _make_list(colors, length=nprofiles, default=None)
+    linestyles = _make_list(linestyles, length=nprofiles, default=None)
+    if np.ndim(cl) == 0: cl = [cl]
+    add_legend = any(label is not None for label in labels)
+    kw_profile = dict(kw_profile or {})
+    kw_cl = dict(kw_cl if kw_cl is not None else {'color': 'k', 'linestyle': ':', 'linewidth': 2})
+    xshift_cl = kw_cl.pop('xhift', 0.9)
+    kw_legend = dict(kw_legend or {})
+
+    ncols = int(len(params) * 1. / nrows + 1.)
+    figsize = figsize or (3. * ncols, 3. * nrows)
+    fig = plt.figure(figsize=figsize)
+    gs = gridspec.GridSpec(nrows, ncols, wspace=0.2, hspace=0.2)
+
+    def data_to_axis(ax, y):
+        axis_to_data = ax.transAxes + ax.transData.inverted()
+        return axis_to_data.inverted().transform((0, y))[1]
+
+    for iparam1, param1 in enumerate(params):
+        ax = plt.subplot(gs[iparam1])
+        for ipro, pro in enumerate(profiles):
+            pro = pro.profile
+            if param1 not in pro: continue
+            ax.plot(pro[param1][0], pro[param1][1] - offsets[ipro], color=colors[ipro], linestyle=linestyles[ipro], label=labels[ipro], **kw_profile)
+        for nsigma in cl:
+            y = nsigmas_to_deltachi2(nsigma, ddof=1)
+            ax.axhline(y=y, xmin=0., xmax=1., **kw_cl)
+            ax.text(xshift_cl, y + 0.1, r'${:d}\sigma$'.format(nsigma), horizontalalignment='left', verticalalignment='bottom',
+                    transform=transforms.blended_transform_factory(ax.transAxes, ax.transData), color='k', fontsize=labelsize)
+        lim = ax.get_ylim()
+        ax.set_ylim(0., lim[-1] + 2.)
+        ax.tick_params(labelsize=ticksize)
+        ax.set_xlabel(param1.latex(inline=True), fontsize=labelsize)
+        if iparam1 == 0: ax.set_ylabel(r'$\Delta \chi^{2}$', fontsize=labelsize)
+        if add_legend and iparam1 == 0: ax.legend(**kw_legend)
+
+    if fn is not None:
+        savefig(fn, fig=fig, **(kw_save or {}))
+
+
+def plot_profile_comparison(profiles, profiles_ref, params=None, labels=None, colors=None, **kwargs):
+
+    profiles = _make_list(profiles)
+    profiles_ref = _make_list(profiles_ref)
+    if len(profiles) != len(profiles_ref):
+        raise ValueError('profiles_ref must be of same length as profiles')
+    nprofiles = len(profiles)
+    labels = _make_list(labels, length=nprofiles, default=None)
+    colors = _make_list(colors, length=nprofiles, default=None)
+    offsets = [-2. * pro.bestfit.logposterior.max() for pro in profiles] * 2
+    colors = colors * 2
+    linestyles = ['-'] * nprofiles + ['--'] * nprofiles
+    plot_profile(profiles + profiles_ref, params=params, offsets=offsets, labels=labels, colors=colors, linestyles=linestyles, **kwargs)

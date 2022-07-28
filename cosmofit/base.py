@@ -12,7 +12,7 @@ from mpi4py.MPI import COMM_SELF
 from . import utils
 from .utils import BaseClass
 from .parameter import Parameter, ParameterArray, ParameterCollectionConfig, ParameterCollection, find_names
-from .io import BaseConfig
+from .io import BaseConfig, _deepeq
 from .samples import ParameterValues
 from .samples.utils import outputs_to_latex
 
@@ -24,11 +24,27 @@ class RegisteredCalculator(type(BaseClass)):
 
     _registry = set()
 
-    def __new__(meta, name, bases, class_dict):
-        cls = super().__new__(meta, name, bases, class_dict)
+    def __new__(meta, *args, **kwargs):
+        cls = super().__new__(meta, *args, **kwargs)
         fn = inspect.getfile(cls)
         cls.config_fn = os.path.splitext(fn)[0] + '.yaml'
         meta._registry.add(cls)
+
+        from functools import wraps
+
+        def run(func):
+            @wraps(func)
+            def wrapper(self, *args, **kwargs):
+                """A wrapper function"""
+                try:
+                    toret = func(self, *args, **kwargs)
+                except Exception as exc:
+                    raise PipelineError('Error in run of {}'.format(cls)) from exc
+                self.runtime_info._derived = None
+                return toret
+            return wrapper
+
+        cls.run = run(cls.run)
         return cls
 
 
@@ -40,10 +56,9 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             raise PipelineError('Attribute {} is reserved to a calculator, hence cannot be set'.format(name))
 
     def __getattr__(self, name):
-        if name == 'requires':
-            return {}
-        if name == 'params':
-            return ParameterCollection()
+        if name in ['requires', 'globals']:
+            setattr(self, name, {})
+            return getattr(self, name)
         if name == 'runtime_info':
             self.runtime_info = RuntimeInfo(self)
             return self.runtime_info
@@ -71,24 +86,32 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             self.log_info('Saving {}.'.format(filename))
             utils.mkdir(os.path.dirname(filename))
             state = {}
-            for name in ['requires']:
+            for name in ['requires', 'globals']:
                 state[name] = getattr(self, name)
             np.save(filename, {**state, **self.__getstate__()}, allow_pickle=True)
 
+    def run(self):
+        raise NotImplementedError
+
     def mpirun(self, **params):
-        value = []
+        size, cshape = 0, ()
         names = self.mpicomm.bcast(list(params.keys()) if self.mpicomm.rank == 0 else None, root=0)
         for name in names:
-            params[name] = value = mpy.scatter(np.ravel(params[name]) if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0)
-        size = len(value)
-        cumsize = np.cumsum([0] + self.mpicomm.allgather(size))
-        if not cumsize[-1]: return
+            array = None
+            if self.mpicomm.rank == 0:
+                array = np.asarray(params[name])
+                cshape = array.shape
+                array = array.ravel()
+            params[name] = mpy.scatter(array, mpicomm=self.mpicomm, mpiroot=0)
+            size = params[name].size
+        cumsizes = np.cumsum([0] + self.mpicomm.allgather(size))
+        if not cumsizes[-1]: return
         mpicomm = self.mpicomm
         states = {}
         for ivalue in range(size):
             self.mpicomm = COMM_SELF
             self.run(**{name: value[ivalue] for name, value in params.items()})
-            states[ivalue + cumsize[mpicomm.rank]] = self.runtime_info.derived
+            states[ivalue + cumsizes[mpicomm.rank]] = self.runtime_info.derived
         self.mpicomm = mpicomm
         derived = None
         states = self.mpicomm.gather(states, root=0)
@@ -96,11 +119,17 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             derived = {}
             for state in states:
                 derived.update(state)
-            derived = ParameterValues.concatenate([derived[i][None, ...] for i in range(cumsize[-1])])
+            derived = ParameterValues.concatenate([derived[i][None, ...] for i in range(cumsizes[-1])])
+            derived.shape = cshape
         return derived
 
     def __getstate__(self):
         return {}
+
+    def __repr__(self):
+        if 'runtime_info' in self.__dict__:
+            return '{}({})'.format(self.__class__.__name__, self.runtime_info.name)
+        return super(BaseCalculator, self).__repr__()
 
 
 class PipelineError(Exception):
@@ -129,129 +158,6 @@ def import_cls(clsname, pythonpath=None, registry=BaseCalculator._registry):
         sys.path.append(os.path.dirname(__file__))
     module = importlib.import_module(modname)
     return getattr(module, clsname)
-
-
-class SectionConfig(BaseConfig):
-
-    _sections = []
-
-    def __init__(self, *args, **kwargs):
-        super(SectionConfig, self).__init__(*args, **kwargs)
-        for name in self._sections:
-            value = self.data.get(name, {})
-            if value is None: value = {}
-            self.data[name] = value
-
-    def update(self, *args, **kwargs):
-        if len(args) == 1 and isinstance(args[0], self.__class__):
-            self.__dict__.update({name: value for name, value in args[0].__dict__.items() if name != 'data'})
-            kwargs = {**args[0].data, **kwargs}
-        elif len(args):
-            raise ValueError('Unrecognized arguments {}'.format(args))
-        for name, value in kwargs.items():
-            if name in self._sections:
-                self[name].update(value)
-            else:
-                self[name] = value
-
-
-def _best_match_parameter(namespace, basename, params):
-    splitnamespace = [] if not isinstance(namespace, str) else namespace.split(namespace_delimiter)
-    params = [param for param in params if param.basename == basename]
-    nnamespaces_in_common, ibestmatch = -1, -1
-    for iparam, param in enumerate(params):
-        name = param.name
-        nm = -1
-        for nm, (match_ns, this_ns) in enumerate(zip(name.split(namespace_delimiter), splitnamespace)):
-            if match_ns != this_ns: break
-        nm += 1
-        if nm >= nnamespaces_in_common:
-            nnamespaces_in_common = nm
-            ibestmatch = iparam
-    if ibestmatch == -1:
-        return None
-    return params[ibestmatch]
-
-
-class CalculatorConfig(SectionConfig):
-
-    _sections = ['info', 'init', 'params']
-    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save']
-
-    def __init__(self, data, **kwargs):
-        # cls, init kwargs
-        if isinstance(data, str):
-            data = BaseConfig(data, **kwargs).data
-        if isinstance(data, (list, tuple)):
-            if len(data) == 1:
-                data = (data[0], {})
-            if len(data) == 2:
-                data = {'class': data[0], 'info': {}, 'init': data[1]}
-            else:
-                raise PipelineError('Provide (ClassName, {}) or {class: ClassName, ...}')
-        else:
-            data = dict(data)
-        super(CalculatorConfig, self).__init__(data)
-        self['class'] = import_cls(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
-        self['info'] = Info(**self['info'])
-        self['params'] = ParameterCollectionConfig(self['params'])
-        load_fn = data.get('load', None)
-        save_fn = data.get('save', None)
-        if not isinstance(load_fn, str):
-            if load_fn and isinstance(save_fn, str):
-                load_fn = save_fn
-            else:
-                load_fn = None
-        self._loaded = None
-        if load_fn is not None:
-            self['init'] = {}
-            self['class'].log_info('Loading {}.'.format(load_fn))
-            state = np.load(load_fn, allow_pickle=True)[()]
-            if '_emulator_cls' in state:  # TODO: better managment of cls names
-                from cosmofit.emulators import BaseEmulator
-                self._loaded = BaseEmulator.from_state(state)
-            else:
-                self._loaded = self['class'].from_state(state)
-            self['class'] = type(self._loaded)
-            cls_params = getattr(self._loaded, 'params', None)
-        else:
-            cls_params = getattr(self['class'], 'params', None)
-        if cls_params is not None:
-            self['params'] = ParameterCollectionConfig(cls_params).clone(self['params'])
-        self['load'], self['save'] = load_fn, save_fn
-
-    def init(self, namespace=None, params=None, **kwargs):
-        self_params = self['params'].with_namespace(namespace=namespace)
-        derived = [param for param, b in self_params.derived.items() if b]
-        self_params.derived = {}
-        if params is None:
-            params = self_params
-        for iparam, param in enumerate(self_params):
-            param = _best_match_parameter(param.namespace, param.basename, params)
-            if param is not None: self_params[iparam] = param
-        if self._loaded is None:
-            new = self['class'].__new__(self['class'])
-        else:
-            new = self._loaded.copy()
-        new.info = self['info']
-        if self._loaded is None:
-            try:
-                new.__init__(**self['init'])
-            except TypeError as exc:
-                raise PipelineError('Error in {}'.format(new.__class__)) from exc
-        if hasattr(new, 'set_params'):
-            self_params = new.set_params(self_params)
-            if isinstance(self_params, ParameterCollectionConfig):
-                self_params = self_params.with_namespace(namespace=namespace)
-        new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=ParameterCollection(self_params), **kwargs)
-        new.runtime_info._derived_names = derived
-        save_fn = self['save']
-        if save_fn is not None:
-            new.save(save_fn)
-        return new
-
-    def other_items(self):
-        return [(name, value) for name, value in self.items() if name not in self._keywords]
 
 
 class Info(BaseClass):
@@ -335,7 +241,7 @@ class RuntimeInfo(BaseClass):
                     name = param.basename
                     if name in state: value = state[name]
                     else: value = getattr(self.calculator, name)
-                    self._derived.set(ParameterArray(value, param=param))
+                    self._derived.set(ParameterArray(value, param=param), output=True)
         return self._derived
 
     @derived.setter
@@ -350,7 +256,6 @@ class RuntimeInfo(BaseClass):
     def torun(self, torun):
         self._torun = torun
         if torun:
-            self._derived = None
             for inst in self.required_by:
                 inst.runtime_info.torun = True
 
@@ -383,159 +288,324 @@ class RuntimeInfo(BaseClass):
         return new
 
 
+class SectionConfig(BaseConfig):
+
+    _sections = []
+
+    def __init__(self, *args, **kwargs):
+        super(SectionConfig, self).__init__(*args, **kwargs)
+        for name in self._sections:
+            value = self.data.get(name, {})
+            if value is None: value = {}
+            self.data[name] = value
+
+    def update(self, *args, **kwargs):
+        if len(args) == 1 and isinstance(args[0], self.__class__):
+            self.__dict__.update({name: value for name, value in args[0].__dict__.items() if name != 'data'})
+            kwargs = {**args[0].data, **kwargs}
+        elif len(args):
+            raise ValueError('Unrecognized arguments {}'.format(args))
+        for name, value in kwargs.items():
+            if name in self._sections:
+                self[name].update(value)
+            else:
+                self[name] = value
+
+
+def _best_match_parameter(namespace, basename, params, choice='max'):
+    assert choice in ['min', 'max']
+    splitnamespace = [] if not isinstance(namespace, str) else namespace.split(namespace_delimiter)
+    params = [param for param in params if param.basename == basename]
+    nnamespaces_in_common, ibestmatch = -1 if choice == 'max' else np.inf, -1
+    for iparam, param in enumerate(params):
+        namespaces = param.name.split(namespace_delimiter)[:-1]
+        nm = len(namespaces)
+        if nm > len(splitnamespace) or namespaces != splitnamespace[:nm]:
+            continue
+        if (choice == 'max' and nm >= nnamespaces_in_common) or (choice == 'min' and nm <= nnamespaces_in_common):
+            nnamespaces_in_common = nm
+            ibestmatch = iparam
+    if ibestmatch == -1:
+        return None
+    return params[ibestmatch]
+
+
+class CalculatorConfig(SectionConfig):
+
+    _sections = ['info', 'init', 'params']
+    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save']
+
+    def __init__(self, data, **kwargs):
+        # cls, init kwargs
+        if isinstance(data, str):
+            data = BaseConfig(data, **kwargs).data
+        if isinstance(data, (list, tuple)):
+            if len(data) == 1:
+                data = (data[0], {})
+            if len(data) == 2:
+                data = {'class': data[0], 'info': {}, 'init': data[1]}
+            else:
+                raise PipelineError('Provide (ClassName, {}) or {class: ClassName, ...}')
+        else:
+            data = dict(data)
+        super(CalculatorConfig, self).__init__(data)
+        self['class'] = import_cls(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
+        self['info'] = Info(**self['info'])
+        self['params'] = ParameterCollectionConfig(self['params'])
+        load_fn = data.get('load', None)
+        save_fn = data.get('save', None)
+        if not isinstance(load_fn, str):
+            if load_fn and isinstance(save_fn, str):
+                load_fn = save_fn
+            else:
+                load_fn = None
+        self._loaded = None
+        if load_fn is not None:
+            self['init'] = {}
+            self['class'].log_info('Loading {}.'.format(load_fn))
+            state = np.load(load_fn, allow_pickle=True)[()]
+            if '_emulator_cls' in state:  # TODO: better managment of cls names
+                from cosmofit.emulators import BaseEmulator
+                self._loaded = BaseEmulator.from_state(state)
+            else:
+                self._loaded = self['class'].from_state(state)
+            self['class'] = type(self._loaded)
+            cls_params = getattr(self._loaded, 'params', None)
+        else:
+            cls_params = getattr(self['class'], 'params', None)
+        if cls_params is not None:
+            self['params'] = ParameterCollectionConfig(cls_params).clone(self['params'])
+        self['load'], self['save'] = load_fn, save_fn
+
+    def init(self, namespace=None, params=None, globals=None, **kwargs):
+        self_params = self['params'].with_namespace(namespace=namespace)
+        self_derived = [param for param, b in self_params.derived.items() if b]
+        self_params.derived = {}
+        if params is None:
+            params = self_params
+        for iparam, param in enumerate(self_params):
+            if param in params:
+                self_params[iparam] = params[param]
+        if self._loaded is None:
+            new = self['class'].__new__(self['class'])
+        else:
+            new = self._loaded.copy()
+        new.info = self['info']
+        if globals is not None:
+            globals.update(new.globals)
+            new.globals = globals
+        if self._loaded is None:
+            try:
+                new.__init__(**self['init'])
+            except TypeError as exc:
+                raise PipelineError('Error in {}'.format(new.__class__)) from exc
+        if hasattr(new, 'set_params'):
+            self_params = new.set_params(self_params)
+            if isinstance(self_params, ParameterCollectionConfig):
+                self_params = self_params.with_namespace(namespace=namespace)
+        derived = []
+        for param in self_derived:
+            if param in ParameterCollectionConfig._keywords['derived']:
+                derived.append(param)
+            elif param not in self_params:
+                param = Parameter(param, namespace=namespace, derived=True)
+                self_params.set(param)
+        new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=ParameterCollection(self_params), **kwargs)
+        new.runtime_info._derived_names = derived
+        save_fn = self['save']
+        if save_fn is not None:
+            new.save(save_fn)
+        return new
+
+    def other_items(self):
+        return [(name, value) for name, value in self.items() if name not in self._keywords]
+
+
+class PipelineConfig(BaseConfig):
+
+    @CurrentMPIComm.enable
+    def __init__(self, *args, params=None, mpicomm=None, **kwargs):
+        self.mpicomm = mpicomm
+        super(PipelineConfig, self).__init__(*args, **kwargs)
+
+        params = ParameterCollectionConfig(params, identifier='name')
+        self.namespaces_deepfirst = ['']
+        self.calculators_by_namespace = {}
+
+        def sort_by_namespace(calculators_in_namespace, namespace=''):
+            for basename, calcdict in calculators_in_namespace.items():
+                if not basename:
+                    raise PipelineError('Give non-empty namespace / calculator name')
+                if 'class' in calcdict:
+                    self.calculators_by_namespace[namespace] = {**self.calculators_by_namespace.get(namespace, {}), basename: calcdict}
+                else:
+                    if not namespace:
+                        newnamespace = basename
+                    else:
+                        newnamespace = namespace_delimiter.join([namespace, basename])
+                    self.namespaces_deepfirst.append(newnamespace)
+                    sort_by_namespace(calcdict, namespace=newnamespace)
+
+        sort_by_namespace(self)
+
+        def updated(new, old):
+            # Is new different to old? (other than namespace)
+            if old is None:
+                return True
+            return (ParameterConfig(new) != ParameterConfig(old))
+
+        self.params = ParameterCollectionConfig(identifier='name')
+        self.updated_params = set()
+        for namespace in self.namespaces_deepfirst:
+            calculators_in_namespace = self.calculators_by_namespace[namespace] = self.calculators_by_namespace.get(namespace, {})
+            for basename, calcdict in calculators_in_namespace.items():
+                config = CalculatorConfig(calcdict)
+                full_config = self.clone_config_with_fn(config)
+                calculators_in_namespace[basename] = full_config
+                full_config_params = full_config['params'].with_namespace(namespace=namespace)
+                for param in full_config_params:
+                    self.params.set(param)
+                    if config['params'].updated(param.basename):
+                        self.updated_params.add(param.name)
+
+        for param in params:
+            self.params.set(param)
+            self.updated_params.add(param.name)
+
+    def clone_config_with_fn(self, config):
+        cls = config['class']
+        config_fn = config.get('config_fn', None)
+        default_config_fn = cls.config_fn
+        if config_fn is None and os.path.isfile(default_config_fn):
+            config_fn = default_config_fn
+        if config_fn is not None:
+            if self.mpicomm.rank == 0:
+                self.log_info('Loading config file {}'.format(config_fn))
+            try:
+                tmpconfig = CalculatorConfig(config_fn, index={'class': cls.__name__})
+            except IndexError:  # no config for this class in config_fn
+                if self.mpicomm.rank == 0:
+                    self.log_info('No config for {} found in config file {}'.format(cls.__name__, config_fn))
+            else:
+                config = tmpconfig.clone(config)
+        return config
+
+    def init(self):
+
+        def search_parent_namespace(namespace):
+            toret = []
+            splitnamespace = namespace.split(namespace_delimiter) if namespace else []
+            for tmpnamespace in reversed(self.namespaces_deepfirst):
+                tmpsplitnamespace = tmpnamespace.split(namespace_delimiter) if tmpnamespace else []
+                if tmpsplitnamespace == splitnamespace[:len(tmpsplitnamespace)]:
+                    for basename, config in self.calculators_by_namespace[tmpnamespace].items():
+                        toret.append((tmpnamespace, basename, config))
+            return toret
+
+        def callback_init(namespace, basename, config, required_by=None):
+            if required_by is None:
+                globals = None
+                if (namespace, basename) in used: return
+            else:
+                globals = required_by.globals
+                required_by = {required_by}
+            new = config.init(namespace=namespace, params=self.params, globals=globals, requires={}, required_by=required_by, basename=basename)
+            calculators.append(new)
+            for requirementbasename, config in getattr(new, 'requires', {}).items():
+                # Search for calc in config
+                config = CalculatorConfig(config)
+                key_requires = requirementbasename
+                requirementnamespace = namespace
+                match_first, match_name = None, None
+                for tmpnamespace, tmpbasename, tmpconfig in search_parent_namespace(namespace):
+                    if issubclass(tmpconfig['class'], config['class']):
+                        tc = tmpconfig.clone(config)
+                        tc['class'], tc._loaded = tmpconfig['class'], tmpconfig._loaded
+                        #print(config['class'], tc['class'], list(config['params'].keys()), list(tmpconfig['params'].keys()))
+                        #if tc['class'].__name__ == 'DampedBAOWigglesPowerSpectrumMultipoles':
+                        #    print(id(tc['params']), id(tmpconfig['params']))
+                        tmp = (tmpnamespace, tmpbasename, tc)
+                        if match_first is None:
+                            match_first = tmp
+                        if tmpbasename == namespace_delimiter.join([basename, requirementbasename]):
+                            match_name = tmp
+                            break
+                if match_name:
+                    requirementnamespace, requirementbasename, config = match_name
+                    used.add((requirementnamespace, requirementbasename))
+                elif match_first:
+                    requirementnamespace, requirementbasename, config = match_first
+                    used.add((requirementnamespace, requirementbasename))
+                else:
+                    config = self.clone_config_with_fn(config)
+                already_instantiated = False
+                for calc in calculators:
+                    #if calc.__class__.__name__ == 'DampedBAOWigglesPowerSpectrumMultipoles':
+                    #    print(id(calc.runtime_info.config['params']))
+                    already_instantiated = calc.__class__ == config['class'] and calc.runtime_info.namespace == requirementnamespace\
+                                           and calc.runtime_info.basename == requirementbasename and calc.runtime_info.config == config
+                    if already_instantiated: break
+                if already_instantiated:
+                    #print(new.__class__, config['class'], id(calc.runtime_info.config['params']), id(config['params']))
+                    requirement = calc
+                    requirement.runtime_info.required_by.add(new)
+                else:
+                    requirement = callback_init(requirementnamespace, requirementbasename, config, required_by=new)
+                new.runtime_info.requires[key_requires] = requirement
+
+            return new
+
+        calculators, used = [], set()
+        for namespace in reversed(self.namespaces_deepfirst):
+            for basename, config in self.calculators_by_namespace[namespace].items():
+                callback_init(namespace, basename, config, required_by=None)
+
+        all_params, updated_params = ParameterCollection(), ParameterCollection()
+        for calculator in calculators:
+            for param in calculator.runtime_info.full_params:
+                all_params.set(param)
+                if param.name in self.updated_params:
+                    updated_params.set(param)
+
+        for calculator in calculators:
+            for iparam, param in enumerate(calculator.runtime_info.full_params):
+                if param.name not in self.updated_params:
+                    match_param = _best_match_parameter(param.namespace, param.basename, updated_params, choice='max')
+                    if match_param is None:
+                        match_param = _best_match_parameter(param.namespace, param.basename, all_params, choice='min')
+                    if match_param is not None:
+                        calculator.runtime_info.full_params[iparam] = match_param
+            calculator.runtime_info.full_params = calculator.runtime_info.full_params  # to reset all params
+
+        return calculators
+
+
 class BasePipeline(BaseClass):
 
     @CurrentMPIComm.enable
     def __init__(self, calculators, params=None, mpicomm=None):
 
+        params = ParameterCollectionConfig(params, identifier='name')
+
         if isinstance(calculators, BaseCalculator):
             calculators = [calculators]
-        is_config = True
         if utils.is_sequence(calculators):
             if not len(calculators):
                 raise PipelineError('Need at least one calculator')
-            is_config = not isinstance(calculators[0], BaseCalculator)
-
-        final_params = params = ParameterCollectionConfig(params, identifier='name')
-
-        if is_config:
-
-            namespaces_deepfirst = ['']
-            calculators_by_namespace = {}
-
-            def sort_by_namespace(calculators_in_namespace, namespace=''):
-                for basename, calcdict in calculators_in_namespace.items():
-                    if not basename:
-                        raise PipelineError('Give non-empty namespace / calculator name')
-                    if 'class' in calcdict:
-                        calculators_by_namespace[namespace] = {**calculators_by_namespace.get(namespace, {}), basename: calcdict}
-                    else:
-                        if not namespace:
-                            newnamespace = basename
-                        else:
-                            newnamespace = namespace_delimiter.join([namespace, basename])
-                        namespaces_deepfirst.append(newnamespace)
-                        sort_by_namespace(calcdict, namespace=newnamespace)
-
-            sort_by_namespace(BaseConfig(calculators))
-
-            def clone_from_config_fn(config):
-                cls = config['class']
-                config_fn = config.get('config_fn', None)
-                default_config_fn = cls.config_fn
-                if config_fn is None and os.path.isfile(default_config_fn):
-                    config_fn = default_config_fn
-                if config_fn is not None:
-                    if self.mpicomm.rank == 0:
-                        self.log_info('Loading config file {}'.format(config_fn))
-                    try:
-                        tmpconfig = CalculatorConfig(config_fn, index={'class': cls.__name__})
-                    except IndexError:  # no config for this class in config_fn
-                        if self.mpicomm.rank == 0:
-                            self.log_info('No config for {} found in config file {}'.format(cls.__name__, config_fn))
-                    else:
-                        config = tmpconfig.clone(config)
-                return config
-
-            def updated(new, old):
-                # Is new different to old? (other than namespace)
-                if old is None:
-                    return True
-                return all(getattr(new, name, None) == getattr(old, name, None) for name in Parameter._attrs if name not in ['namespace'])
-
-            params = ParameterCollectionConfig(params, identifier='name')
-            for namespace in namespaces_deepfirst:
-                calculators_in_namespace = calculators_by_namespace[namespace] = calculators_by_namespace.get(namespace, {})
-                for basename, calcdict in calculators_in_namespace.items():
-                    config_config = CalculatorConfig(calcdict)
-                    config_config_fn = clone_from_config_fn(config_config)
-                    calculators_in_namespace[basename] = config_config_fn
-                    self_params = config_config_fn['params'].with_namespace(namespace=namespace)
-                    config_params = config_config['params'].with_namespace(namespace=namespace)
-                    for param in self_params:
-                        if updated(param, config_params.get(param.basename, None)):
-                            params.set(param)
-                        else:
-                            match_param = _best_match_parameter(namespace, param.basename, params.values())
-                            if match_param is None:
-                                params.set(param)
-                            else:
-                                config_config_fn['params'][param.basename] = match_param
-
-            for param in final_params:
-                params.set(param)
-
-            def search_parent_namespace(namespace):
-                toret = []
-                splitnamespace = namespace.split(namespace_delimiter) if namespace else []
-                for tmpnamespace in reversed(namespaces_deepfirst):
-                    tmpsplitnamespace = tmpnamespace.split(namespace_delimiter) if tmpnamespace else []
-                    if tmpsplitnamespace == splitnamespace[:len(tmpsplitnamespace)]:
-                        for basename, config in calculators_by_namespace[tmpnamespace].items():
-                            toret.append((tmpnamespace, basename, config))
-                return toret
-
-            def callback_init(namespace, basename, config, required_by=None):
-                if required_by is None and any((calc.runtime_info.namespace, calc.runtime_info.basename) == (namespace, basename) for calc in calculators):
-                    return
-                new = config.init(namespace=namespace, params=params, requires={}, required_by=required_by, basename=basename)
-                calculators.append(new)
-                for requirementbasename, config in getattr(new, 'requires', {}).items():
-                    # Search for calc in config
-                    config = CalculatorConfig(config)
-                    key_requires = requirementbasename
-                    requirementnamespace = namespace
-                    match_first, match_name = None, None
-                    for tmpnamespace, tmpbasename, tmpconfig in search_parent_namespace(namespace):
-                        if issubclass(tmpconfig['class'], config['class']):
-                            tc = tmpconfig.clone(config)
-                            tc['class'], tc._loaded = tmpconfig['class'], tmpconfig._loaded
-                            #print(config['class'], tc['class'], list(config['params'].keys()), list(tmpconfig['params'].keys()))
-                            #if tc['class'].__name__ == 'DampedBAOWigglesPowerSpectrumMultipoles':
-                            #    print(id(tc['params']), id(tmpconfig['params']))
-                            tmp = (tmpnamespace, tmpbasename, tc)
-                            if match_first is None:
-                                match_first = tmp
-                            if tmpbasename == namespace_delimiter.join([basename, requirementbasename]):
-                                match_name = tmp
-                                break
-                    if match_name:
-                        requirementnamespace, requirementbasename, config = match_name
-                    elif match_first:
-                        requirementnamespace, requirementbasename, config = match_first
-                    else:
-                        config = clone_from_config_fn(config)
-                    already_instantiated = False
-                    for calc in calculators:
-                        #if calc.__class__.__name__ == 'DampedBAOWigglesPowerSpectrumMultipoles':
-                        #    print(id(calc.runtime_info.config['params']))
-                        already_instantiated = calc.__class__ == config['class'] and calc.runtime_info.namespace == requirementnamespace\
-                                               and calc.runtime_info.basename == requirementbasename and calc.runtime_info.config == config
-                        if already_instantiated: break
-                    if already_instantiated:
-                        #print(new.__class__, config['class'], id(calc.runtime_info.config['params']), id(config['params']))
-                        requirement = calc
-                        requirement.runtime_info.required_by.add(new)
-                    else:
-                        requirement = callback_init(requirementnamespace, requirementbasename, config, required_by={new})
-                    new.runtime_info.requires[key_requires] = requirement
-
-                return new
-
-            calculators = []
-            for namespace in reversed(namespaces_deepfirst):
-                for basename, config in calculators_by_namespace[namespace].items():
-                    callback_init(namespace, basename, config, required_by=None)
+        else:
+            calculators = PipelineConfig(calculators, params=params, mpicomm=mpicomm).init()
 
         self.calculators, self.end_calculators = calculators, []
         for calculator in self.calculators:
             if not calculator.runtime_info.required_by:
                 self.end_calculators.append(calculator)
 
-        self.log_info('Found calculators {}.'.format(self.calculators))
-        self.log_info('Found end calculators {}.'.format(self.end_calculators))
+        if self.mpicomm.rank == 0:
+            self.log_info('Found calculators {}.'.format(self.calculators))
+            self.log_info('Found end calculators {}.'.format(self.end_calculators))
+
         # Checks
-        for param in final_params:
+        for param in params:
             if not any(param in calculator.runtime_info.full_params for calculator in self.calculators):
                 raise PipelineError('Parameter {} is not used by any calculator'.format(param))
 
@@ -546,6 +616,7 @@ class BasePipeline(BaseClass):
                 callback_dependency(calculator, calc.runtime_info.required_by)
 
         for calculator in self.calculators:
+            calculator.runtime_info.pipeline = self
             callback_dependency(calculator, calculator.runtime_info.required_by)
 
         self.mpicomm = mpicomm
@@ -559,12 +630,12 @@ class BasePipeline(BaseClass):
             calculator.run(**calculator.runtime_info.params)
 
         self._set_auto_derived()
-        for calculator in self.calculators:
-            for name in getattr(calculator.runtime_info, '_derived_names', []):
-                if name not in ParameterCollectionConfig._keywords['derived'] and name not in calculator.runtime_info.base_params:
-                    param = Parameter(name, namespace=calculator.runtime_info.namespace, derived=True)
-                    calculator.runtime_info.full_params.set(param)
-                    calculator.runtime_info.full_params = calculator.runtime_info.full_params
+        #for calculator in self.calculators:
+        #    for name in getattr(calculator.runtime_info, '_derived_names', []):
+        #        if name not in ParameterCollectionConfig._keywords['derived'] and name not in calculator.runtime_info.base_params:
+        #            param = Parameter(name, namespace=calculator.runtime_info.namespace, derived=True)
+        #            calculator.runtime_info.full_params.set(param)
+        #            calculator.runtime_info.full_params = calculator.runtime_info.full_params
         self.set_params()
 
     def set_params(self):
@@ -573,10 +644,10 @@ class BasePipeline(BaseClass):
         for calculator in self.calculators:
             for param in calculator.runtime_info.full_params:
                 if param in self.params:
-                    if param != self.params[param]:
-                        raise PipelineError('Parameter {} of {} is different from that of {}'.format(param, calculator, params_from_calculators[param.name]))
-                    elif param.derived and param.value is None:
+                    if param.derived and param.fixed:
                         raise PipelineError('Derived parameter {} of {} is already derived in {}'.format(param, calculator, params_from_calculators[param.name]))
+                    elif param != self.params[param]:
+                        raise PipelineError('Parameter {} of {} is different from that of {}'.format(param, calculator, params_from_calculators[param.name]))
                 params_from_calculators[param.name] = params_from_calculators.get(param.name, []) + [calculator]
                 self.params.set(param)
 
@@ -597,19 +668,24 @@ class BasePipeline(BaseClass):
             self.derived.update(calculator.runtime_info.derived)
 
     def mpirun(self, **params):
-        value = []
+        size, cshape = 0, ()
         names = self.mpicomm.bcast(list(params.keys()) if self.mpicomm.rank == 0 else None, root=0)
         for name in names:
-            params[name] = value = mpy.scatter(np.ravel(params[name]) if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0)
-        size = len(value)
-        cumsize = np.cumsum([0] + self.mpicomm.allgather(size))
-        if not cumsize[-1]: return
+            array = None
+            if self.mpicomm.rank == 0:
+                array = np.asarray(params[name])
+                cshape = array.shape
+                array = array.ravel()
+            params[name] = mpy.scatter(array, mpicomm=self.mpicomm, mpiroot=0)
+            size = params[name].size
+        cumsizes = np.cumsum([0] + self.mpicomm.allgather(size))
+        if not cumsizes[-1]: return
         mpicomm = self.mpicomm
         states = {}
         for ivalue in range(size):
             self.mpicomm = COMM_SELF
             self.run(**{name: value[ivalue] for name, value in params.items()})
-            states[ivalue + cumsize[mpicomm.rank]] = self.derived
+            states[ivalue + cumsizes[mpicomm.rank]] = self.derived
         self.mpicomm = mpicomm
         derived = None
         states = self.mpicomm.gather(states, root=0)
@@ -617,7 +693,8 @@ class BasePipeline(BaseClass):
             derived = {}
             for state in states:
                 derived.update(state)
-            derived = ParameterValues.concatenate([derived[i][None, ...] for i in range(cumsize[-1])])
+            derived = ParameterValues.concatenate([derived[i][None, ...] for i in range(cumsizes[-1])])
+            derived.shape = cshape
         self.derived = derived
 
     @property
@@ -673,7 +750,7 @@ class BasePipeline(BaseClass):
                     callback(calc)
 
         for end_calculator in new.end_calculators:
-            end_calculator.runtime_info.required_by = set([])
+            end_calculator.runtime_info.required_by = set()
             new.calculators.append(end_calculator)
             callback(end_calculator)
 
@@ -690,8 +767,7 @@ class BasePipeline(BaseClass):
         if calculators is None:
             calculators = []
             for calculator in self.calculators:
-                derived = getattr(calculator.runtime_info, '_derived_names', {})
-                if any(kw in derived for kw in ParameterCollectionConfig._keywords['derived']):
+                if getattr(calculator.runtime_info, '_derived_names', []):
                     calculators.append(calculator)
 
         states = [{} for i in range(len(calculators))]
@@ -701,15 +777,20 @@ class BasePipeline(BaseClass):
                 params = {str(param): param.ref.sample(random_state=rng) for param in self.params.select(varied=True)}
                 BasePipeline.run(self, **params)
                 for calculator, state in zip(calculators, states):
-                    for name, value in calculator.__getstate__().items():
+                    calcstate = calculator.__getstate__()
+                    for name, value in calcstate.items():
                         state[name] = state.get(name, []) + [value]
+                    for param in calculator.runtime_info.derived_params:
+                        name = param.basename
+                        if name not in calcstate:
+                            state[name] = state.get(name, []) + [getattr(calculator, name)]
 
         fixed, varied = [], []
         for calculator, state in zip(calculators, states):
             fixed.append({})
             varied.append([])
             for name, values in state.items():
-                if all(np.all(value == values[0]) for value in values):
+                if all(_deepeq(value, values[0]) for value in values):
                     fixed[-1][name] = values[0]
                 else:
                     varied[-1].append(name)
@@ -784,7 +865,7 @@ class LikelihoodPipeline(BasePipeline):
         param = Parameter(self._likelihood_name, namespace=None, latex=outputs_to_latex(self._likelihood_name), derived=True)
         if param in self.derived:
             raise PipelineError('{} is a reserved parameter name, do not use it!'.format(self._likelihood_name))
-        self.derived.set(ParameterArray(loglikelihood, param))
+        self.derived.set(ParameterArray(loglikelihood, param), output=True)
 
     @property
     def loglikelihood(self):
@@ -817,7 +898,10 @@ class DoConfig(SectionConfig):
             for name, value in calculator.runtime_info.config.other_items():
                 if self['do'] is None or (name in self['do']) and (self['do'][name] is None or calculator.runtime_info.name in self['do'][name]):
                     func = getattr(calculator, name, None)
-                    if func is None: continue
+                    if func is None:
+                        if calculator.mpicomm.rank == 0:
+                            calculator.log_warning('{} has no method "{}".'.format(calculator, name))
+                        continue
                     if isinstance(value, dict):
                         func(**value)
                     else:
