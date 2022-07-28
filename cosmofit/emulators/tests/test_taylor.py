@@ -7,9 +7,9 @@ from cosmofit import setup_logging
 
 def test_taylor(plot=False):
     pipeline = {}
-    pipeline['theory'] = {'class': 'cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum', 'params': {'fixed': 'al*'}}
-    pipeline['effectap'] = {'class': 'cosmofit.theories.base.EffectAP', 'init': {'mode': 'qparqper', 'fiducial': 'DESI'}}
-    pipeline['cosmo'] = {'class': 'cosmofit.theories.primordial_cosmology.Cosmoprimo', 'params': {'fixed': '*'}}
+    pipeline['theory'] = {'class': 'cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles', 'init': {'fiducial': 'DESI'}, 'params': {'.fixed': 'al*'}}
+    pipeline['param'] = {'class': 'cosmofit.theories.power_template.BAOPowerSpectrumParameterization'}
+    pipeline['cosmo'] = {'class': 'cosmofit.theories.primordial_cosmology.Cosmoprimo', 'params': {'.fixed': '*'}}
     pipeline = BasePipeline(pipeline)
     power_bak = pipeline.end_calculators[0].power.copy()
     emulator = TaylorEmulatorEngine(pipeline, order=1)

@@ -339,23 +339,23 @@ class Chain(ParameterValues):
         return var
 
     def std(self, param, ddof=1):
-        return np.std(_reshape(self[param], self.size), ddof=ddof, axis=0) ** 0.5
+        return np.std(_reshape(self[param], self.size, previous=self.shape), ddof=ddof, axis=0) ** 0.5
 
     def mean(self, param):
         """Return weighted mean."""
-        return np.average(_reshape(self[param], self.size), weights=self.weight.ravel(), axis=0)
+        return np.average(_reshape(self[param], self.size, previous=self.shape), weights=self.weight.ravel(), axis=0)
 
     def argmax(self, param):
         """Return parameter value for maximum of ``cost.``"""
-        return _reshape(self[param], self.size)[np.argmax(self.logposterior.ravel())]
+        return _reshape(self[param], self.size, previous=self.shape)[np.argmax(self.logposterior.ravel())]
 
     def median(self, param):
         """Return weighted quantiles."""
-        return utils.weighted_quantile(_reshape(self[param], self.size), q=0.5, weights=self.weight.ravel(), axis=0)
+        return utils.weighted_quantile(_reshape(self[param], self.size, previous=self.shape), q=0.5, weights=self.weight.ravel(), axis=0)
 
     def quantile(self, param, q=(0.1587, 0.8413)):
         """Return weighted quantiles."""
-        return utils.weighted_quantile(_reshape(self[param], self.size), q=q, weights=self.weight.ravel(), axis=0)
+        return utils.weighted_quantile(_reshape(self[param], self.size, previous=self.shape), q=q, weights=self.weight.ravel(), axis=0)
 
     def interval(self, param, **kwargs):
         """

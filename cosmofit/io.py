@@ -5,22 +5,7 @@ from collections import UserDict
 import numpy as np
 import yaml
 
-from .utils import BaseClass
-
-
-def _deepeq(obj1, obj2):
-    if type(obj2) is type(obj1):
-        if isinstance(obj1, dict):
-            if obj2.keys() == obj1.keys():
-                return all(_deepeq(obj1[name], obj2[name]) for name in obj1)
-        elif isinstance(obj1, (tuple, list)):
-            if len(obj2) == len(obj1):
-                return all(_deepeq(o1, o2) for o1, o2 in zip(obj1, obj2))
-        elif isinstance(obj1, np.ndarray):
-            return np.all(obj2 == obj1)
-        else:
-            return obj2 == obj1
-    return False
+from .utils import BaseClass, deep_eq
 
 
 class YamlLoader(yaml.SafeLoader):
@@ -268,4 +253,4 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         return new
 
     def __eq__(self, other):
-        return type(other) == type(self) and _deepeq(self.data, other.data)
+        return type(other) == type(self) and deep_eq(self.data, other.data)

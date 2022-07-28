@@ -160,6 +160,105 @@ def is_sequence(item):
     return isinstance(item, (list, tuple, set))
 
 
+def dict_to_yaml(d):
+    import numbers
+    toret = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            v = dict_to_yaml(v)
+        elif is_sequence(v):
+            v = list(v)
+        elif isinstance(v, np.ndarray):
+            if v.size == 1:
+                v = v[0]
+            else:
+                v = v.tolist()
+        elif not isinstance(v, (bool, numbers.Number)):
+            v = str(v)
+        toret[k] = v
+    return toret
+
+
+def deep_eq(obj1, obj2):
+    if type(obj2) is type(obj1):
+        if isinstance(obj1, dict):
+            if obj2.keys() == obj1.keys():
+                return all(deep_eq(obj1[name], obj2[name]) for name in obj1)
+        elif isinstance(obj1, (tuple, list)):
+            if len(obj2) == len(obj1):
+                return all(deep_eq(o1, o2) for o1, o2 in zip(obj1, obj2))
+        elif isinstance(obj1, np.ndarray):
+            return np.all(obj2 == obj1)
+        else:
+            return obj2 == obj1
+    return False
+
+
+class NamespaceDict(BaseClass):
+
+    def __init__(self, conf=None, **kwargs):
+        if isinstance(conf, self.__class__):
+            self.__dict__.update(conf.__dict__)
+        elif isinstance(conf, dict):
+            kwargs = {**conf, **kwargs}
+        elif conf is not None:
+            raise ValueError('Unrecognized {} {}'.format(self.__class__.__name__, conf))
+        for name, value in kwargs.items():
+            self[name] = value
+
+    def get(self, *args, **kwargs):
+        return getattr(self, *args, **kwargs)
+
+    def __getitem__(self, *args, **kwargs):
+        return getattr(self, *args, **kwargs)
+
+    def __setitem__(self, *args, **kwargs):
+        return setattr(self, *args, **kwargs)
+
+    def __delitem__(self, *args, **kwargs):
+        return delattr(self, *args, **kwargs)
+
+    def __contains__(self, name):
+        return name in self.__dict__
+
+    def keys(self):
+        return self.__dict__.keys()
+
+    def values(self):
+        return self.__dict__.values()
+
+    def items(self):
+        return self.__dict__.items()
+
+    def setdefault(self, name, item):
+        if name not in self:
+            self[name] = item
+
+    def update(self, *args, exclude=(), **kwargs):
+        other = self.__class__(*args, **kwargs)
+        for name, value in other.items():
+            if name not in exclude:
+                self[name] = value
+
+    def clone(self, *args, **kwargs):
+        new = self.copy()
+        new.update(*args, **kwargs)
+        return new
+
+    def __getstate__(self):
+        return self.__dict__.copy()
+
+    def pop(self, *args, **kwargs):
+        return self.__dict__.pop(*args, **kwargs)
+
+    def __eq__(self, other):
+        """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
+        return type(other) == type(self) and deep_eq(other.__getstate__(), self.__getstate__())
+
+    def __repr__(self):
+        return str(self.__getstate__())
+
+
 def _check_valid_inv(mat, invmat, rtol=1e-04, atol=1e-05, check_valid='raise'):
     """
     Check input array ``mat`` and ``invmat`` are matrix inverse.

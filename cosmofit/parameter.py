@@ -8,8 +8,8 @@ import numpy as np
 from scipy import stats
 
 from . import base, utils
-from .io import BaseConfig, _deepeq
-from .utils import BaseClass
+from .io import BaseConfig
+from .utils import BaseClass, NamespaceDict, deep_eq
 
 
 def decode_name(name, default_start=0, default_stop=None, default_step=1):
@@ -339,7 +339,7 @@ class Parameter(BaseClass):
         else:
             if namespace:
                 self.namespace = namespace
-        self.value = value
+        self.value = float(value) if value is not None else None
         self.prior = prior if isinstance(prior, ParameterPrior) else ParameterPrior(**(prior or {}))
         if value is None:
             if self.prior.is_proper():
@@ -812,24 +812,17 @@ class BaseParameterCollection(BaseClass):
 
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
-        return type(other) == type(self) and list(other.params()) == list(self.params()) and all(_deepeq(other_value, self_value) for other_value, self_value in zip(other, self))
+        return type(other) == type(self) and list(other.params()) == list(self.params()) and all(deep_eq(other_value, self_value) for other_value, self_value in zip(other, self))
 
 
-class ParameterConfig(BaseClass):
+class ParameterConfig(NamespaceDict):
 
     def __init__(self, conf=None, **kwargs):
-        if isinstance(conf, self.__class__):
-            self.__dict__.update(conf.__dict__)
-        elif isinstance(conf, Parameter):
+        if isinstance(conf, Parameter):
             conf = conf.__getstate__()
             if conf['namespace'] is None:
                 conf.pop('namespace')
-        elif isinstance(conf, dict):
-            kwargs = {**conf, **kwargs}
-        elif conf is not None:
-            raise ValueError('Unrecognized {} {}'.format(self.__class__.__name__, conf))
-        for name, value in kwargs.items():
-            self[name] = value
+        super(ParameterConfig, self).__init__(conf, **kwargs)
 
     def init(self):
         state = self.__getstate__()
@@ -855,52 +848,6 @@ class ParameterConfig(BaseClass):
             self.basename, self.namespace = names[-1], base.namespace_delimiter.join(names[:-1])
         else:
             self.basename = names[0]
-
-    def get(self, *args, **kwargs):
-        return getattr(self, *args, **kwargs)
-
-    def __getitem__(self, *args, **kwargs):
-        return getattr(self, *args, **kwargs)
-
-    def __setitem__(self, *args, **kwargs):
-        return setattr(self, *args, **kwargs)
-
-    def __delitem__(self, *args, **kwargs):
-        return delattr(self, *args, **kwargs)
-
-    def setdefault(self, name, item):
-        if name not in self:
-            self[name] = item
-
-    def update(self, *args, exclude=(), **kwargs):
-        other = self.__class__(*args, **kwargs)
-        for name, value in other.items():
-            if name not in exclude:
-                self[name] = value
-
-    def clone(self, *args, **kwargs):
-        new = self.copy()
-        new.update(*args, **kwargs)
-        return new
-
-    def items(self):
-        return self.__dict__.items()
-
-    def __getstate__(self):
-        return self.__dict__.copy()
-
-    def __contains__(self, name):
-        return name in self.__dict__
-
-    def pop(self, *args, **kwargs):
-        return self.__dict__.pop(*args, **kwargs)
-
-    def __eq__(self, other):
-        """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
-        return type(other) == type(self) and _deepeq(other.__getstate__(), self.__getstate__())
-
-    def __repr__(self):
-        return str(self.__getstate__())
 
 
 class ParameterCollectionConfig(BaseParameterCollection):

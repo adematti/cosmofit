@@ -76,7 +76,12 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
                 if array.param.varied:
                     toret += array.param.prior(array)
             if isscalar: toret = toret[0]
-        return self.likelihood.mpicomm.bcast(toret, root=0)
+        toret = self.likelihood.mpicomm.bcast(toret, root=0)
+        mask = np.isnan(toret)
+        toret[mask] = -np.inf
+        if mask.any() and self.mpicomm.rank == 0:
+            self.log_warning('loglikelihood is NaN for {}'.format({k: v[mask] for k, v in di.items()}))
+        return toret
 
     def logposterior(self, values):
         values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)

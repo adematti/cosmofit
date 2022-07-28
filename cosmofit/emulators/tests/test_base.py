@@ -9,9 +9,9 @@ def test_base():
     emulator_dir = '_tests'
     fn = os.path.join(emulator_dir, 'emu.npy')
     config = {}
-    config['theory'] = {'class': 'cosmofit.theories.bao.Beutler2017BAOGalaxyPowerSpectrum'}
-    config['effectap'] = {'class': 'cosmofit.theories.base.EffectAP', 'init': {'mode': 'qparqper', 'fiducial': 'DESI'}}
-    config['cosmo'] = {'class': 'cosmofit.theories.primordial_cosmology.Cosmoprimo', 'params': {'fixed': '*'}}
+    config['theory'] = {'class': 'cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles', 'init': {'fiducial': 'DESI'}}
+    config['param'] = {'class': 'cosmofit.theories.power_template.BAOPowerSpectrumParameterization'}
+    config['cosmo'] = {'class': 'cosmofit.theories.primordial_cosmology.Cosmoprimo', 'params': {'.fixed': '*'}}
 
     pipeline = BasePipeline(config)
     emulator = PointEmulatorEngine(pipeline)

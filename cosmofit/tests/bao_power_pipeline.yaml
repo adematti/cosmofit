@@ -26,8 +26,8 @@ pipeline:
         #mode: 'nowiggle'
       params:
         .fixed: ['al*']
-        .derived: [.varied]
-      #load: f'{output_dir}/emulator.npy'
+        #.derived: [.varied]
+      load: f'{output_dir}/emulator.npy'
       emulator:
         plot: f'{output_dir}/emulator_*.png'
         save: f'{output_dir}/emulator.npy'
@@ -79,7 +79,9 @@ summarize:
    profiles:
      - f'{output_dir}/profiles.npy'
      - f'{output_dir}/profiles_nowiggle.npy'
-   stats: [stats.tex, stats_nowiggle.tex]
+   stats:
+     - f'{output_dir}/stats.tex'
+     - f'{output_dir}/stats_nowiggle.tex'
    plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
    plot_profile_comparison: f'{output_dir}/profile_comparison.png'
 

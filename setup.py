@@ -26,7 +26,7 @@ setup(name=package_basename,
       license='BSD3',
       url='http://github.com/adematti/cosmofit',
       install_requires=['numpy', 'scipy', 'tabulate'],
-      extras_require={'extras': ['cosmoprimo']},
+      extras_require={'extras': ['findiff', 'cosmoprimo']},
       packages=[package_basename],
       package_data={'cosmofit': list(get_yaml_files())},
       entry_points={'console_scripts': ['cosmofit=cosmofit.__main__:main']})

@@ -11,11 +11,13 @@ from .utils import outputs_to_latex
 from . import utils
 
 
-def _reshape(array, shape):
+def _reshape(array, shape, previous=None):
     if np.ndim(shape) == 0:
         shape = (shape, )
     shape = tuple(shape)
     ashape = array.shape
+    if previous is not None:
+        return array.reshape(shape + ashape[len(previous):])
     for i in range(1, array.ndim + 1):
         try:
             return array.reshape(shape + ashape[i:])
@@ -61,8 +63,9 @@ class ParameterValues(BaseParameterCollection):
 
     @shape.setter
     def shape(self, shape):
+        previous = self.shape or None
         for array in self:
-            self.set(_reshape(array, shape))
+            self.set(_reshape(array, shape, previous=previous))
 
     def reshape(self, shape):
         new = self.copy()
@@ -155,9 +158,6 @@ class ParameterValues(BaseParameterCollection):
             if param in self:
                 param = self[param].param.clone(param)
             item = ParameterArray(item, param, **self._enforce)
-        shape = self.shape
-        if shape:
-            item = _reshape(item, shape)
         try:
             self.data[name] = item  # list index
         except TypeError:

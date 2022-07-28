@@ -194,7 +194,7 @@ class EffectAP(BaseCalculator):
 
 class WindowedPowerSpectrumMultipoles(BaseCalculator):
 
-    def __init__(self, k=None, ells=(0, 2, 4), wmatrix=None, theory=None):
+    def __init__(self, k=None, ells=(0, 2, 4), wmatrix=None, shotnoise=0., theory=None):
         if k is None: k = np.linspace(0.01, 0.2, 20)
         if np.ndim(k[0]) == 0:
             k = [k] * len(ells)
@@ -246,19 +246,22 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
             for name in ['zeff', 'fiducial']:
                 if name in wmatrix.attrs and theory['init'].get(name, None) is None:
                     theory['init'].setdefault(name, wmatrix.attrs[name])
+        shotnoise = float(shotnoise)
+        self.shotnoise = np.array([shotnoise * (ell == 0) for ell in self.ellsin])
+        self.flatshotnoise = np.concatenate([np.full_like(kk, shotnoise * (ell == 0)) for ell in self.ells])
 
         theory['init'].update({'k': self.kin, 'ells': self.ellsin})
         self.requires = {'theory': theory}
 
     def run(self):
-        theory = np.ravel(self.theory.power)
+        theory = np.ravel(self.theory.power + self.shotnoise[:, None])
         if self.wmatrix is not None:
             self.flatpower = np.dot(theory, self.wmatrix)
         elif self.kmask is not None:
             self.flatpower = theory[self.kmask]
         else:
             self.flatpower = theory
-        #print(np.interp(0.1, self.k[0], self.power[0]), np.interp(0.1, self.kin, self.theory.power[0]))
+        self.flatpower -= self.flatshotnoise
 
     @property
     def power(self):
@@ -272,7 +275,7 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
 
     def __getstate__(self):
         state = {}
-        for name in ['kin', 'k', 'zeff', 'ells', 'fiducial', 'wmatrix', 'kmask', 'flatpower']:
+        for name in ['kin', 'k', 'zeff', 'ells', 'fiducial', 'wmatrix', 'kmask', 'flatpower', 'shotnoise', 'flatshotnoise']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state

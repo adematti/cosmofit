@@ -10,9 +10,9 @@ from mpytools import CurrentMPIComm
 from mpi4py.MPI import COMM_SELF
 
 from . import utils
-from .utils import BaseClass
+from .utils import BaseClass, NamespaceDict, deep_eq
 from .parameter import Parameter, ParameterArray, ParameterCollectionConfig, ParameterCollection, find_names
-from .io import BaseConfig, _deepeq
+from .io import BaseConfig
 from .samples import ParameterValues
 from .samples.utils import outputs_to_latex
 
@@ -160,40 +160,15 @@ def import_cls(clsname, pythonpath=None, registry=BaseCalculator._registry):
     return getattr(module, clsname)
 
 
-class Info(BaseClass):
+class Info(NamespaceDict):
 
     # TODO: add bibtex support
-
-    def __init__(self, **kwargs):
-        self.__dict__.update(**kwargs)
-
-    def __getstate__(self):
-        return self.__dict__.copy()
-
-    def update(self, *args, **kwargs):
-        state = self.__getstate__()
-        if len(args) == 1 and isinstance(args[0], self.__class__):
-            state.update(args[0].__getstate__())
-        elif len(args):
-            raise ValueError('Unrecognized arguments {}'.format(args))
-        state.update(kwargs)
-        self.__setstate__(state)
-
-    def clone(self, *args, **kwargs):
-        new = self.copy()
-        new.update(*args, **kwargs)
-        return new
-
-    def __repr__(self):
-        return '{}({})'.format(self.__class__.__name__, self.__dict__)
-
-    def __eq__(self, other):
-        return type(other) == type(self) and other.__dict__ == self.__dict__
+    pass
 
 
 class RuntimeInfo(BaseClass):
 
-    def __init__(self, calculator, namespace=None, requires=None, required_by=None, config=None, full_params=None, basename=None):
+    def __init__(self, calculator, namespace=None, requires=None, required_by=None, config=None, full_params=None, derived_auto=None, basename=None):
         self.config = config
         self.basename = basename
         self.namespace = namespace
@@ -207,6 +182,7 @@ class RuntimeInfo(BaseClass):
             self.full_params = full_params
         self.torun = True
         self.calculator = calculator
+        self.derived_auto = set(derived_auto or [])
 
     @property
     def full_params(self):
@@ -276,11 +252,17 @@ class RuntimeInfo(BaseClass):
             return namespace_delimiter.join([self.namespace, self.basename])
         return self.basename
 
+    def __getstate__(self):
+        return self.__dict__.copy()
+
     def update(self, *args, **kwargs):
-        state = {}
-        state.update(*args, **kwargs)
-        for name, value in state.items():
-            setattr(self, name, value)
+        state = self.__getstate__()
+        if len(args) == 1 and isinstance(args[0], self.__class__):
+            state.update(args[0].__getstate__())
+        elif len(args):
+            raise ValueError('Unrecognized arguments {}'.format(args))
+        state.update(kwargs)
+        self.__setstate__(state)
 
     def clone(self, *args, **kwargs):
         new = self.copy()
@@ -380,6 +362,13 @@ class CalculatorConfig(SectionConfig):
     def init(self, namespace=None, params=None, globals=None, **kwargs):
         self_params = self['params'].with_namespace(namespace=namespace)
         self_derived = [param for param, b in self_params.derived.items() if b]
+        derived_auto = set()
+        for param in self_derived:
+            if param in ['.varied', '.fixed']:
+                derived_auto.add(param)
+            elif param not in self_params:
+                param = Parameter(param, namespace=namespace, derived=True)
+                self_params.set(param)
         self_params.derived = {}
         if params is None:
             params = self_params
@@ -403,15 +392,7 @@ class CalculatorConfig(SectionConfig):
             self_params = new.set_params(self_params)
             if isinstance(self_params, ParameterCollectionConfig):
                 self_params = self_params.with_namespace(namespace=namespace)
-        derived = []
-        for param in self_derived:
-            if param in ParameterCollectionConfig._keywords['derived']:
-                derived.append(param)
-            elif param not in self_params:
-                param = Parameter(param, namespace=namespace, derived=True)
-                self_params.set(param)
-        new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=ParameterCollection(self_params), **kwargs)
-        new.runtime_info._derived_names = derived
+        new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=ParameterCollection(self_params), derived_auto=derived_auto, **kwargs)
         save_fn = self['save']
         if save_fn is not None:
             new.save(save_fn)
@@ -583,7 +564,7 @@ class PipelineConfig(BaseConfig):
 class BasePipeline(BaseClass):
 
     @CurrentMPIComm.enable
-    def __init__(self, calculators, params=None, mpicomm=None):
+    def __init__(self, calculators, params=None, mpicomm=None, quiet=False):
 
         params = ParameterCollectionConfig(params, identifier='name')
 
@@ -621,34 +602,27 @@ class BasePipeline(BaseClass):
 
         self.mpicomm = mpicomm
         # Init run, e.g. for fixed parameters
-        # for calculator in self.calculators:
-        #     print(calculator.runtime_info.params)
-
-        self.set_params()
-
+        self.set_params(quiet=quiet)
         for calculator in self.end_calculators:
             calculator.run(**calculator.runtime_info.params)
+        self._set_derived_auto()
+        self.set_params(quiet=quiet)
 
-        self._set_auto_derived()
-        #for calculator in self.calculators:
-        #    for name in getattr(calculator.runtime_info, '_derived_names', []):
-        #        if name not in ParameterCollectionConfig._keywords['derived'] and name not in calculator.runtime_info.base_params:
-        #            param = Parameter(name, namespace=calculator.runtime_info.namespace, derived=True)
-        #            calculator.runtime_info.full_params.set(param)
-        #            calculator.runtime_info.full_params = calculator.runtime_info.full_params
-        self.set_params()
-
-    def set_params(self):
-        params_from_calculators = {}
+    def set_params(self, quiet=False):
+        params_from_calculator = {}
         self.params = ParameterCollection()
         for calculator in self.calculators:
             for param in calculator.runtime_info.full_params:
-                if param in self.params:
+                if not quiet and param in self.params:
                     if param.derived and param.fixed:
-                        raise PipelineError('Derived parameter {} of {} is already derived in {}'.format(param, calculator, params_from_calculators[param.name]))
+                        msg = 'Derived parameter {} of {} is already derived in {}'.format(param, calculator, params_from_calculator[param.name])
+                        if param.basename not in calculator.runtime_info.derived_auto and param.basename not in params_from_calculator[param.name].runtime_info.derived_auto:
+                            raise PipelineError(msg)
+                        elif self.mpicomm.rank == 0:
+                            self.log_warning(msg)
                     elif param != self.params[param]:
-                        raise PipelineError('Parameter {} of {} is different from that of {}'.format(param, calculator, params_from_calculators[param.name]))
-                params_from_calculators[param.name] = params_from_calculators.get(param.name, []) + [calculator]
+                        raise PipelineError('Parameter {} of {} is different from that of {}'.format(param, calculator, params_from_calculator[param.name]))
+                params_from_calculator[param.name] = calculator
                 self.params.set(param)
 
     def run(self, **params):  # params with namespace
@@ -721,6 +695,7 @@ class BasePipeline(BaseClass):
             calculator.runtime_info.required_by = set([new.calculators[self.calculators.index(calc)] for calc in calculator.runtime_info.required_by])
             calculator.runtime_info.requires = {name: new.calculators[self.calculators.index(calc)] for name, calc in calculator.runtime_info.requires.items()}
             calculator.runtime_info.calculator = calculator
+            calculator.runtime_info.pipeline = new
         new.end_calculators = [new.calculators[self.calculators.index(calc)] for calc in self.end_calculators]
         new.params = self.params.copy()
         return new
@@ -763,11 +738,11 @@ class BasePipeline(BaseClass):
         for calculator in self.calculators:
             calculator.runtime_info = calculator.runtime_info.clone(full_params=calculator.runtime_info.full_params.clone(namespace=None))
 
-    def _classify_auto_derived(self, calculators=None, niterations=3):
+    def _classify_derived_auto(self, calculators=None, niterations=3):
         if calculators is None:
             calculators = []
             for calculator in self.calculators:
-                if getattr(calculator.runtime_info, '_derived_names', []):
+                if any(kw in getattr(calculator.runtime_info, 'derived_auto', {}) for kw in ['.varied', '.fixed']):
                     calculators.append(calculator)
 
         states = [{} for i in range(len(calculators))]
@@ -790,7 +765,7 @@ class BasePipeline(BaseClass):
             fixed.append({})
             varied.append([])
             for name, values in state.items():
-                if all(_deepeq(value, values[0]) for value in values):
+                if all(deep_eq(value, values[0]) for value in values):
                     fixed[-1][name] = values[0]
                 else:
                     varied[-1].append(name)
@@ -799,18 +774,18 @@ class BasePipeline(BaseClass):
                         raise ValueError('Attribute {} is of type {}, which is not supported (only float and complex supported)'.format(name, dtype))
         return calculators, fixed, varied
 
-    def _set_auto_derived(self, *args, **kwargs):
-        calculators, fixed, varied = self._classify_auto_derived(*args, **kwargs)
+    def _set_derived_auto(self, *args, **kwargs):
+        calculators, fixed, varied = self._classify_derived_auto(*args, **kwargs)
         for calculator, fixed_names, varied_names in zip(calculators, fixed, varied):
-            derived = getattr(calculator.runtime_info, '_derived_names', {})
             derived_names = set()
-            for derived_name in derived:
+            for derived_name in calculator.runtime_info.derived_auto:
                 if derived_name == '.fixed':
                     derived_names |= set(fixed_names)
                 elif derived_name == '.varied':
                     derived_names |= set(varied_names)
                 else:
                     derived_names.add(derived_name)
+            calculator.runtime_info.derived_auto |= derived_names
             for name in derived_names:
                 if name not in calculator.runtime_info.base_params:
                     param = Parameter(name, namespace=calculator.runtime_info.namespace, derived=True)
@@ -824,7 +799,7 @@ class LikelihoodPipeline(BasePipeline):
     _likelihood_name = 'loglikelihood'
 
     def __init__(self, *args, **kwargs):
-        super(LikelihoodPipeline, self).__init__(*args, **kwargs)
+        super(LikelihoodPipeline, self).__init__(*args, quiet=True, **kwargs)
         # Check end_calculators are likelihoods
         # for calculator in self.end_calculators:
         #     self._likelihood_name = 'loglikelihood'
@@ -850,7 +825,7 @@ class LikelihoodPipeline(BasePipeline):
                 param = Parameter(self._likelihood_name, namespace=calculator.runtime_info.namespace, latex=outputs_to_latex(self._likelihood_name), derived=True)
                 calculator.runtime_info.full_params.set(param)
                 calculator.runtime_info.full_params = calculator.runtime_info.full_params
-                self.params.set(param)
+        self.set_params()
 
     def run(self, **params):
         super(LikelihoodPipeline, self).run(**params)
