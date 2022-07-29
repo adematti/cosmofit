@@ -90,7 +90,7 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
         if self.mpicomm.rank == 0:
-            if chains is None: chains = max(self.mpicomm.size - 1, 1)
+            if chains is None: chains = 1
             if isinstance(chains, numbers.Number):
                 self.chains = [None] * int(chains)
             else:

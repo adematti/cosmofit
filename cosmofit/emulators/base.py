@@ -93,7 +93,12 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             self.log_info('Found varying {} and fixed {} outputs.'.format(self.varied, list(self.fixed.keys())))
 
         def serialize_cls(self):
-            return ('.'.join([self.__module__, self.__class__.__name__]), os.path.dirname(sys.modules[self.__module__].__file__))
+            clsname = '.'.join([self.__module__, self.__class__.__name__])
+            try:
+                pythonpath = os.path.dirname(sys.modules[self.__module__].__file__)
+            except AttributeError:
+                pythonpath = None
+            return (clsname, pythonpath)
 
         self._emulator_cls = serialize_cls(self)
         self._calculator_cls = serialize_cls(calculator)
@@ -187,7 +192,9 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         if names is None:
             names = self.varied
         if utils.is_sequence(names):
-            if fn is not None and not utils.is_sequence(fn):
+            if fn is None:
+                fn = [None] * len(names)
+            elif not utils.is_sequence(fn):
                 fn = [fn.replace('*', '{}').format(name) for name in names]
         else:
             names = [names]
@@ -299,7 +306,10 @@ class BaseEmulator(BaseClass):
 
         new_meta = type('MetaEmulatorCalculator', (type(EmulatorEngine), type(Calculator)), {})
         new_cls = new_meta(new_name, (EmulatorEngine, Calculator), clsdict)
-        new_cls.config_fn = Calculator.config_fn
+        try:
+            new_cls.config_fn = Calculator.config_fn
+        except AttributeError:
+            pass
 
         def from_state(cls, *args, **kwargs):
             new = cls.__new__(cls)

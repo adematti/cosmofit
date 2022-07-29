@@ -37,6 +37,7 @@ def _make_list(obj, length=None, default=None):
 
 
 def _get_default_chain_params(chains, varied=True, output=False, **kwargs):
+    chains = _make_list(chains)
     list_params = [chain.names(varied=varied, output=output, **kwargs) for chain in chains]
     return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]
 
@@ -303,6 +304,7 @@ def plot_triangle(chains, params=None, labels=None, fn=None, kw_save=None, **kwa
 
 
 def _get_default_profiles_params(profiles, of='bestfit', varied=True, output=False, **kwargs):
+    profiles = _make_list(profiles)
     list_params = [profile.get(of).names(varied=varied, output=output, **kwargs) for profile in profiles]
     return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]
 
@@ -351,7 +353,7 @@ def plot_aligned(profiles, param, ids=None, labels=None, colors=None, truth=None
     profiles = _make_list(profiles)
     if truth is None and kw_truth is not None:
         truth = profiles[0].bestfit[param].param.value
-    kw_truth = kw_truth or {}
+    kw_truth = dict(kw_truth if kw_truth is not None else {'color': 'k', 'linestyle': ':', 'linewidth': 2})
     maxpoints = max(map(lambda prof: len(prof.bestfit), profiles))
     ids = _make_list(ids, length=len(profiles), default=None)
     labels = _make_list(labels, length=maxpoints, default=None)
@@ -450,6 +452,7 @@ def plot_aligned_stacked(profiles, params=None, ids=None, labels=None, truths=No
     lax : array
         Array of axes.
     """
+    profiles = _make_list(profiles)
     if params is None:
         params = _get_default_profiles_params(profiles)
     params = [str(param) for param in _make_list(params)]

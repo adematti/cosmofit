@@ -28,8 +28,6 @@ class RegisteredCalculator(type(BaseClass)):
 
     def __new__(meta, *args, **kwargs):
         cls = super().__new__(meta, *args, **kwargs)
-        fn = inspect.getfile(cls)
-        cls.config_fn = os.path.splitext(fn)[0] + '.yaml'
         meta._registry.add(cls)
 
         from functools import wraps
@@ -396,6 +394,14 @@ class RuntimeInfo(BaseClass):
         new.update(*args, **kwargs)
         return new
 
+    def deepcopy(self):
+        import copy
+        new = self.copy()
+        for name in ['required_by', 'requires', 'derived_auto']:
+            setattr(new, name, getattr(self, name).copy())
+        new.full_params = copy.deepcopy(self.full_params)
+        return new
+
 
 class SectionConfig(BaseConfig):
 
@@ -588,9 +594,14 @@ class PipelineConfig(BaseConfig):
     def clone_config_with_fn(self, config):
         cls = config['class']
         config_fn = config.get('config_fn', None)
-        default_config_fn = cls.config_fn
-        if config_fn is None and os.path.isfile(default_config_fn):
-            config_fn = default_config_fn
+        if config_fn is None:
+            try:
+                fn = inspect.getfile(cls)
+                default_config_fn = os.path.splitext(fn)[0] + '.yaml'
+                if os.path.isfile(default_config_fn):
+                    config_fn = default_config_fn
+            except TypeError:  # built-in
+                pass
         if config_fn is not None:
             if self.mpicomm.rank == 0:
                 self.log_info('Loading config file {}'.format(config_fn))
@@ -816,12 +827,14 @@ class BasePipeline(BaseClass):
         for calculator in self.calculators:
             calculator.mpicomm = mpicomm
 
-    def __copy__(self):
-        new = super(BasePipeline, self).__copy__()
+    def __copy__(self, type=None):
+        if type is None: type = self.__class__
+        new = type.__new__(type)
+        new.__dict__.update(self.__dict__)
         new.calculators = []
         for calculator in self.calculators:
             calculator = calculator.copy()
-            calculator.runtime_info = calculator.runtime_info.copy()
+            calculator.runtime_info = calculator.runtime_info.deepcopy()
             new.calculators.append(calculator)
         for calculator in new.calculators:
             calculator.runtime_info.required_by = set([new.calculators[self.calculators.index(calc)] for calc in calculator.runtime_info.required_by])
@@ -829,10 +842,10 @@ class BasePipeline(BaseClass):
             calculator.runtime_info.calculator = calculator
             calculator.runtime_info.pipeline = new
         new.end_calculators = [new.calculators[self.calculators.index(calc)] for calc in self.end_calculators]
-        new.params = self.params.copy()
+        new.params = self.params.deepcopy()
         return new
 
-    def select(self, end_calculators, remove_namespace=False):
+    def select(self, end_calculators, remove_namespace=False, type=None):
 
         if not utils.is_sequence(end_calculators):
             end_calculators = [end_calculators]
@@ -845,7 +858,7 @@ class BasePipeline(BaseClass):
                         end_calculators[icalc] = calculator
                         break
 
-        new = self.copy()
+        new = self.copy(type=type)
         new.params = ParameterCollection()
         new.end_calculators = [new.calculators[self.calculators.index(calc)] for calc in end_calculators]
         new.calculators = []

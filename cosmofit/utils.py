@@ -123,15 +123,13 @@ class BaseClass(object, metaclass=BaseMetaClass):
     Base class that implements :meth:`copy`.
     To be used throughout this package.
     """
-    def __copy__(self):
+    def __copy__(self, *args, **kwargs):
         new = self.__class__.__new__(self.__class__)
         new.__dict__.update(self.__dict__)
         return new
 
-    def copy(self, **kwargs):
-        new = self.__copy__()
-        new.__dict__.update(kwargs)
-        return new
+    def copy(self, *args, **kwargs):
+        return self.__copy__(*args, **kwargs)
 
     def __setstate__(self, state):
         self.__dict__.update(state)

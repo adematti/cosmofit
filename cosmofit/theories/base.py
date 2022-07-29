@@ -248,7 +248,7 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
                     theory['init'].setdefault(name, wmatrix.attrs[name])
         shotnoise = float(shotnoise)
         self.shotnoise = np.array([shotnoise * (ell == 0) for ell in self.ellsin])
-        self.flatshotnoise = np.concatenate([np.full_like(kk, shotnoise * (ell == 0)) for ell in self.ells])
+        self.flatshotnoise = np.concatenate([np.full_like(k, shotnoise * (ell == 0), dtype='f8') for ell, k in zip(self.ells, self.k)])
 
         theory['init'].update({'k': self.kin, 'ells': self.ellsin})
         self.requires = {'theory': theory}
