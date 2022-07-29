@@ -1,10 +1,24 @@
 # cosmofit
 
-WARNING: this is ongoing work!
+**cosmofit** is a Python package for cosmological inference.
 
-**cosmofit** is a package for cosmological inference.
+WARNING: this is ongoing work! Most developments are targeted at 2-pt galaxy clustering measurements.
+Within DESI context, the goal is to set up BAO and RSD fits, test various models, emulation and compression techniques,
+explore combination with external datasets, in a coherent framework.
+This should be helpful for developments, before including the 'official' likelihood in popular cosmological inference codes for legacy.
 
-Example notebooks presenting most use cases are provided in directory nb/.
+Example notebooks are provided in directory nb/.
+
+## TODOs
+
+- finish documentation
+- proper example with cross-covariance (e.g. many redshift slices), potential changes to the infrastructure
+- autodetection of Chain/Profiles types; improve Profiles type
+- allow emulators to use result of previous calculators as input (not only parameters)
+- implement external likelihoods (Planck, Pantheon, DES, etc.)
+- more PT theory models
+- dimensionality reduction
+- real science work...
 
 ## Documentation
 
@@ -44,3 +58,10 @@ python setup.py develop --user
 ## License
 
 **cosmofit** is free software distributed under a BSD3 license. For details see the [LICENSE](https://github.com/adematti/cosmofit/blob/main/LICENSE).
+
+## Acknowledgments
+
+- Some inspiration from cobaya: https://github.com/CobayaSampler/cobaya
+- BAO models: https://github.com/Samreay/Barry
+- Taylor expansion emulator: https://github.com/sfschen/velocileptors_shapefit
+- MLP emulator: https://github.com/sfschen/EmulateLSS

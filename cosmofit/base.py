@@ -22,6 +22,8 @@ namespace_delimiter = '.'
 
 class RegisteredCalculator(type(BaseClass)):
 
+    """Metaclass registering :class:`BaseCalculator`-derived classes."""
+
     _registry = set()
 
     def __new__(meta, *args, **kwargs):
@@ -49,8 +51,50 @@ class RegisteredCalculator(type(BaseClass)):
 
 
 class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
+    """
+    Base class for calculators.
+    A new calculator should minimally implement:
 
+    * :meth:`run`: perform computation (in practice setting attributes) for a given set of input parameters
+
+    Optionally:
+
+    * :meth:`__init__`: method to initialize the class, will receive 'init' dictionary (below) as input.
+
+    * :attr:`requires`: dictionary listing dependencies, in the format name: ``{'class': ..., 'init': {...}, 'params': ...}``:
+
+        * 'class' is the class name, or ``module.ClassName``, or the actual type instance (see :func:`import_cls`) of the calculator
+
+        * 'init' (optionally) is the dictionary of arguments to be passed to the calculator
+
+        * 'params' (optionally, rarely useful) is the dict, :class:`ParameterCollectionConfig` or :class:`ParameterCollection` listing parameters
+
+        These required calculators are then accessible as attributes, with their given names.
+
+    * :attr:`params`: optionally, dictionary of parameters, e.g. ``{'bias': {'value': 2., 'prior': {'dist': 'norm', 'loc': 0., 'scale': 2.}}, 'f': ...}``
+      This should usually be better specified in a *yaml* file at :attr:`config_fn`.
+
+    * :meth:`set_params`: optionally, method to change parameters that are received as input, after :meth:`__init__`.
+
+    * :meth:`__getstate__`: return dictionary of attributes characterizing calculator state after any :meth:`run` call.
+      :meth:`__getstate__` / :meth:`__setstate__` are necessary for emulation of the calculator.
+
+    * :meth:`__setstate__`: set calculator state from :meth:`__getstate__` output.
+
+    Attributes
+    ----------
+    config_fn : string
+        Path to *yaml* file specifying e.g. :attr:`info`, :attr:`params`, default arguments for :meth:`__init__`.
+        By default, the same path as Python file, with a .yaml extension instead.
+
+    info : Info
+        Static information on this calculator.
+
+    runtime_info : RuntimeInfo
+        Information about calculator name, requirements, parameters values at a given step, etc. in this pipeline.
+    """
     def __setattr__(self, name, item):
+        """Check no attribute is set with the name of a required calculator."""
         super(BaseCalculator, self).__setattr__(name, item)
         if name in self.runtime_info.requires:
             raise PipelineError('Attribute {} is reserved to a calculator, hence cannot be set'.format(name))
@@ -66,12 +110,14 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             toret = self.runtime_info.requires[name]
             if toret.runtime_info.torun:
                 toret.run(**toret.runtime_info.params)
+                # Makes sure run() is not called the second time this calculator is accessed
                 toret.runtime_info.torun = False
             return toret
         return super(BaseCalculator, self).__getattribute__(name)
 
     @property
     def mpicomm(self):
+        """Return :attr:`mpicomm` (set if if does not exist)."""
         mpicomm = getattr(self, '_mpicomm', None)
         if mpicomm is None: mpicomm = CurrentMPIComm.get()
         self._mpicomm = mpicomm
@@ -82,6 +128,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
         self._mpicomm = mpicomm
 
     def save(self, filename):
+        """Save calculator to ``filename``."""
         if self.mpicomm.rank == 0:
             self.log_info('Saving {}.'.format(filename))
             utils.mkdir(os.path.dirname(filename))
@@ -90,10 +137,11 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
                 state[name] = getattr(self, name)
             np.save(filename, {**state, **self.__getstate__()}, allow_pickle=True)
 
-    def run(self):
-        raise NotImplementedError
+    def run(self, **params):
+        raise NotImplementedError('run(**params) must be implemented in your calculator; it takes parameter names and scalar values as input')
 
     def mpirun(self, **params):
+        """Call :meth:`run` in a MPI-parallel way on input arrays."""
         size, cshape = 0, ()
         names = self.mpicomm.bcast(list(params.keys()) if self.mpicomm.rank == 0 else None, root=0)
         for name in names:
@@ -124,9 +172,11 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
         return derived
 
     def __getstate__(self):
+        """Return this class state dictionary."""
         return {}
 
     def __repr__(self):
+        """Return string representation of this calculator; including name if :attr:`runtime_info` is set."""
         if 'runtime_info' in self.__dict__:
             return '{}({})'.format(self.__class__.__name__, self.runtime_info.name)
         return super(BaseCalculator, self).__repr__()
@@ -134,11 +184,25 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
 
 class PipelineError(Exception):
 
-    pass
+    """Exception raised when issue with pipeline."""
 
 
 def import_cls(clsname, pythonpath=None, registry=BaseCalculator._registry):
+    """
+    Import class from class name.
 
+    Parameters
+    ----------
+    clsname : string, type
+        Class name, as ``module.ClassName`` w.r.t. ``pythonpath``, or directly class type;
+        in this case, other arguments are ignored.
+
+    pythonpath : string, default=None
+        Optionally, path where to find package/module where class is defined.
+
+    registry : set, default=BaseCalculator._registry
+        Optionally, a set of class types to look into.
+    """
     if isinstance(clsname, type):
         return clsname
     tmp = clsname.rsplit('.', 1)
@@ -162,13 +226,73 @@ def import_cls(clsname, pythonpath=None, registry=BaseCalculator._registry):
 
 class Info(NamespaceDict):
 
+    """Namespace/dictionary holding calculator static attributes."""
     # TODO: add bibtex support
-    pass
 
 
 class RuntimeInfo(BaseClass):
+    """
+    Information about calculator name, requirements, parameters values at a given step, etc. in this pipeline.
 
-    def __init__(self, calculator, namespace=None, requires=None, required_by=None, config=None, full_params=None, derived_auto=None, basename=None):
+    Attributes
+    ----------
+    namespace : string, default=None
+        Calculator namespace (in this pipeline).
+
+    basename : string, default=None
+        This calculator base basename (in this pipeline).
+
+    name : string
+        Namespace + basename.
+
+    params : dict
+        Dictionary of parameter basename: value to be passed to :meth:`BaseCalculator.run`.
+
+    torun : bool
+        Whether this calculator should be run (i.e., if parameters habe been updated).
+
+    full_params : ParameterCollection
+        Parameters with full names (namespace + basename) for this calculator, in this pipeline.
+
+    base_params : dict
+        Dictionary of parameter base name to parameter (specified in :attr:`full_params`).
+
+    derived_params : ParameterCollection
+        Parameters of :attr:`full_params` which are derived, i.e. should be stored at each :meth:`BaseCalculator.run` call.
+
+    derived : ParameterValues
+        Actual values, for each :meth:`BaseCalculator.run` call, for each of :attr:`derived_params`.
+    """
+    def __init__(self, calculator, namespace=None, basename=None, requires=None, required_by=None, config=None, full_params=None, derived_auto=None):
+        """
+        initialize :class:`RuntimeInfo`.
+
+        Parameters
+        ----------
+        calculator : BaseCalculator
+            The calculator this :class:`RuntimeInfo` instance is attached to.
+
+        namespace : string, default=None
+            Calculator namespace (in this pipeline).
+
+        basename : string, default=None
+            This calculator base basename (in this pipeline).
+
+        requires : dict, default=None
+            Calculator requirements.
+
+        required_by : set, default=None
+            Set of calculators that requires this calculator.
+
+        config : CalculatorConfig, default=None
+            Optionally, calculator config used to initialize this calculator.
+
+        full_params : ParameterCollection
+            Parameters with full names (namespace + basename) for this calculator, in this pipeline.
+
+        derived_auto : list
+            List of '.varied', '.fixed', to dynamically decide on derived quantities from this calculator.
+        """
         self.config = config
         self.basename = basename
         self.namespace = namespace
@@ -204,7 +328,7 @@ class RuntimeInfo(BaseClass):
     @property
     def derived_params(self):
         if getattr(self, '_derived_params', None) is None:
-            self._derived_params = self.full_params.select(derived=True, value=None)
+            self._derived_params = self.full_params.select(derived=True, fixed=True)
         return self._derived_params
 
     @property
@@ -253,9 +377,11 @@ class RuntimeInfo(BaseClass):
         return self.basename
 
     def __getstate__(self):
+        """Return this class state dictionary."""
         return self.__dict__.copy()
 
     def update(self, *args, **kwargs):
+        """Update with provided :class:`RuntimeInfo` instance of dict."""
         state = self.__getstate__()
         if len(args) == 1 and isinstance(args[0], self.__class__):
             state.update(args[0].__getstate__())
@@ -265,12 +391,15 @@ class RuntimeInfo(BaseClass):
         self.__setstate__(state)
 
     def clone(self, *args, **kwargs):
+        """Clone, i.e. copy and update."""
         new = self.copy()
         new.update(*args, **kwargs)
         return new
 
 
 class SectionConfig(BaseConfig):
+
+    """Base class for config with several sections, see e.g. :class:`CalculatorConfig`."""
 
     _sections = []
 
@@ -336,6 +465,7 @@ class CalculatorConfig(SectionConfig):
         self['params'] = ParameterCollectionConfig(self['params'])
         load_fn = data.get('load', None)
         save_fn = data.get('save', None)
+        self.setdefault('config_fn', None)
         if not isinstance(load_fn, str):
             if load_fn and isinstance(save_fn, str):
                 load_fn = save_fn
@@ -353,8 +483,10 @@ class CalculatorConfig(SectionConfig):
                 self._loaded = self['class'].from_state(state)
             self['class'] = type(self._loaded)
             cls_params = getattr(self._loaded, 'params', None)
+            if self['config_fn'] is None: self['config_fn'] = getattr(self._loaded, 'config_fn', None)
         else:
             cls_params = getattr(self['class'], 'params', None)
+            if self['config_fn'] is None: self['config_fn'] = getattr(self['class'], 'config_fn', None)
         if cls_params is not None:
             self['params'] = ParameterCollectionConfig(cls_params).clone(self['params'])
         self['load'], self['save'] = load_fn, save_fn

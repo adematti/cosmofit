@@ -98,6 +98,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         self._emulator_cls = serialize_cls(self)
         self._calculator_cls = serialize_cls(calculator)
         self.yaml_data = {}
+        self.yaml_data['class'] = calculator.__class__.__name__
         self.yaml_data['info'] = dict(calculator.info)
         self.yaml_data['init'] = {}
         if calculator.runtime_info.config is not None:
