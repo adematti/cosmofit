@@ -8,7 +8,7 @@ from cosmofit import plotting, utils
 
 class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
 
-    def __init__(self, covariance=None, data=None, slim=None, sstep=None, srebin=None, zeff=None, fiducial=None):
+    def __init__(self, covariance=None, data=None, covariance_scale=1.0, slim=None, sstep=None, srebin=None, zeff=None, fiducial=None):
 
         def load_data(fn):
             from pycorr import TwoPointCorrelationFunction
@@ -36,51 +36,51 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
                 list_s.append(s[mask])
                 list_data.append(data[ells.index(ell)][mask])
             return list_s, ells, list_data
+        
+        def all_mocks(list_mocks):
+            list_y = []
+            for mocks in list_mocks:
+                if isinstance(mocks, str):
+                    mocks = [load_data(mock) for mock in glob.glob(mocks)]
+                else:
+                    mocks = [mocks]
+                for mock in mocks:
+                    mock_s, mock_ells, mock_y = lim_data(mock)
+                    if self.s is None:
+                        self.s, self.ells = mock_s, mock_ells
+                    if not all(np.allclose(ss, ms) for ss, ms in zip(self.s, mock_s)):
+                        raise ValueError('{} does not have expected s-binning (based on previous data)'.format(mock))
+                    if mock_ells != self.ells:
+                        raise ValueError('{} does not have expected poles (based on previous data)'.format(mock))
+                    list_y.append(np.ravel(mock_y))
+            return list_y
 
         self.s, self.ells, flatdata, nobs = None, None, None, None
-        data_is_mean = data == 'mean'
-        if isinstance(covariance, str):
+        if data is not None and not utils.is_sequence(data):
+            data = [data]
+        if covariance is not None and not utils.is_sequence(covariance):
             covariance = [covariance]
-        has_mocks = utils.is_sequence(covariance) and isinstance(covariance[0], str)
 
-        if data_is_mean:
-            if not has_mocks:
-                raise ValueError('data is mean of mocks, but no mocks provided')
-        elif data is not None:
+        if data is not None:
             if self.mpicomm.rank == 0:
-                if isinstance(data, str):
-                    data = load_data(data)
-                self.s, self.ells, flatdata = lim_data(data)
-                flatdata = np.ravel(flatdata)
+                list_y = all_mocks(data)
+                if isinstance(covariance_scale, bool) and covariance_scale:
+                    covariance_scale = 1. / len(list_y)
+                flatdata = np.mean(list_y, axis=0)
 
-        if has_mocks:
+        if covariance is not None:
             if self.mpicomm.rank == 0:
-                list_mock = []
-                for mocks in covariance:
-                    if isinstance(mocks, str):
-                        mocks = [load_data(mock) for mock in glob.glob(mocks)]
-                    else:
-                        mocks = [mocks]
-                    for mock in mocks:
-                        mock_s, mock_ells, mock = lim_data(mock)
-                        if self.s is None:
-                            self.s, self.ells = mock_s, mock_ells
-                        if not all(np.allclose(ss, ms) for ss, ms in zip(self.s, mock_s)):
-                            raise ValueError('{} does not have expected s-binning (based on previous data)'.format(fn))
-                        if mock_ells != self.ells:
-                            raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))
-                        list_mock.append(np.ravel(mock))
-                nobs = len(list_mock)
-                if data_is_mean:
-                    flatdata = np.mean(list_mock, axis=0)
-                covariance = np.cov(list_mock, rowvar=False, ddof=1)
+                list_y = all_mocks(covariance)
+                nobs = len(list_y)
+                covariance = covariance_scale * np.cov(list_y, rowvar=False, ddof=1)
             covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
 
         self.s, self.ells, flatdata, nobs = self.mpicomm.bcast((self.s, self.ells, flatdata, nobs) if self.mpicomm.rank == 0 else None, root=0)
-
         super(CorrelationFunctionMultipolesLikelihood, self).__init__(covariance=covariance, data=flatdata, nobs=nobs)
         self.requires['theory'] = ('cosmofit.theories.base.WindowedCorrelationFunctionMultipoles',
-                                   {'s': self.s, 'ells': self.ells, 'theory': {'init': {'zeff': zeff, 'fiducial': fiducial}}})
+                                   {'s': self.s, 'ells': self.ells,
+                                    'theory': {'init': {'zeff': zeff, 'fiducial': fiducial}}})
+        self.globals['sdata'] = self.s
 
     def plot(self, fn=None, kw_save=None):
         from matplotlib import pyplot as plt

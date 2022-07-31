@@ -450,7 +450,7 @@ def _best_match_parameter(namespace, basename, params, choice='max'):
 class CalculatorConfig(SectionConfig):
 
     _sections = ['info', 'init', 'params']
-    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save']
+    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save', 'config_fn']
 
     def __init__(self, data, **kwargs):
         # cls, init kwargs

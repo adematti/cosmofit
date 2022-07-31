@@ -194,7 +194,7 @@ class EffectAP(BaseCalculator):
 
 class WindowedPowerSpectrumMultipoles(BaseCalculator):
 
-    def __init__(self, k=None, ells=(0, 2, 4), wmatrix=None, shotnoise=0., theory=None):
+    def __init__(self, k=None, ells=(0, 2, 4), ellsin=None, wmatrix=None, shotnoise=0., theory=None):
         if k is None: k = np.linspace(0.01, 0.2, 20)
         if np.ndim(k[0]) == 0:
             k = [k] * len(ells)
@@ -225,11 +225,15 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
                     wmatrix = wmatrix.poles
                 else:
                     wmatrix = BaseMatrix.load(fn)
-            wmatrix.select_proj(projsout=[(ell, None) for ell in self.ells])
             self.ellsin = []
             for proj in wmatrix.projsin:
                 assert proj.wa_order in (None, 0)
                 self.ellsin.append(proj.ell)
+            if ellsin is not None:
+                self.ellsin = tuple(ellsin)
+            projsin = [proj for proj in wmatrix.projsin if proj.ell in self.ellsin]
+            self.ellsin = [proj.ell for proj in projsin]
+            wmatrix.select_proj(projsout=[(ell, None) for ell in self.ells], projsin=projsin)
             self.kin = wmatrix.xin[0]
             assert all(np.allclose(xin, self.kin) for xin in wmatrix.xin)
             # TODO: implement best match BaseMatrix method

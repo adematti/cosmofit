@@ -1,0 +1,124 @@
+pipeline:
+  ELG:
+    like:
+      class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
+      init:
+        data: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/AbacusSummit/CubicBox/LRG/Pk/Pre/jmena/nmesh_512/pypower_format/Pk_AbacusSummit_base_*.npy'
+        covariance: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/EZmock/CubicBox/LRG/Pk/jmena/nmesh_512/pypower_format/Pk_EZmock_B2000G512Z0.8N8015724_b0.385d4r169c0.3_seed*.npy'
+        covariance_scale: True
+        wmatrix: f'/global/cfs/cdirs/desi/users/adematti/desi_mock_challenge/FirstGenMocks/AbacusSummit/CubicBox/ELG/z1.100/window_nmesh512_los-x.npy'
+        klim:
+          0: [0.02, 0.3]
+          2: [0.02, 0.3]
+          4: [0.02, 0.3]
+        kstep: 0.005
+        zeff: e'{z}'
+        fiducial: DESI
+      plot: f'{tmp_dir}/power.png'
+      plot_bao: f'{tmp_dir}/power_bao.png'
+      save: f'{tmp_dir}/bao_like.npy'
+      #load: True
+    wm:
+      class: cosmofit.theories.base.WindowedPowerSpectrumMultipoles
+      init:
+        #ellsin: [0, 2]
+    theory:
+      class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.bao.ResummedBAOWigglesTracerPowerSpectrumMultipoles
+      init:
+        nowiggle: False
+      params:
+        #.fixed: ['al*-3']
+        .varied: 'sigmap*r'
+        bias:
+          ref:
+            limits: [1., 2.]
+        al*:
+          ref:
+            limits: [-10., 10.]
+        #al[:3:2]_[0:2]:
+        #  fixed: False
+      #load: f'{tmp_dir}/emulator.npy'
+      emulator:
+        save: f'{tmp_dir}/emulator.npy'
+    param:
+      class: cosmofit.theories.power_template.BAOPowerSpectrumParameterization
+      init:
+        #mode: qiso
+      params:
+        #f:
+        #  value: 0.8
+        #  prior:
+        #    limits: [0.2, 1.]
+        qp*r:
+          ref:
+            limits: [0.99, 1.01]
+    
+  cosmo:
+    class: cosmofit.theories.primordial_cosmology.Cosmoprimo
+
+emulate:
+  class: TaylorEmulatorEngine
+  fit:
+    order: 1
+
+summarize:
+  chain:
+    fn: f'{output_dir}/chain_*.npy'
+    burnin: 0.3
+  plot_triangle: f'{output_dir}/triangle.png'
+  plot_trace: f'{output_dir}/trace.png'
+  plot_autocorrelation_time: f'{output_dir}/autocorrelation_time.png'
+  plot_gelman_rubin:
+    fn: f'{output_dir}/gelman_rubin.png'
+    nsplits: 4
+  plot_geweke: f'{output_dir}/geweke.png'
+
+summarize:
+   profiles:
+     - f'{output_dir}/profiles_qiso.npy'
+     - f'{output_dir}/profiles_qiso_nowiggle.npy'
+   stats:
+     - f'{output_dir}/stats.tex'
+     - f'{output_dir}/stats_nowiggle.tex'
+   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
+   plot_profile_comparison: f'{output_dir}/profile_comparison.png'
+
+summarize:
+   profiles:
+     - f'{output_dir}/profiles.npy'
+   stats:
+     - f'{tmp_dir}/stats.tex'
+   plot_aligned_stacked: f'{tmp_dir}/aligned_stacked.png'
+
+do:
+  source:
+    profiles: f'{output_dir}/profiles.npy'
+
+sample:
+  class: cosmofit.samplers.EmceeSampler
+  init:
+    nwalkers: 40
+    chains: 4
+  run:
+    max_iterations: 10000
+    check_every: 100
+  check: True
+  save: f'{output_dir}/chain_*.npy'
+
+profile:
+  class: cosmofit.profilers.MinuitProfiler
+  save: f'{output_dir}/profiles.npy'
+  #save: e'{output_dir} + ("/profiles_nowiggle_qiso.npy" if {pipeline.ELG.theory.init.nowiggle} else "/profiles_qiso.npy")'
+  maximize:
+    niterations: 3
+  #interval:
+   # params: qiso
+  #profile:
+  #  params: qiso
+
+z: 1.1
+imock: '*'
+tmp_dir: tmp_pk_bao_fits
+scratch_dir: /global/cfs/cdirs/desi/users/adematti
+output_dir: f'{scratch_dir}/desi_mock_challenge/fitFirstGenMocks/AbacusSummit/CubicBox/ELG/z{z:.3f}/pk_bao_fits/wm/'
