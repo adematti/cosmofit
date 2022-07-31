@@ -57,7 +57,6 @@ class QMCSampler(BaseClass, metaclass=RegisteredSampler):
         lower, upper = [], []
         for param in self.varied_params:
             if param.ref.is_proper():
-                print(param, param.value, param.proposal)
                 lower.append(param.value - param.proposal)
                 upper.append(param.value + param.proposal)
             else:

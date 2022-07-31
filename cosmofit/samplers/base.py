@@ -89,6 +89,8 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
         self.varied_params = self.likelihood.params.select(varied=True, derived=False)
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
+        if not self.varied_params:
+            raise ValueError('No parameters to be varied!')
         if self.mpicomm.rank == 0:
             if chains is None: chains = 1
             if isinstance(chains, numbers.Number):
@@ -106,6 +108,8 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
 
     def loglikelihood(self, values):
         values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
+        if not values.size:
+            return -np.inf
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
         di = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}

@@ -16,8 +16,17 @@ class GridSampler(BaseClass, metaclass=RegisteredSampler):
         self.varied_params = self.pipeline.params.select(varied=True, derived=False)
         self.scale = float(scale)
         if not isinstance(ngrid, dict):
-            ngrid = {str(param): ngrid for param in self.varied_params}
-        self.ngrid = [max(ngrid[str(param)], 1) for param in self.varied_params]
+            ngrid = {'*': ngrid}
+        self.ngrid = {str(param): None for param in self.varied_params}
+        for name, value in ngrid.items():
+            for tmpname in self.varied_params.names(name=name):
+                self.ngrid[tmpname] = int(value)
+        for name, value in self.ngrid.items():
+            if value is None:
+                raise ValueError('ngrid not specified for parameter {}'.format(name))
+            elif value < 1:
+                raise ValueError('ngrid is {:d} < 1 for parameter {}'.format(value, name))
+        self.ngrid = [self.ngrid[str(param)] for param in self.varied_params]
 
     def run(self):
         grid = []

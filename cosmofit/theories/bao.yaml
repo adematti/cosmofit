@@ -139,7 +139,7 @@ params:
     latex: \Sigma_{\perp}
     prior:
       limits: [0.1, 10]
-  al[:5:2]_[-3:2]:
+  al[:5:2]_[-2:3]:
     value: 0.
     fixed: False
     latex: a_{[], []}

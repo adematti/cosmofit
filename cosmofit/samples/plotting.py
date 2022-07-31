@@ -351,7 +351,7 @@ def plot_aligned(profiles, param, ids=None, labels=None, colors=None, truth=None
     ax : matplotlib.axes.Axes
     """
     profiles = _make_list(profiles)
-    if truth is None and kw_truth is not None:
+    if truth is True or (truth is None and kw_truth is not None):
         truth = profiles[0].bestfit[param].param.value
     kw_truth = dict(kw_truth if kw_truth is not None else {'color': 'k', 'linestyle': ':', 'linewidth': 2})
     maxpoints = max(map(lambda prof: len(prof.bestfit), profiles))
@@ -504,7 +504,7 @@ def plot_profile(profiles, params=None, offsets=0., nrows=1, labels=None, colors
     kw_legend = dict(kw_legend or {})
 
     ncols = int(len(params) * 1. / nrows + 1.)
-    figsize = figsize or (3. * ncols, 3. * nrows)
+    figsize = figsize or (4. * ncols, 4. * nrows)
     fig = plt.figure(figsize=figsize)
     gs = gridspec.GridSpec(nrows, ncols, wspace=0.2, hspace=0.2)
 

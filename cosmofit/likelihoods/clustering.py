@@ -10,9 +10,9 @@ from cosmofit import utils
 
 
 def load_chain(chains, burnin=None):
-    if isinstance(chains, str):
+    if not utils.is_sequence(chains):
         chains = [chains]
-    if utils.is_sequence(chains) and isinstance(chains[0], str):
+    if isinstance(chains[0], str):
         chains = [Chain.load(fn) for ff in chains for fn in glob.glob(ff)]
     if burnin is not None:
         chains = [chain.remove_burnin(burnin) for chain in chains]
@@ -27,27 +27,27 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
         self.chain = None
         if self.mpicomm.rank == 0:
             self.chain = load_chain(chains, burnin=burnin)
-        self.params = self.mpicomm.bcast(self.chain.params() if self.mpicomm.rank == 0 else None, root=0)
+        self.data_params = self.mpicomm.bcast(self.chain.params() if self.mpicomm.rank == 0 else None, root=0)
         if select is not None:
-            self.params = self.params.select(**select)
+            self.data_params = self.data_params.select(**select)
         if self._parambasenames is not None:
-            self.params = self.params.select(basename=self._parambasenames)
-            for param in list(self.params):
+            self.data_params = self.data_params.select(basename=self._parambasenames)
+            for param in list(self.data_params):
                 if param.fixed and not param.derived:
                     # if self.mpicomm.rank == 0:
                     #     self.log_info('Parameter {} is found to be fixed, ignoring.'.format(param))
-                    del self.params[param]
-            self.params.sort([self._parambasenames.index(param.basename) for param in self.params if param.basename in self._parambasenames])
+                    del self.data_params[param]
+            self.data_params.sort([self._parambasenames.index(param.basename) for param in self.data_params if param.basename in self._parambasenames])
         self.requires = {'cosmo': ('BasePrimordialCosmology', {})}
 
     def _prepare(self):
         if self.mpicomm.rank == 0:
-            self.log_info('Fitting input samples {}.'.format(list(self.params)))
-        mean = self.mpicomm.bcast(np.concatenate([self.chain.mean(param).ravel() for param in self.params]) if self.mpicomm.rank == 0 else None, root=0)
-        covariance = self.mpicomm.bcast(self.chain.cov(self.params) if self.mpicomm.rank == 0 else None, root=0)
+            self.log_info('Fitting input samples {}.'.format(list(self.data_params)))
+        mean = self.mpicomm.bcast(np.concatenate([self.chain.mean(param).ravel() for param in self.data_params]) if self.mpicomm.rank == 0 else None, root=0)
+        covariance = self.mpicomm.bcast(self.chain.cov(self.data_params) if self.mpicomm.rank == 0 else None, root=0)
         super(BaseParameterizationLikelihood, self).__init__(covariance=covariance, data=mean)
         del self.chain
-        self.base_params = {param.basename: param for param in self.params}
+        self.base_params = {param.basename: param for param in self.data_params}
 
     def _set_meta(self, **kwargs):
         for name, value in kwargs.items():
@@ -70,22 +70,22 @@ class FullParameterizationLikelihood(BaseParameterizationLikelihood):
 
     def _prepare(self):
         params = ParameterCollection()
-        for param in self.params:
+        for param in self.data_params:
             value = getattr(self.cosmo, param.basename, None)
             if value is not None:
                 params.set(param)
-        self.params = params
+        self.data_params = params
         super(FullParameterizationLikelihood, self)._prepare()
 
     def flatmodel(self):
-        return np.array([getattr(self.cosmo, param.basename) for param in self.params], dtype='f8')
+        return np.array([getattr(self.cosmo, param.basename) for param in self.data_params], dtype='f8')
 
 
 class BAOParameterizationLikelihood(BaseParameterizationLikelihood):
 
     @property
     def _parambasenames(self):
-        params = self.params.basenames()
+        params = self.data_params.basenames()
         options = [('DM_over_rd', 'DH_over_rd'), ('DV_over_rd', 'DH_over_DM'), ('DV_over_rd',), ('DH_over_DM',)]
         for ps in options:
             if all(p in params for p in ps):
@@ -99,7 +99,7 @@ class BAOParameterizationLikelihood(BaseParameterizationLikelihood):
         self.requires = {'bao': (BAOExtractor, {'zeff': self.zeff})}
 
     def flatmodel(self):
-        return np.array([getattr(self.bao, param.basename) for param in self.params], dtype='f8')
+        return np.array([getattr(self.bao, param.basename) for param in self.data_params], dtype='f8')
 
 
 class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
@@ -108,17 +108,28 @@ class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
     def _parambasenames(self):
         return ('n', 'm', 'f_sqrt_A_p') + super(ShapeFitParameterizationLikelihood, self)._parambasenames
 
+    def _prepare(self):
+        params = ParameterCollection()
+        for param in self.data_params:
+            if param.basename in ['n', 'm'] and np.allclose(self.chain[param], np.mean(self.chain[param])):
+                continue
+            params.set(param)
+        self.data_params = params
+        super(ShapeFitParameterizationLikelihood, self)._prepare()
+        self.shapefit.n_varied = 'n' in self.base_params
+        self.shapefit.run()
+
     def __init__(self, *args, kpivot=0.03, **kwargs):
         super(ShapeFitParameterizationLikelihood, self).__init__(*args, **kwargs)
         self._set_meta(kpivot=kpivot)
         from cosmofit.theories.power_template import ShapeFitPowerSpectrumExtractor
-        self.requires['shapefit'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff, 'kpivot': self.kpivot, 'of': 'theta_cb', 'n_varied': self.params[0].varied})
+        self.requires['shapefit'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff, 'kpivot': self.kpivot, 'of': 'theta_cb'})
 
     def flatmodel(self):
-        values = [getattr(self.shapefit, name) for name in self._parambasenames[:2] if name in self.base_params]
+        values = [getattr(self.shapefit, name) for name in ['n', 'm'] if name in self.base_params]
         if 'f_sqrt_A_p' in self.base_params:
             values.append(self.shapefit.A_p**0.5)  # norm of velocity power spectrum
-        values += [getattr(self.bao, name) for name in self._parambasenames[3:] if name in self.base_params]
+        values += [getattr(self.bao, param.basename) for param in self.data_params[len(values):]]
         return np.array(values, dtype='f8')
 
 

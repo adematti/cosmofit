@@ -26,17 +26,17 @@ def test_params():
     assert params.params() == params.params()
 
     assert params.names(name='sigmas') == ['sigmas']
-    assert params.names(name=['sigmas', 'al[:5:2]_[-3:2]']) == ['sigmas', 'al0_-3', 'al0_-2', 'al0_-1', 'al0_0', 'al0_1', 'al2_-3', 'al2_-2', 'al2_-1', 'al2_0', 'al2_1', 'al4_-3', 'al4_-2', 'al4_-1', 'al4_0', 'al4_1']
+    assert params.names(name=['sigmas', 'al[:5:2]_[-2:2]']) == ['sigmas', 'al0_-2', 'al0_-1', 'al0_0', 'al0_1', 'al2_-2', 'al2_-1', 'al2_0', 'al2_1', 'al4_-2', 'al4_-1', 'al4_0', 'al4_1']
 
     ref_config = {'al[:5:2]_[-3:2]': {'prior': {'limits': [0., 1]}}, 'sigma': {'latex': r'\sigma'}, 'bias': {'latex': 'b', 'fixed': False}}
     config = copy.deepcopy(ref_config)
     params = ParameterCollection(config)
-    assert Parameter(**params['al0_-3'].__getstate__()) == params['al0_-3']
-    assert ParameterPrior(**params['al0_-3'].prior.__getstate__()) == params['al0_-3'].prior
-    assert (not params['al0_-3'].fixed) and (params['sigma'].fixed) and not (params['bias'].fixed)
+    assert Parameter(**params['al0_-1'].__getstate__()) == params['al0_-1']
+    assert ParameterPrior(**params['al0_-1'].prior.__getstate__()) == params['al0_-1'].prior
+    assert (not params['al0_-1'].fixed) and (params['sigma'].fixed) and not (params['bias'].fixed)
     config['.fixed'] = 'al[:5:2]_[-3:2]'
     params = ParameterCollection(ParameterCollectionConfig(config))
-    assert params['al0_-3'].fixed and (params['sigma'].fixed) and not (params['bias'].fixed)
+    assert params['al0_-1'].fixed and (params['sigma'].fixed) and not (params['bias'].fixed)
     config['.fixed'] = '*'
     params = ParameterCollectionConfig(config).init()
     assert params['sigma'].fixed
@@ -81,6 +81,8 @@ def test_params():
     assert _best_match_parameter('m', 'a', params, choice='min').name == 'a'
     assert _best_match_parameter('m', 'b', params, choice='min') is None
 
+    prior = ParameterPrior(dist='norm', loc=0., scale=1.)
+    assert np.allclose(prior(0.), 0.)
 
 def test_pipeline():
     config = BaseConfig('bao_power_pipeline.yaml')
@@ -94,8 +96,9 @@ def test_pipeline():
     assert len(varied) == 13
     assert pipeline.params['QSO.sigmas'].latex() == r'\Sigma_{s}'
     assert len(pipeline.params.select(fixed=True)) == 19
-    assert pipeline.params.names() == ['QSO.qpar', 'QSO.qper', 'QSO.bias', 'QSO.sigmas', 'QSO.sigmapar', 'QSO.sigmaper', 'QSO.al0_-3', 'QSO.al0_-2', 'QSO.al0_-1', 'QSO.al0_0', 'QSO.al0_1',
-                                       'QSO.al2_-3', 'QSO.al2_-2', 'QSO.al2_-1', 'QSO.al2_0', 'QSO.al2_1', 'QSO.al4_-3', 'QSO.al4_-2', 'QSO.al4_-1', 'QSO.al4_0', 'QSO.al4_1', 'h', 'omega_cdm', 'omega_b', 'A_s', 'k_pivot', 'n_s', 'omega_ncdm', 'N_ur', 'tau_reio', 'w0_fld', 'wa_fld']
+    assert pipeline.params.names() == ['qpar', 'qper', 'bias', 'sigmas', 'sigmapar', 'sigmaper', 'al0_-3', 'al0_-2', 'al0_-1', 'al0_0', 'al0_1',
+                                       'al2_-3', 'al2_-2', 'al2_-1', 'al2_0', 'al2_1', 'al4_-3', 'al4_-2', 'al4_-1', 'al4_0', 'al4_1', 'h',
+                                       'omega_cdm', 'omega_b', 'A_s', 'k_pivot', 'n_s', 'omega_ncdm', 'N_ur', 'tau_reio', 'w0_fld', 'wa_fld']
     pipeline.run()
 
     config = BaseConfig('fs_pipeline.yaml')
@@ -108,12 +111,14 @@ def test_likelihood():
     config = BaseConfig('bao_power_pipeline.yaml')
     pipeline = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
     print(pipeline.params.select(varied=True))
-    pipeline.run(**{'QSO.qpar': 1.2})
+    pipeline.run(**{'qpar': 1.2})
     likelihood = pipeline.loglikelihood
-    pipeline.run(**{'QSO.qpar': 1.})
+    pipeline.run(**{'qpar': 1.})
     assert not np.allclose(pipeline.loglikelihood, likelihood)
-    pipeline.mpirun(**{'QSO.sigmas': [1., 2.]})
+    pipeline.mpirun(**{'sigmas': [1., 2.]})
     assert len(pipeline.loglikelihood) == 2
+    pipeline.mpirun(**{'sigmas': []})
+    assert len(pipeline.loglikelihood) == 0
 
 
 def test_sample(config_fn='bao_power_pipeline.yaml'):
@@ -146,10 +151,10 @@ if __name__ == '__main__':
 
     setup_logging('info')
 
-    test_config()
+    # test_config()
     # test_params()
     # test_pipeline()
-    # test_likelihood()
+    test_likelihood()
     # test_sample()
     # test_profile()
     # test_do()

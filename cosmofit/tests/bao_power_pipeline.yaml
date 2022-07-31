@@ -1,45 +1,46 @@
 pipeline:
-  QSO:
-    like:
-      class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
-      init:
-        data: f'{data_dir}/data.npy'
-        covariance: f'{data_dir}/mock_*.npy'
-        wmatrix: f'{data_dir}/window.npy'
-        klim:
-          0: [0.05, 0.2]
-          2: [0.05, 0.2]
-        kstep: 0.02
-        zeff: 0.5
-        fiducial: DESI
-      save: f'{output_dir}/QSO.like.npy'
-      load: True
-      plot: f'{output_dir}/power.png'
-      plot_bao: f'{output_dir}/power_bao.png'
-    window:
-      class: cosmofit.theories.base.WindowedPowerSpectrumMultipoles
-      plot: f'{output_dir}/window.png'
-    theory:
-      class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
-      init:
-        mode: ''
-        #mode: 'nowiggle'
-      params:
-        .fixed: ['al*']
-        #.derived: [.varied]
-      load: f'{output_dir}/emulator.npy'
-      emulator:
-        plot: f'{output_dir}/emulator_*.png'
-        save: f'{output_dir}/emulator.npy'
-    #theory.bao:
-    #  class: cosmofit.theories.bao.DampedBAOWigglesPowerSpectrumMultipoles
-    #  load: f'{output_dir}/emulator.npy'
-    #  emulator:
-    #    save: f'{output_dir}/emulator.npy'
-    param:
-      class: cosmofit.theories.power_template.BAOPowerSpectrumParameterization
-      init:
-        mode: qiso
+  like:
+    class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
+    init:
+      data: f'{data_dir}/data.npy'
+      #covariance_scale: True
+      #data: f'{data_dir}/mock_*.npy'
+      covariance: f'{data_dir}/mock_*.npy'
+      #wmatrix: f'{data_dir}/window.npy'
+      klim:
+        0: [0.05, 0.2]
+        2: [0.05, 0.2]
+      kstep: 0.02
+      zeff: 0.5
+      fiducial: DESI
+    save: f'{output_dir}/QSO.like.npy'
+    load: True
+    plot: f'{output_dir}/power.png'
+    plot_bao: f'{output_dir}/power_bao.png'
+  #window:
+  #  class: cosmofit.theories.base.WindowedPowerSpectrumMultipoles
+  #  plot: f'{output_dir}/window.png'
+  theory:
+    class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
+    init:
+      mode: ''
+      #mode: 'nowiggle'
+    params:
+      .fixed: ['al*-3', 'al*-2', 'al*-1', 'al*1']
+      #.derived: [.varied]
+    load: f'{output_dir}/emulator.npy'
+    emulator:
+      plot: f'{output_dir}/emulator_*.png'
+      save: f'{output_dir}/emulator.npy'
+  #theory.bao:
+  #  class: cosmofit.theories.bao.DampedBAOWigglesPowerSpectrumMultipoles
+  #  load: f'{output_dir}/emulator.npy'
+  #  emulator:
+  #    save: f'{output_dir}/emulator.npy'
+  param:
+    class: cosmofit.theories.power_template.BAOPowerSpectrumParameterization
+    init:
+      #mode: qiso
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 
@@ -55,7 +56,7 @@ emulate:
 emulate:
   class: TaylorEmulatorEngine
   init:
-    order: 2
+    order: {'*': 2, 'al*': 1}
 
 do:
   source:
@@ -114,7 +115,7 @@ sample:
 
 profile:
   class: cosmofit.profilers.MinuitProfiler
-  save: e'{output_dir} + ("/profiles_nowiggle.npy" if {pipeline.QSO.theory.init.mode} == "nowiggle" else "/profiles.npy")'
+  save: e'{output_dir} + ("/profiles_nowiggle.npy" if {pipeline.theory.init.mode} == "nowiggle" else "/profiles.npy")'
   maximize:
     niterations: 1
   interval:

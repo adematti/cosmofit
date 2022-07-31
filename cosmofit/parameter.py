@@ -926,11 +926,14 @@ class ParameterCollectionConfig(BaseParameterCollection):
 
     def updated(self, param):
         paramname = self._get_name(param)
-        for meta_name in ['fixed', 'derived', 'namespace', 'wildcard']:
+        for meta_name in ['fixed', 'derived', 'namespace']:
             meta = getattr(self, meta_name)
             for name in meta:
                 if find_names([paramname], name):
                     return True
+        for conf in self.wildcard:
+            if find_names([paramname], conf[self.identifier]):
+                return True
         return False
 
     def select(self, **kwargs):
@@ -1244,13 +1247,18 @@ class ParameterPrior(BaseClass):
         x = np.asarray(x)
         return (self.limits[0] < x) & (x < self.limits[1])
 
-    def __call__(self, x):
+    def __call__(self, x, remove_zerolag=True):
         """Return probability density at ``x``."""
         if not self.is_proper():
             toret = np.full_like(x, -np.inf)
             toret[self.isin(x)] = 0.
             return toret
-        return self.logpdf(x)
+        toret = self.logpdf(x)
+        if remove_zerolag:
+            loc = self.attrs.get('loc', None)
+            if loc is None: loc = np.mean(self.limits)
+            toret -= self.logpdf(loc)
+        return toret
 
     def sample(self, size=None, random_state=None):
         """

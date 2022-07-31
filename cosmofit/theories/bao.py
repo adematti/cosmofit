@@ -11,10 +11,11 @@ from .base import (BaseTheoryPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMu
 
 class BaseBAOWigglesPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
-    def __init__(self, *args, mode='', smoothing_radius=15., **kwargs):
+    def __init__(self, *args, mode='', nowiggle=False, smoothing_radius=15., **kwargs):
         super(BaseBAOWigglesPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
+        self.nowiggle = bool(nowiggle)
         self.mode = str(mode).lower()
-        available_modes = ['', 'recsym', 'reciso', 'nowiggle']
+        available_modes = ['', 'recsym', 'reciso']
         if self.mode not in available_modes:
             raise ValueError('Reconstruction mode {} must be one of {}'.format(self.mode, available_modes))
         self.smoothing_radius = float(smoothing_radius)
@@ -32,7 +33,7 @@ class DampedBAOWigglesPowerSpectrumMultipoles(BaseBAOWigglesPowerSpectrumMultipo
         f = self.template.f
         jac, kap, muap = self.template.ap_k_mu(self.k, self.mu)
         pknow = self.template.power_now(kap)
-        pk = pknow if self.mode == 'nowiggle' else self.template.power(kap)
+        pk = pknow if self.nowiggle else self.template.power(kap)
         sigmanl2 = kap**2 * (sigmapar**2 * muap**2 + sigmaper**2 * (1. - muap**2))
         damped_wiggles = (pk - pknow) * np.exp(-sigmanl2 / 2.)
         fog = 1. / (1. + (sigmas * kap * muap)**2 / 2.)**2.
@@ -96,14 +97,14 @@ class ResummedBAOWigglesPowerSpectrumMultipoles(BaseBAOWigglesPowerSpectrumMulti
     def __init__(self, *args, mu=200, **kwargs):
         super(ResummedBAOWigglesTracerPowerSpectrum, self).__init__(*args, **kwargs)
         self.set_k_mu(k=self.k, mu=mu, ells=self.ells)
-        if self.mode != 'nowiggle':
+        if not self.nowiggle:
             self.requires['template']['init'].update({'wiggles': ResummedPowerSpectrumWiggles, 'mode': self.mode, 'smoothing_radius': self.smoothing_radius})
 
     def run(self, bias=1., sigmas=0., **kwargs):
         f = self.template.f
         jac, kap, muap = self.template.ap_k_mu(self.k, self.mu)
         pknow = self.template.power_now(kap)
-        wiggles = 0. if self.mode == 'nowiggle' else self.template.wiggles(kap, muap, bias=bias, **kwargs)
+        wiggles = 0. if self.nowiggle else self.template.wiggles(kap, muap, bias=bias, **kwargs)
         fog = 1. / (1. + (sigmas * kap * muap)**2 / 2.)**2.
         sk = 0.
         if self.mode == 'reciso': sk = np.exp(-1. / 2. * (kap * self.smoothing_radius)**2)
@@ -127,7 +128,7 @@ class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipo
         self.broadband_coeffs = {}
         for ell in self.ells:
             self.broadband_coeffs[ell] = {}
-        for param in self_params:
+        for param in self_params.params():
             name = param.basename
             match = re.match('al(.*)_(.*)', name)
             if match:
@@ -135,6 +136,8 @@ class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipo
                 pow = int(match.group(2))
                 if ell in self.ells:
                     self.broadband_coeffs[ell][name] = pow
+                else:
+                    del self_params[param]
             else:
                 raise ValueError('Unrecognized parameter {}'.format(param))
         return self_params
@@ -146,12 +149,12 @@ class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipo
                 self.power[ill] += params[name] * self.k**ii
 
     @property
-    def mode(self):
-        return self.bao.mode
+    def nowiggle(self):
+        return self.bao.nowiggle
 
-    @mode.setter
-    def mode(self, mode):
-        self.bao.mode = mode
+    @nowiggle.setter
+    def nowiggle(self, nowiggle):
+        self.bao.nowiggle = nowiggle
 
 
 class DampedBAOWigglesTracerPowerSpectrumMultipoles(BaseBAOWigglesTracerPowerSpectrumMultipoles):
@@ -195,12 +198,12 @@ class BaseBAOWigglesTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFun
                 self.corr[ill] += params[name] * self.s**ii
 
     @property
-    def mode(self):
-        return self.bao.mode
+    def nowiggle(self):
+        return self.bao.nowiggle
 
-    @mode.setter
-    def mode(self, mode):
-        self.bao.mode = mode
+    @nowiggle.setter
+    def nowiggle(self, nowiggle):
+        self.bao.nowiggle = nowiggle
 
 
 BaseBAOWigglesTracerCorrelationFunctionMultipoles.set_params = BaseBAOWigglesTracerPowerSpectrumMultipoles.set_params

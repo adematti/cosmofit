@@ -93,14 +93,22 @@ params:
     prior:
       dist: uniform
       limits: [-3., 3.]
-    latex: m
+    ref:
+      dist: norm
+      loc: 0.
+      scale: 0.1
+    latex: dm
   dn:
     value: 0.
     fixed: True
     prior:
       dist: uniform
       limits: [-0.5, 0.5]
-    latex: n
+    ref:
+      dist: norm
+      loc: 0.
+      scale: 0.1
+    latex: dn
   A_p:
     derived: True
     latex: 'A_{p}'
@@ -124,12 +132,20 @@ params:
     prior:
       dist: uniform
       limits: [0.8, 1.2]
+    ref:
+      dist: norm
+      loc: 1.
+      scale: 0.02
     latex: '\alpha_{\parallel}'
   qper:
     value: 1.
     prior:
       dist: uniform
       limits: [0.8, 1.2]
+    ref:
+      dist: norm
+      loc: 1.
+      scale: 0.02
     latex: '\alpha_{\perp}'
   DM_over_rd:
     derived: True
@@ -185,6 +201,10 @@ params:
     prior:
       dist: uniform
       limits: [0.8, 1.2]
+    ref:
+      dist: norm
+      loc: 1.
+      scale: 0.02
     latex: '\alpha_{ap}'
   r:
     derived: True
@@ -237,6 +257,10 @@ params:
     prior:
       dist: uniform
       limits: [0.8, 1.2]
+    ref:
+      dist: norm
+      loc: 1.
+      scale: 0.02
     latex: '\alpha_{ap}'
   zeff:
     derived: True
@@ -267,13 +291,41 @@ params:
     prior:
       dist: uniform
       limits: [0.8, 1.2]
+    ref:
+      dist: norm
+      loc: 1.
+      scale: 0.02
     latex: '\alpha_{\parallel}'
   qper:
     value: 1.
     prior:
       dist: uniform
       limits: [0.8, 1.2]
+    ref:
+      dist: norm
+      loc: 1.
+      scale: 0.02
     latex: '\alpha_{\perp}'
+  qiso:
+    value: 1.
+    prior:
+      dist: uniform
+      limits: [0.8, 1.2]
+    ref:
+      dist: norm
+      loc: 1.
+      scale: 0.02
+    latex: '\alpha_{\mathrm{iso}}'
+  qap:
+    value: 1.
+    prior:
+      dist: uniform
+      limits: [0.8, 1.2]
+    ref:
+      dist: norm
+      loc: 0.
+      scale: 0.02
+    latex: '\alpha_{\mathrm{ap}}'
   DM_over_rd:
     derived: True
     latex: 'D_{\mathrm{M}}/r_{d}'

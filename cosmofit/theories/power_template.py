@@ -63,10 +63,10 @@ class BAOExtractor(BaseCalculator):
 
     def run(self, qpar=1., qper=1.):
         rd = self.cosmo.rs_drag
-        self.DH_over_rd = qpar * constants.c / 1e3 / self.cosmo.hubble_function(self.zeff) / rd
+        self.DH_over_rd = qpar * constants.c / 1e3 / (100. * self.cosmo.efunc(self.zeff)) / rd
         self.DM_over_rd = qper * self.cosmo.comoving_angular_distance(self.zeff) / rd
         self.DH_over_DM = self.DH_over_rd / self.DM_over_rd
-        self.DV_over_rd = (self.DH_over_rd * self.DM_over_rd**2. * self.zeff)**(1. / 3.)
+        self.DV_over_rd = (self.DH_over_rd * self.DM_over_rd**2 * self.zeff)**(1. / 3.)
 
 
 class ShapeFitPowerSpectrumExtractor(BaseCalculator):
@@ -81,7 +81,7 @@ class ShapeFitPowerSpectrumExtractor(BaseCalculator):
     def run(self):
         self.A_p = self.wiggles.power_now(self.kpivot)
         self.n = self.cosmo.n_s
-        dk = 1e-3
+        dk = 1e-2
         k = self.kpivot * np.array([1. - dk, 1. + dk])
         if self.n_varied:
             pk_prim = self.cosmo.get_primordial().pk_interpolator()(k) * k

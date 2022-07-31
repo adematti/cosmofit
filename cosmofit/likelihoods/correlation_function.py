@@ -56,9 +56,13 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
         if has_mocks:
             if self.mpicomm.rank == 0:
                 list_mock = []
-                for fn in covariance:
-                    for fn in sorted(glob.glob(fn)):
-                        mock_s, mock_ells, mock = lim_data(load_data(fn))
+                for mocks in covariance:
+                    if isinstance(mocks, str):
+                        mocks = [load_data(mock) for mock in glob.glob(mocks)]
+                    else:
+                        mocks = [mocks]
+                    for mock in mocks:
+                        mock_s, mock_ells, mock = lim_data(mock)
                         if self.s is None:
                             self.s, self.ells = mock_s, mock_ells
                         if not all(np.allclose(ss, ms) for ss, ms in zip(self.s, mock_s)):

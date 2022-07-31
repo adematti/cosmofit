@@ -11,6 +11,7 @@ Example notebooks are provided in directory nb/.
 
 ## TODOs
 
+- sparser Taylor expansion
 - finish documentation
 - proper example with cross-covariance (e.g. many redshift slices), potential changes to the infrastructure
 - autodetection of Chain/Profiles types; improve Profiles type

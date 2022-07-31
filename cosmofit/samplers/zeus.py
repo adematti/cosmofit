@@ -9,7 +9,7 @@ class ZeusSampler(BasePosteriorSampler):
     def __init__(self, *args, nwalkers=None, light_mode=False, **kwargs):
         super(ZeusSampler, self).__init__(*args, **kwargs)
         if nwalkers is None:
-            nwalkers = 2 * ((int(2.5 * len(self.varied_params)) + 1) // 2)
+            nwalkers = 2 * max((int(2.5 * len(self.varied_params)) + 1) // 2, 2)
         self.nwalkers = int(nwalkers)
         self.light_mode = bool(light_mode)
 

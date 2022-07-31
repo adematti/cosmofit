@@ -33,7 +33,7 @@ Introduction
 Quick start-up
 ==============
 
-For a quick start-up, see the notebook `examples <https://github.com/adematti/cosmofit/blob/main/nb/examples.ipynb>`_.
+For a quick start-up, see `notebooks <https://github.com/adematti/cosmofit/blob/main/nb>`_.
 
 
 Changelog

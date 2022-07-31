@@ -20,7 +20,7 @@ params:
     value: 1.69
     prior:
       dist: uniform
-      limits: [-0.5, 4.0]
+      limits: [0., 4.0]
     latex: b_{1}
   b2:
     value: -1.17
@@ -83,7 +83,7 @@ params:
     value: 1.69
     prior:
       dist: uniform
-      limits: [-0.5, 3.0]
+      limits: [0., 4.0]
     latex: b_{1}
   sn0:
     value: 0.
@@ -92,7 +92,7 @@ params:
       dist: norm
       loc: 0.
       scale: 1000.
-    latex: s_{n, []}
+    latex: s_{n, 0}
 
 ---
 
@@ -118,7 +118,7 @@ params:
     value: 1.69
     prior:
       dist: uniform
-      limits: [-0.5, 3.0]
+      limits: [0., 4.0]
     latex: b_{1}
   b2:
     value: -1.17
@@ -181,5 +181,5 @@ params:
     value: 1.69
     prior:
       dist: uniform
-      limits: [-0.5, 3.0]
+      limits: [0., 4.0]
     latex: b_{1}

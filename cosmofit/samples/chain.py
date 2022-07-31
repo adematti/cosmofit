@@ -339,7 +339,7 @@ class Chain(ParameterValues):
         return var
 
     def std(self, param, ddof=1):
-        return np.std(_reshape(self[param], self.size, previous=self.shape), ddof=ddof, axis=0) ** 0.5
+        return np.std(_reshape(self[param], self.size, previous=self.shape), ddof=ddof, axis=0)
 
     def mean(self, param):
         """Return weighted mean."""

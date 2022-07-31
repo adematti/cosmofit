@@ -796,7 +796,12 @@ class BasePipeline(BaseClass):
             params[name] = mpy.scatter(array, mpicomm=self.mpicomm, mpiroot=0)
             size = params[name].size
         cumsizes = np.cumsum([0] + self.mpicomm.allgather(size))
-        if not cumsizes[-1]: return
+        if not cumsizes[-1]:
+            try:
+                self.derived = self.derived[:0]
+            except (AttributeError, TypeError, IndexError):
+                self.derived = ParameterValues()
+            return
         mpicomm = self.mpicomm
         states = {}
         for ivalue in range(size):
@@ -864,8 +869,8 @@ class BasePipeline(BaseClass):
         new.calculators = []
 
         def callback(calculator):
-            for name, calc in calculator.runtime_info.requires.items():
-                if name not in [calc.runtime_info.name for calc in new.calculators]:
+            for calc in calculator.runtime_info.requires.values():
+                if calc not in new.calculators:
                     new.calculators.append(calc)
                     callback(calc)
 

@@ -4,7 +4,7 @@ import mpytools as mpy
 from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
 from cosmofit.samples import Profiles, ParameterValues
-from cosmofit.parameter import ParameterArray
+from cosmofit.parameter import ParameterArray, ParameterCollection
 
 
 class ProfilerConfig(SectionConfig):
@@ -52,6 +52,8 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         self.varied_params = self.likelihood.params.select(varied=True, derived=False)
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
+        if not self.varied_params:
+            raise ValueError('No parameters to be varied!')
         self.max_tries = int(max_tries)
         self.profiles = profiles
         if profiles is not None and not isinstance(profiles, Profiles):
@@ -61,6 +63,8 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
     def loglikelihood(self, values):
         values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
+        #if not values.size:
+        #    return -np.inf
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
         di = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}

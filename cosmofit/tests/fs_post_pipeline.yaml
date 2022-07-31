@@ -14,9 +14,8 @@ pipeline:
     init:
       fiducial: DESI
     params:
-      .delete: '*'
+      .delete: 'omega_cdm'
       Omega_m:
-        value: 0.3
         fixed: False
         prior:
           dist: uniform

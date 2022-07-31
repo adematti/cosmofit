@@ -8,7 +8,7 @@ from cosmofit import plotting, utils
 
 class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
 
-    def __init__(self, covariance=None, data=None, klim=None, kstep=None, krebin=None, zeff=None, fiducial=None, wmatrix=None):
+    def __init__(self, covariance=None, data=None, covariance_scale=1.0, klim=None, kstep=None, krebin=None, zeff=None, fiducial=None, wmatrix=None):
 
         def load_data(fn):
             from pypower import MeshFFTPower, PowerSpectrumMultipoles
@@ -18,6 +18,9 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             return PowerSpectrumMultipoles.load(fn)
 
         def lim_data(power, klim=klim, kstep=kstep, krebin=krebin):
+            if hasattr(power, 'poles'):
+                power = power.poles
+            shotnoise = power.shotnoise
             if krebin is None:
                 krebin = 1
                 if kstep is not None:
@@ -41,48 +44,53 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
                 list_k.append(power.k[mask])
                 list_data.append(data[power.ells.index(ell)][mask])
                 ells.append(ell)
-            return list_k, tuple(ells), list_data
+            return list_k, tuple(ells), list_data, shotnoise
 
-        self.k, self.ells, flatdata, nobs = None, None, None, None
-        data_is_mean = data == 'mean'
-        if isinstance(covariance, str):
+        def all_mocks(list_mocks):
+            list_y, list_shotnoise = [], []
+            for mocks in list_mocks:
+                if isinstance(mocks, str):
+                    mocks = [load_data(mock) for mock in glob.glob(mocks)]
+                else:
+                    mocks = [mocks]
+                for mock in mocks:
+                    mock_k, mock_ells, mock_y, mock_shotnoise = lim_data(mock)
+                    if self.k is None:
+                        self.k, self.ells = mock_k, mock_ells
+                    if not all(np.allclose(sk, mk) for sk, mk in zip(self.k, mock_k)):
+                        raise ValueError('{} does not have expected k-binning (based on previous data)'.format(fn))
+                    if mock_ells != self.ells:
+                        raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))
+                    list_y.append(np.ravel(mock_y))
+                    list_shotnoise.append(mock_shotnoise)
+            return list_y, list_shotnoise
+
+        self.k, self.ells, flatdata, nobs, shotnoise = None, None, None, None, 0.
+        if data is not None and not utils.is_sequence(data):
+            data = [data]
+        if covariance is not None and not utils.is_sequence(covariance):
             covariance = [covariance]
-        has_mocks = utils.is_sequence(covariance) and isinstance(covariance[0], str)
 
-        if data_is_mean:
-            if not has_mocks:
-                raise ValueError('data is mean of mocks, but no mocks provided')
-        elif data is not None:
+        if data is not None:
             if self.mpicomm.rank == 0:
-                if isinstance(data, str):
-                    data = load_data(data)
-                self.k, self.ells, flatdata = lim_data(data)
-                flatdata = np.ravel(flatdata)
+                list_y, list_shotnoise = all_mocks(data)
+                if covariance_scale is True:
+                    covariance_scale = 1. / len(list_y)
+                flatdata = np.mean(list_y, axis=0)
+                shotnoise = np.mean(list_shotnoise, axis=0)
 
-        if has_mocks:
+        if covariance is not None:
             if self.mpicomm.rank == 0:
-                list_mock = []
-                for fn in covariance:
-                    for fn in sorted(glob.glob(fn)):
-                        mock_k, mock_ells, mock = lim_data(load_data(fn))
-                        if self.k is None:
-                            self.k, self.ells = mock_k, mock_ells
-                        if not all(np.allclose(sk, mk) for sk, mk in zip(self.k, mock_k)):
-                            raise ValueError('{} does not have expected k-binning (based on previous data)'.format(fn))
-                        if mock_ells != self.ells:
-                            raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))
-                        list_mock.append(np.ravel(mock))
-                nobs = len(list_mock)
-                if data_is_mean:
-                    flatdata = np.mean(list_mock, axis=0)
-                covariance = np.cov(list_mock, rowvar=False, ddof=1)
+                list_y = all_mocks(covariance)[0]
+                nobs = len(list_y)
+                covariance = covariance_scale * np.cov(list_y, rowvar=False, ddof=1)
             covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
 
         self.k, self.ells, flatdata, nobs = self.mpicomm.bcast((self.k, self.ells, flatdata, nobs) if self.mpicomm.rank == 0 else None, root=0)
-
         super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=flatdata, nobs=nobs)
         self.requires['theory'] = ('cosmofit.theories.base.WindowedPowerSpectrumMultipoles',
-                                   {'k': self.k, 'ells': self.ells, 'wmatrix': wmatrix, 'theory': {'init': {'zeff': zeff, 'fiducial': fiducial}}})
+                                   {'k': self.k, 'ells': self.ells, 'wmatrix': wmatrix, 'shotnoise': shotnoise,
+                                    'theory': {'init': {'zeff': zeff, 'fiducial': fiducial}}})
         self.globals['kdata'] = self.k
 
     def plot(self, fn=None, kw_save=None):
@@ -116,14 +124,14 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         fig.subplots_adjust(hspace=0)
         data, model, std = self.data, self.model, self.std
         try:
-            mode = self.theory.theory.mode
+            mode = self.theory.theory.nowiggle
         except AttributeError as exc:
             raise ValueError('Theory {} has no mode nowiggle'.format(self.theory.theory.__class__)) from exc
-        self.theory.theory.mode = 'nowiggle'
+        self.theory.theory.nowiggle = True
         for calc in self.runtime_info.pipeline.calculators: calc.runtime_info.torun = True
         self.run()
         nowiggle = self.model
-        self.theory.theory.mode = mode
+        self.theory.theory.nowiggle = mode
         for ill, ell in enumerate(self.ells):
             lax[ill].errorbar(self.k[ill], self.k[ill] * (data[ill] - nowiggle[ill]), yerr=self.k[ill] * std[ill], color='C{:d}'.format(ill), linestyle='none', marker='o')
             lax[ill].plot(self.k[ill], self.k[ill] * (model[ill] - nowiggle[ill]), color='C{:d}'.format(ill))

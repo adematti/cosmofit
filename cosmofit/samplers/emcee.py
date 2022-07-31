@@ -7,7 +7,7 @@ class EmceeSampler(BasePosteriorSampler):
     def __init__(self, *args, nwalkers=None, **kwargs):
         super(EmceeSampler, self).__init__(*args, **kwargs)
         if nwalkers is None:
-            nwalkers = 2 * ((int(2.5 * len(self.varied_params)) + 1) // 2)
+            nwalkers = 2 * max((int(2.5 * len(self.varied_params)) + 1) // 2, 2)
         self.nwalkers = int(nwalkers)
 
     def _set_sampler(self):

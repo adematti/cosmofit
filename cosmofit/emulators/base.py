@@ -70,7 +70,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             raise PipelineError('For emulator, pipeline must have a single end calculator; use pipeline.select()')
 
         self.params = self.pipeline.params.clone(namespace=None)
-        self.varied_params = self.params.names(varied=True)
+        self.varied_params = self.params.names(varied=True, derived=False)
 
         calculators = []
         for calculator in self.pipeline.calculators:
@@ -84,9 +84,10 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         self.pipeline.set_params()
         self.fixed, self.varied = {}, set()
 
-        for ff, vv in zip(fixed, varied):
-            self.fixed.update(ff)
-            self.varied |= set(vv)
+        for cc, ff, vv in zip(calculators, fixed, varied):
+            bp = cc.runtime_info.base_params
+            self.fixed.update({k: v for k, v in ff.items() if k in bp and bp[k].derived})
+            self.varied |= {k for k in vv if k in bp and bp[k].derived}
 
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params))
