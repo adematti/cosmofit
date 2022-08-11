@@ -23,8 +23,7 @@ pipeline:
   theory:
     class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
     init:
-      mode: ''
-      #mode: 'nowiggle'
+      nowiggle: False
     params:
       .fixed: ['al*-3', 'al*-2', 'al*-1', 'al*1']
       #.derived: [.varied]
@@ -115,7 +114,7 @@ sample:
 
 profile:
   class: cosmofit.profilers.MinuitProfiler
-  save: e'{output_dir} + ("/profiles_nowiggle.npy" if {pipeline.theory.init.mode} == "nowiggle" else "/profiles.npy")'
+  save: e'{output_dir} + ("/profiles_nowiggle.npy" if {pipeline.theory.init.nowiggle} else "/profiles.npy")'
   maximize:
     niterations: 1
   interval:

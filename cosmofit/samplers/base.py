@@ -229,7 +229,7 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
                 if self.likelihood.mpicomm.rank == 0:
                     for param in self.likelihood.params.select(fixed=True, derived=False):
                         chain.set(ParameterArray(np.full(chain.shape, param.value, dtype='f8'), param))
-                    indices_in_chain, indices = ParameterValues(self.derived[1]).match(chain, name=self.varied_params.names())
+                    indices_in_chain, indices = ParameterValues(self.derived[1]).match(chain, params=self.varied_params)
                     assert indices_in_chain[0].size == chain.size
                     for array in self.derived[0]:
                         chain.set(array[indices].reshape(chain.shape + array.shape[1:]), output=True)

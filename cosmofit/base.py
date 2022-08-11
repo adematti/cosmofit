@@ -386,7 +386,8 @@ class RuntimeInfo(BaseClass):
         elif len(args):
             raise ValueError('Unrecognized arguments {}'.format(args))
         state.update(kwargs)
-        self.__setstate__(state)
+        for name, value in state.items():
+            setattr(self, name, value)  # this is to properly update properties with setters
 
     def clone(self, *args, **kwargs):
         """Clone, i.e. copy and update."""
@@ -450,7 +451,7 @@ def _best_match_parameter(namespace, basename, params, choice='max'):
 class CalculatorConfig(SectionConfig):
 
     _sections = ['info', 'init', 'params']
-    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save']
+    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save', 'config_fn']
 
     def __init__(self, data, **kwargs):
         # cls, init kwargs
@@ -758,13 +759,13 @@ class BasePipeline(BaseClass):
             for param in calculator.runtime_info.full_params:
                 if not quiet and param in self.params:
                     if param.derived and param.fixed:
-                        msg = 'Derived parameter {} of {} is already derived in {}'.format(param, calculator, params_from_calculator[param.name])
+                        msg = 'Derived parameter {} of {} is already derived in {}.'.format(param, calculator, params_from_calculator[param.name])
                         if param.basename not in calculator.runtime_info.derived_auto and param.basename not in params_from_calculator[param.name].runtime_info.derived_auto:
                             raise PipelineError(msg)
                         elif self.mpicomm.rank == 0:
                             self.log_warning(msg)
                     elif param != self.params[param]:
-                        raise PipelineError('Parameter {} of {} is different from that of {}'.format(param, calculator, params_from_calculator[param.name]))
+                        raise PipelineError('Parameter {} of {} is different from that of {}.'.format(param, calculator, params_from_calculator[param.name]))
                 params_from_calculator[param.name] = calculator
                 self.params.set(param)
 

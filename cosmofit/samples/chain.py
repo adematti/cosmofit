@@ -353,9 +353,9 @@ class Chain(ParameterValues):
         """Return weighted quantiles."""
         return utils.weighted_quantile(_reshape(self[param], self.size, previous=self.shape), q=0.5, weights=self.weight.ravel(), axis=0)
 
-    def quantile(self, param, q=(0.1587, 0.8413)):
+    def quantile(self, param, q=(0.1587, 0.8413), method='linear'):
         """Return weighted quantiles."""
-        return utils.weighted_quantile(_reshape(self[param], self.size, previous=self.shape), q=q, weights=self.weight.ravel(), axis=0)
+        return utils.weighted_quantile(_reshape(self[param], self.size, previous=self.shape), q=q, weights=self.weight.ravel(), axis=0, method=method)
 
     def interval(self, param, **kwargs):
         """

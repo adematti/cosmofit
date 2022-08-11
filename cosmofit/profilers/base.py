@@ -159,7 +159,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
                 if self.likelihood.mpicomm.rank == 0:
                     for param in self.likelihood.params.select(fixed=True, derived=False):
                         profile.bestfit.set(ParameterArray(np.array(param.value, dtype='f8'), param))
-                    index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, name=self.varied_params.names())
+                    index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, params=self.varied_params)
                     assert index_in_profile[0].size == 1
                     for array in self.derived[0]:
                         profile.bestfit.set(array[index], output=True)

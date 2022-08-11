@@ -263,11 +263,12 @@ class ParameterValues(BaseParameterCollection):
             toret = cls.recv(source=source, tag=tag, mpicomm=mpicomm)
         return toret
 
-    def match(self, other, eps=1e-8, **kwargs):
-        names = self.names(**kwargs)
+    def match(self, other, eps=1e-8, params=None):
+        if params is None:
+            params = set(self.names(output=False)) & set(other.names(output=False))
         from scipy import spatial
-        kdtree = spatial.cKDTree(np.array([self[name].ravel() for name in names]).T, leafsize=16, compact_nodes=True, copy_data=False, balanced_tree=True, boxsize=None)
-        array = np.array([other[name].ravel() for name in names]).T
+        kdtree = spatial.cKDTree(np.column_stack([self[name].ravel() for name in params]), leafsize=16, compact_nodes=True, copy_data=False, balanced_tree=True, boxsize=None)
+        array = np.column_stack([other[name].ravel() for name in params])
         dist, indices = kdtree.query(array, k=1, eps=0, p=2, distance_upper_bound=eps)
         mask = indices < self.size
         return np.unravel_index(np.flatnonzero(mask), shape=other.shape), np.unravel_index(indices[mask], shape=self.shape)

@@ -46,7 +46,7 @@ def outputs_to_latex(name):
     return toret
 
 
-def interval(samples, weights, nsigmas=1.):
+def interval(samples, weights=None, nsigmas=1.):
     """
     Return n-sigmas confidence interval(s).
 
@@ -62,6 +62,8 @@ def interval(samples, weights, nsigmas=1.):
     -------
     interval : tuple
     """
+    if weights is None:
+        weights = np.ones_like(samples)
     idx = np.argsort(samples)
     x = samples[idx]
     weights = weights[idx]
@@ -77,7 +79,7 @@ def interval(samples, weights, nsigmas=1.):
     return (xmin[argmin], xmax[argmin])
 
 
-def weighted_quantile(x, q, weights=None, axis=None, interpolation='lower'):
+def weighted_quantile(x, q, weights=None, axis=None, method='linear'):
     """
     Compute the q-th quantile of the weighted data along the specified axis.
 
@@ -104,8 +106,8 @@ def weighted_quantile(x, q, weights=None, axis=None, interpolation='lower'):
         default is to compute the quantile(s) along a flattened
         version of the array.
 
-    interpolation : {'linear', 'lower', 'higher', 'midpoint', 'nearest'}, default='linear'
-        This optional parameter specifies the interpolation method to
+    method : {'linear', 'lower', 'higher', 'midpoint', 'nearest'}, default='linear'
+        This optional parameter specifies the method method to
         use when the desired quantile lies between two data points
         ``i < j``:
 
@@ -135,7 +137,7 @@ def weighted_quantile(x, q, weights=None, axis=None, interpolation='lower'):
     """
     if weights is None:
         # If no weights provided, this simply calls `np.percentile`.
-        return np.quantile(x, q, axis=axis, interpolation=interpolation)
+        return np.quantile(x, q, axis=axis, method=method)
 
     # Initial check.
     x = np.atleast_1d(x)
@@ -174,31 +176,29 @@ def weighted_quantile(x, q, weights=None, axis=None, interpolation='lower'):
     zeros = np.zeros_like(cdf, shape=cdf.shape[:-1] + (1,))
     cdf = np.concatenate([zeros, cdf], axis=-1)  # ensure proper span
     idx0 = np.apply_along_axis(np.searchsorted, -1, cdf, q, side='right') - 1
-    if interpolation != 'higher':
-        q0 = np.take_along_axis(x, idx0, axis=-1)
-    if interpolation != 'lower':
-        idx1 = np.clip(idx0 + 1, None, x.shape[-1] - 1)
-        q1 = np.take_along_axis(x, idx1, axis=-1)
-    if interpolation in ['nearest', 'linear']:
-        cdf0, cdf1 = np.take_along_axis(cdf, idx0, axis=-1), np.take_along_axis(cdf, idx1, axis=-1)
-    if interpolation == 'nearest':
+    idx1 = np.clip(idx0 + 1, None, x.shape[-1] - 1)
+    q0, q1 = x[..., [idx0, idx1]]
+    cdf0, cdf1 = cdf[..., [idx0, idx1]]
+    if method == 'lower':
+        quantiles = q0
+    elif method == 'higher':
+        quantiles = q1
+    elif method == 'nearest':
         mask_lower = q - cdf0 < cdf1 - q
         quantiles = q1
         # in place, q1 not used in the following
         quantiles[mask_lower] = q0[mask_lower]
-    if interpolation == 'linear':
+    elif method == 'linear':
         step = cdf1 - cdf0
         diff = q - cdf0
         mask = idx1 == idx0
         step[mask] = diff[mask]
         fraction = diff / step
         quantiles = q0 + fraction * (q1 - q0)
-    if interpolation == 'lower':
-        quantiles = q0
-    if interpolation == 'higher':
-        quantiles = q1
-    if interpolation == 'midpoint':
+    elif method == 'midpoint':
         quantiles = (q0 + q1) / 2.
+    else:
+        raise ValueError('"method" must be one of ["linear", "lower", "higher", "midpoint", "nearest"]')
     quantiles = quantiles.swapaxes(-1, 0)
     if isscalar:
         return quantiles[0]

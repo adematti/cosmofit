@@ -65,6 +65,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             mpicomm = pipeline.mpicomm
         self.mpicomm = mpicomm
         self.pipeline = pipeline.copy()
+        self.pipeline.remove_namespace()
         self.pipeline.mpicomm = mpicomm
         if len(self.pipeline.end_calculators) > 1:
             raise PipelineError('For emulator, pipeline must have a single end calculator; use pipeline.select()')

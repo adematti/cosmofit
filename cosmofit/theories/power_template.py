@@ -75,8 +75,11 @@ class ShapeFitPowerSpectrumExtractor(BaseCalculator):
         self.zeff = float(zeff)
         self.kpivot = float(kpivot)
         self.n_varied = bool(n_varied)
+        # wallish2018 and hinton2017 engines are inappropriate for cosmological inference over base cosmological parameters (e.g. Omega_m)
+        # because they use discrete pivot k (argmax) which may jump for very small variations of e.g. Omega_m
+        # ehpoly has smoother behavior, despite being less accurate
         self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs},
-                         'wiggles': {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, **kwargs}}}
+                         'wiggles': {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, 'engine': 'savgol', **kwargs}}}
 
     def run(self):
         self.A_p = self.wiggles.power_now(self.kpivot)

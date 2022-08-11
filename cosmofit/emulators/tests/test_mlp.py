@@ -39,8 +39,8 @@ def test_mlp_linear(plot=False):
         from matplotlib import pyplot as plt
         ax = plt.gca()
         for i, dx in enumerate(np.linspace(-1., 1., 5)):
-            calculator.run(**{str(param): param.value + dx for param in calculator.params if param.varied})
-            emulated_calculator.run(**{str(param): param.value + dx for param in emulated_calculator.params if param.varied})
+            calculator.run(**{str(param): param.value + dx for param in calculator.runtime_info.full_params if param.varied})
+            emulated_calculator.run(**{str(param): param.value + dx for param in emulated_calculator.runtime_info.full_params if param.varied})
             color = 'C{:d}'.format(i)
             ax.plot(calculator.x, calculator.model, color=color, linestyle='--')
             ax.plot(emulated_calculator.x, emulated_calculator.model, color=color, linestyle='-')
