@@ -78,27 +78,28 @@ class ResummedPowerSpectrumWiggles(BasePowerSpectrumWiggles):
         if self.mode: sk = np.exp(-1. / 2. * (k * self.smoothing_radius)**2)
         ksq = (1 + f * (f + 2) * mu**2) * k**2
         damping_dd = np.exp(-1. / 2. * ksq * self.sigma_dd)
-        resummed_wiggles = damping_dd * ((1 + f * mu**2) * (1 - sk) + b1)**2 * wiggles
+        resummed_wiggles = damping_dd * ((1 + f * mu**2) * (1 - sk) + b1)**2
+        if self.mode == 'recsym':
+            damping_ds = np.exp(-1. / 2. * ksq * self.sigma_ds)
+            resummed_wiggles -= 2. * damping_ds * ((1 + f * mu**2) * (1 - sk) + b1) * (1 + f * mu**2) * sk
+            damping_ss = np.exp(-1. / 2. * ksq * self.sigma_ss)
+            resummed_wiggles += damping_ss * (1 + f * mu**2)**2 * sk**2
         if self.mode == 'reciso':
             damping_ds = np.exp(-1. / 2. * (ksq * self.sigma_ds_dd + k**2 * (self.sigma_ds_ss - 2. * (1 + f * mu**2) * self.sigma_ds_dd)))
-            resummed_wiggles -= 2. * damping_ds * ((1 + f * mu**2) * (1 - sk) + b1) * sk * wiggles
-            damping_ss = np.exp(-1. / 2. * ksq**2 * self.sigma_ss)
-            resummed_wiggles += damping_ss * (1 + f * mu**2)**2 * sk**2 * wiggles
-        else:
-            damping_ds = np.exp(-1. / 2. * (ksq * self.sigma_ds_dd + k**2 * (self.sigma_ds_ss - 2. * (1 + f * mu**2) * self.sigma_ds_dd)))
-            resummed_wiggles -= 2. * damping_ds * ((1 + f * mu**2) * (1 - sk) + b1) * (1 + f * mu**2) * sk * wiggles
-            damping_ss = np.exp(-1. / 2. * k**2 * self.sigma_ss)
-            resummed_wiggles += damping_ss * sk**2 * wiggles
-        return resummed_wiggles
+            resummed_wiggles -= 2. * damping_ds * ((1 + f * mu**2) * (1 - sk) + b1) * sk
+            damping_ss = np.exp(-1. / 2. * k**2 * self.sigma_ss)  # f = 0.
+            resummed_wiggles += damping_ss * sk**2
+        return resummed_wiggles * wiggles
 
 
 class ResummedBAOWigglesPowerSpectrumMultipoles(BaseBAOWigglesPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, mu=200, **kwargs):
-        super(ResummedBAOWigglesTracerPowerSpectrum, self).__init__(*args, **kwargs)
+        super(ResummedBAOWigglesPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
         self.set_k_mu(k=self.k, mu=mu, ells=self.ells)
         if not self.nowiggle:
-            self.requires['template']['init'].update({'wiggles': ResummedPowerSpectrumWiggles, 'mode': self.mode, 'smoothing_radius': self.smoothing_radius})
+            self.requires['template']['init'].update({'wiggles': {'class': ResummedPowerSpectrumWiggles,
+                                                                  'init': {'mode': self.mode, 'smoothing_radius': self.smoothing_radius}}})
 
     def run(self, bias=1., sigmas=0., **kwargs):
         f = self.template.f

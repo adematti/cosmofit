@@ -335,9 +335,12 @@ class BAOPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
     _parambasenames = ('f', 'DM_over_rd', 'DH_over_rd', 'DH_over_DM', 'DV_over_rd')
 
-    def __init__(self, zeff=1., fiducial=None, mode=None, wiggles='BasePowerSpectrumWiggles', **kwargs):
+    def __init__(self, zeff=1., fiducial=None, mode=None, wiggles='BasePowerSpectrumWiggles'):
         self.zeff = float(zeff)
-        self.requires = {'template': {'class': wiggles, 'init': {'zeff': zeff, 'fiducial': fiducial, **kwargs}},
+        if not isinstance(wiggles, dict):
+            wiggles = {'class': wiggles}
+        wiggles['init'] = {'zeff': zeff, 'fiducial': fiducial, **wiggles.get('init', {})}
+        self.requires = {'template': wiggles,
                          'effectap': {'class': EffectAP, 'init': {'zeff': zeff, 'fiducial': fiducial, 'mode': mode}}}
 
     def run(self, f=None):

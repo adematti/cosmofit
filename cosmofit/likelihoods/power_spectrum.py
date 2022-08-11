@@ -58,9 +58,9 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
                     if self.k is None:
                         self.k, self.ells = mock_k, mock_ells
                     if not all(np.allclose(sk, mk) for sk, mk in zip(self.k, mock_k)):
-                        raise ValueError('{} does not have expected k-binning (based on previous data)'.format(fn))
+                        raise ValueError('{} does not have expected k-binning (based on previous data)'.format(mock))
                     if mock_ells != self.ells:
-                        raise ValueError('{} does not have expected poles (based on previous data)'.format(fn))
+                        raise ValueError('{} does not have expected poles (based on previous data)'.format(mock))
                     list_y.append(np.ravel(mock_y))
                     list_shotnoise.append(mock_shotnoise)
             return list_y, list_shotnoise
@@ -74,7 +74,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         if data is not None:
             if self.mpicomm.rank == 0:
                 list_y, list_shotnoise = all_mocks(data)
-                if covariance_scale is True:
+                if isinstance(covariance_scale, bool) and covariance_scale:
                     covariance_scale = 1. / len(list_y)
                 flatdata = np.mean(list_y, axis=0)
                 shotnoise = np.mean(list_shotnoise, axis=0)
@@ -86,7 +86,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
                 covariance = covariance_scale * np.cov(list_y, rowvar=False, ddof=1)
             covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
 
-        self.k, self.ells, flatdata, nobs = self.mpicomm.bcast((self.k, self.ells, flatdata, nobs) if self.mpicomm.rank == 0 else None, root=0)
+        self.k, self.ells, flatdata, shotnoise, nobs = self.mpicomm.bcast((self.k, self.ells, flatdata, shotnoise, nobs) if self.mpicomm.rank == 0 else None, root=0)
         super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=flatdata, nobs=nobs)
         self.requires['theory'] = ('cosmofit.theories.base.WindowedPowerSpectrumMultipoles',
                                    {'k': self.k, 'ells': self.ells, 'wmatrix': wmatrix, 'shotnoise': shotnoise,
@@ -164,7 +164,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
 
     @property
     def std(self):
-        return self.unpack(np.diag(self.covariance) ** 0.5)
+        return self.unpack(np.diag(self.covariance)**0.5)
 
     def __getstate__(self):
         state = super(PowerSpectrumMultipolesLikelihood, self).__getstate__()

@@ -63,8 +63,8 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
     def loglikelihood(self, values):
         values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
-        #if not values.size:
-        #    return -np.inf
+        if not values.size:
+            return -np.inf
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
         di = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}
