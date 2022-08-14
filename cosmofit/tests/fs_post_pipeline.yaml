@@ -1,14 +1,19 @@
 pipeline:
   like:
     #class: cosmofit.likelihoods.BandVelocityPowerSpectrumParameterizationLikelihood
-    #class: cosmofit.likelihoods.ShapeFitParameterizationLikelihood
-    class: cosmofit.likelihoods.WiggleSplitPowerSpectrumParameterizationLikelihood
+    class: cosmofit.likelihoods.ShapeFitParameterizationLikelihood
+    #class: cosmofit.likelihoods.WiggleSplitPowerSpectrumParameterizationLikelihood
     init:
       chains: f'{data_dir}/chain_0.npy'
       burnin: 0.5
-      fiducial: DESI
+      #fiducial: DESI
     save: f'{output_dir}/bao_like.npy'
     #load: True
+  theory:
+    class: ShapeFitModel
+    #load: f'{output_dir}/fs_emulator.npy'
+    emulator:
+      save: f'{output_dir}/fs_emulator.npy'
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
     init:
@@ -21,6 +26,11 @@ pipeline:
           dist: uniform
           limits: [0.05, 0.6]
         latex: \Omega_{m}
+
+emulate:
+  class: TaylorEmulatorEngine
+  init:
+    order: 1
 
 summarize:
   chain:

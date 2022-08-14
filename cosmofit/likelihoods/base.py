@@ -48,7 +48,7 @@ class BaseGaussianLikelihood(BaseCalculator):
             self.requires = {'synthetic': ('GaussianSyntheticDataGenerator', {'covariance': self.covariance})}
 
     def run(self):
-        flatmodel = self.flatmodel()
+        flatmodel = self.flatmodel
         if self.flatdata is None:
             if self.mpicomm.rank == 0:
                 self.log_info('Using synthetic data.')

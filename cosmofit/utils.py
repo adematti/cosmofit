@@ -168,7 +168,7 @@ def dict_to_yaml(d):
             v = list(v)
         elif isinstance(v, np.ndarray):
             if v.size == 1:
-                v = v[0]
+                v = v.item()
             else:
                 v = v.tolist()
         elif not isinstance(v, (bool, numbers.Number)):

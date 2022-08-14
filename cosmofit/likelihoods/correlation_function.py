@@ -36,7 +36,7 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
                 list_s.append(s[mask])
                 list_data.append(data[ells.index(ell)][mask])
             return list_s, ells, list_data
-        
+
         def all_mocks(list_mocks):
             list_y = []
             for mocks in list_mocks:
@@ -114,6 +114,7 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
             nout = sl.stop
         return toret
 
+    @property
     def flatmodel(self):
         return self.theory.flatcorr
 
