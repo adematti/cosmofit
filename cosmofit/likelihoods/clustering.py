@@ -137,13 +137,15 @@ class ShapeFitModel(BAOModel):
     def __init__(self, *args, **kwargs):
         super(ShapeFitModel, self).__init__(*args, **kwargs)
         from cosmofit.theories.power_template import ShapeFitPowerSpectrumExtractor
-        self.requires['shapefit'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff, 'kpivot': self.kpivot, 'of': 'theta_cb'})
+        self.requires['shapefit'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff, 'kpivot': self.kpivot})
 
     def run(self):
         self.shapefit.n_varied = 'n' in self.quantities
         self.theory = [getattr(self.shapefit, quantity) for quantity in ['n', 'm'] if quantity in self.quantities]
         if 'f_sqrt_A_p' in self.quantities:
-            self.theory.append(self.shapefit.A_p**0.5)  # norm of velocity divergence power spectrum
+            fo = self.shapefit.cosmo.get_fourier()
+            f = fo.sigma8_z(z=self.zeff, of='theta_cb') / fo.sigma8_z(z=self.zeff, of='delta_cb')
+            self.theory.append(self.shapefit.A_p**0.5 * f)
         self.theory += [getattr(self.bao, quantity) for quantity in self.quantities[len(self.theory):]]
         self.theory = np.array(self.theory, dtype='f8')
 

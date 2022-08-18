@@ -35,8 +35,12 @@ pipeline:
     #    save: f'{output_dir}/emulator.npy'
     #shapefit:
     #  class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
-    wiggle:
-      class: cosmofit.theories.power_template.WiggleSplitPowerSpectrumParameterization
+    full:
+      class: cosmofit.theories.power_template.FullPowerSpectrumParameterization
+      init:
+        fiducial: DESI
+    #wiggle:
+    #  class: cosmofit.theories.power_template.WiggleSplitPowerSpectrumParameterization
     #pthetap:
     #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
     #  init:

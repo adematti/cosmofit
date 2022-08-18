@@ -34,6 +34,7 @@ class BasePowerSpectrumTemplate(BaseCalculator):
         self.k = np.array(k, dtype='f8')
         self.zeff = float(zeff)
         self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
+        print(self.requires)
 
     def run(self):
         fo = self.cosmo.get_fourier()
@@ -51,15 +52,22 @@ class BasePowerSpectrumTemplate(BaseCalculator):
 
 class FullPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
-    def __init__(self, k=None, zeff=1.):
-        super(FullPowerSpectrumTemplate, self).__init__(k=k, zeff=zeff, fiducial=None)
+    def __init__(self, k=None, zeff=1., **kwargs):
+        super(FullPowerSpectrumTemplate, self).__init__(k=k, zeff=zeff, **kwargs)
+
+    def set_params(self, params):
+        cosmo_params = params.deepcopy()
+        for param in cosmo_params:
+            param.fixed = param.init().fixed  # otherwise fiducial will fix params in Cosmoprimo
+        self.requires['cosmo']['params'] = cosmo_params
+        return params.clear()
 
 
 class BAOExtractor(BaseCalculator):
 
     def __init__(self, zeff=1., **kwargs):
         self.zeff = float(zeff)
-        self.requires = {'cosmo': (BasePrimordialCosmology, kwargs)}
+        self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
 
     def run(self, qpar=1., qper=1.):
         rd = self.cosmo.rs_drag
@@ -241,7 +249,8 @@ class BasePowerSpectrumParameterization(BaseCalculator):
 
     def __init__(self, k=None, zeff=1., fiducial=None, **kwargs):
         self.zeff = float(zeff)
-        self.requires = {'template': {'class': self.__class__.__name__.replace('Parameterization', 'Template'), 'init': {'k': k, 'zeff': zeff, **kwargs}},
+        self.requires = {'template': {'class': self.__class__.__name__.replace('Parameterization', 'Template'),
+                         'init': {'k': k, 'zeff': zeff, 'fiducial': fiducial, **kwargs}},
                          'effectap': {'class': EffectAP, 'init': {'zeff': zeff, 'fiducial': fiducial}}}
 
     def set_params(self, params):
@@ -277,6 +286,10 @@ class FullPowerSpectrumParameterization(BasePowerSpectrumParameterization):
         super(FullPowerSpectrumParameterization, self).__init__(*args, **kwargs)
         self.requires['effectap']['init']['mode'] = 'distances'
 
+    def run(self):
+        super(FullPowerSpectrumParameterization, self).run()
+        self.f = self.template.fsigma8 / self.template.sigma8
+
 
 class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
@@ -284,7 +297,7 @@ class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
     def __init__(self, *args, mode=None, **kwargs):
         super(ShapeFitPowerSpectrumParameterization, self).__init__(*args, **kwargs)
-        self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
+        #self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
         self.requires['effectap']['init']['mode'] = mode
 
     def run(self, f=None):
@@ -304,7 +317,7 @@ class WiggleSplitPowerSpectrumParameterization(BasePowerSpectrumParameterization
 
     def __init__(self, *args, **kwargs):
         super(WiggleSplitPowerSpectrumParameterization, self).__init__(*args, **kwargs)
-        self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
+        #self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
         self.requires['effectap']['init']['mode'] = 'qap'
 
     def run(self, fsigmar):
@@ -320,7 +333,7 @@ class BandVelocityPowerSpectrumParameterization(BasePowerSpectrumParameterizatio
 
     def __init__(self, *args, **kwargs):
         super(BandVelocityPowerSpectrumParameterization, self).__init__(*args, **kwargs)
-        self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
+        #self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
         self.requires['effectap']['init']['mode'] = 'qap'
 
     def run(self, f=None):

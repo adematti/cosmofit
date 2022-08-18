@@ -996,8 +996,8 @@ class ParameterCollectionConfig(BaseParameterCollection):
                 toret[name] = value
             return toret
 
-        self.delete = {}
-        for meta_name in ['fixed', 'derived', 'namespace']:
+        #self.delete = {}
+        for meta_name in ['fixed', 'derived', 'namespace', 'delete']:
             setattr(self, meta_name, update_order(getattr(self, meta_name), getattr(other, meta_name)))
         self.wildcard = self.wildcard + other.wildcard
         self._set_meta()

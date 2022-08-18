@@ -511,9 +511,9 @@ class CalculatorConfig(SectionConfig):
         self_params.derived = {}
         if params is None:
             params = self_params
-        for iparam, param in enumerate(self_params):
-            if param in params:
-                self_params[iparam] = params[param]
+        #for iparam, param in enumerate(self_params):
+            #if param in params:
+            #    self_params[iparam] = params[param]
         if self._loaded is None:
             new = self['class'].__new__(self['class'])
         else:
@@ -642,9 +642,14 @@ class PipelineConfig(BaseConfig):
                 key_requires = requirementbasename
                 requirementnamespace = namespace
                 match_first, match_name = None, None
+                #print(new.__class__, config['class'], config['params'])
                 for tmpnamespace, tmpbasename, tmpconfig in search_parent_namespace(namespace):
                     if issubclass(tmpconfig['class'], config['class']):
+                        #for param in config['params']: print(config['class'], param)
                         tc = tmpconfig.clone(config)
+                        #tc['params'] = tmpconfig['params'].deepcopy()  # do not change parameter dict, only update names
+                        #for param in config['params']: tc['params'].set(param)
+                        #print(tc['params'], tmpconfig['params'], config['params'].delete)
                         tc['class'], tc._loaded = tmpconfig['class'], tmpconfig._loaded
                         #print(config['class'], tc['class'], list(config['params'].keys()), list(tmpconfig['params'].keys()))
                         #if tc['class'].__name__ == 'DampedBAOWigglesPowerSpectrumMultipoles':

@@ -264,7 +264,7 @@ def _check_valid_inv(mat, invmat, rtol=1e-04, atol=1e-05, check_valid='raise'):
     within relative difference ``rtol`` and absolute difference ``atol``.
     """
     tmp = mat.dot(invmat)
-    ref = np.eye(tmp.shape[0], dtype=mat.dtype)
+    ref = np.eye(tmp.shape[0], dtype=tmp.dtype)
     if not np.allclose(tmp, ref, rtol=rtol, atol=atol):
         msg = 'Numerically inaccurate inverse matrix, max absolute diff {:.6f}.'.format(np.max(np.abs(tmp - ref)))
         if check_valid == 'raise':
