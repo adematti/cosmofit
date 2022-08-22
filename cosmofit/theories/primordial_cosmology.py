@@ -15,6 +15,8 @@ def get_from_cosmo(cosmo, name):
         Omega = getattr(cosmo, 'O' + name[1:], None)
         if Omega is not None:
             return Omega * cosmo.h ** 2
+    if name == 'k_pivot':
+        return cosmo.k_pivot * cosmo.h
     return getattr(cosmo, name)
 
 

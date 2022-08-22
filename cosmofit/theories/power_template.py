@@ -137,17 +137,22 @@ class WiggleSplitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         self.requires = {'wiggles': {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, 'of': 'theta_cb', **kwargs}}}
         self.r = float(r)
 
-    def run(self, qbao=1.):
+    def run(self, qbao=1., dn_s=0.):
         self.power_tt = self.wiggles.power_now(self.k) + self.wiggles.wiggles(self.k / qbao)
-        fo = self.wiggles.cosmo.get_fourier()
-        self.sigmar = fo.sigma_rz(self.r, self.zeff, of='delta_cb')
-        self.fsigmar = fo.sigma_rz(self.r, self.zeff, of='theta_cb')
+        kp = self.wiggles.cosmo.k_pivot
+        self.power_tt *= (self.k / kp)**dn_s
+        self.n_s = self.wiggles.cosmo.n_s + dn_s
+        pdd = self.wiggles.cosmo.get_fourier().pk_interpolator(of='delta_cb').to_1d(z=self.zeff)
+        ptt = self.wiggles.power
+        pdd = pdd.clone(pk=pdd.pk * (pdd.k / kp)**dn_s)
+        ptt = ptt.clone(pk=ptt.pk * (pdd.k / kp)**dn_s)
+        self.sigmar = pdd.sigma_r(self.r)
+        self.fsigmar = ptt.sigma_r(self.r)
         self.f = self.fsigmar / self.sigmar
-        self.power_tt /= self.fsigmar**2
 
     def __getstate__(self):
         state = {}
-        for name in ['power_tt']:
+        for name in ['power_tt', 'n_s', 'sigmar', 'fsigmar', 'f']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -323,7 +328,7 @@ class WiggleSplitPowerSpectrumParameterization(BasePowerSpectrumParameterization
     def run(self, fsigmar):
         self.fsigmar = fsigmar
         self.f = self.fsigmar / self.template.sigmar
-        self.power_dd = self.template.power_tt / self.template.sigmar**2
+        self.power_dd = self.template.power_tt / self.template.f**2
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
 
 

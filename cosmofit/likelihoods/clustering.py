@@ -81,7 +81,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
                 if not param:
                     raise ValueError('{} must be provided either as arguments or input samples'.format(name))
                 value = self.chain.mean(param[0])
-            else:
+            elif not isinstance(value, str):
                 value = np.array(value, dtype='f8')
             setattr(self, name, value)
             self.requires['theory']['init'][name] = value
@@ -181,21 +181,23 @@ class WiggleSplitModel(BaseModel):
         if 'fsigmar' in self.quantities:
             fo = self.cosmo.get_fourier()
             r = self.r * qiso
-            fsigmar = fo.sigma_rz(r, self.zeff, of='theta_cb')
+            fsigmar = fo.sigma_rz(r, z=self.zeff, of='theta_cb')
             self.theory.append(fsigmar)
+        if 'dn_s' in self.quantities:
+            self.theory.append(self.cosmo.n_s - self.effectap.fiducial.n_s)
         if 'qbao' in self.quantities:
-            self.theory.append(qiso * self.cosmo.rs_drag / self.effectap.fiducial.rs_drag)
+            self.theory.append(qiso * self.effectap.fiducial.rs_drag / self.cosmo.rs_drag)
         if 'qap' in self.quantities:
             self.theory.append(self.effectap.qap)
         self.theory = np.array(self.theory, dtype='f8')
 
 
-class WiggleSplitPowerSpectrumParameterizationLikelihood(BaseParameterizationLikelihood):
+class WiggleSplitParameterizationLikelihood(BaseParameterizationLikelihood):
 
-    _parambasenames = ('fsigmar', 'qbao', 'qap')
+    _parambasenames = ('fsigmar', 'dn_s', 'qbao', 'qap')
 
     def __init__(self, *args, r=None, zeff=None, fiducial=None, **kwargs):
-        super(WiggleSplitPowerSpectrumParameterizationLikelihood, self).__init__(*args, **kwargs)
+        super(WiggleSplitParameterizationLikelihood, self).__init__(*args, **kwargs)
         self._set_meta(r=r, zeff=zeff, fiducial=fiducial)
 
 
