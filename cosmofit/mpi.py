@@ -53,7 +53,7 @@ def split_ranks(nranks, nranks_per_worker, include_all=False):
 
 def barrier_idle(mpicomm, tag=0, sleep=0.01):
     """
-    MPI barrier fonction that solve the problem that Idle process occupies 100% CPU.
+    MPI barrier fonction that solves the problem that idle processes occupy 100% CPU.
     See: https://goo.gl/NofOO9.
     """
     size = mpicomm.size

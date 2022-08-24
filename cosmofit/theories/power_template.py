@@ -8,19 +8,24 @@ from .base import EffectAP
 
 class BasePowerSpectrumWiggles(BaseCalculator):
 
-    def __init__(self, zeff=1., engine='wallish2018', of='delta_cb', **kwargs):
+    def __init__(self, zeff=1., engine='peakaverage', of='delta_cb', **kwargs):
         self.engine = engine
         self.zeff = float(zeff)
         self.of = of
         self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
+        self.filter = None
 
     def run(self):
         fo = self.cosmo.get_fourier()
         self.sigma8 = fo.sigma8_z(self.zeff, of='delta_cb')
         self.fsigma8 = fo.sigma8_z(self.zeff, of='theta_cb')
         self.power = fo.pk_interpolator(of=self.of).to_1d(z=self.zeff, extrap_kmin=1e-6, extrap_kmax=1e3)
-        from cosmoprimo import PowerSpectrumBAOFilter
-        self.power_now = PowerSpectrumBAOFilter(self.power, engine=self.engine).smooth_pk_interpolator()
+        if self.filter is None:
+            from cosmoprimo import PowerSpectrumBAOFilter
+            self.filter = PowerSpectrumBAOFilter(self.power, engine=self.engine, cosmo=self.cosmo, cosmo_fid=self.cosmo)
+        else:
+            self.filter(self.power, cosmo=self.cosmo)
+        self.power_now = self.filter.smooth_pk_interpolator()
 
     def wiggles(self, k):
         return self.power(k) - self.power_now(k)
@@ -87,7 +92,7 @@ class ShapeFitPowerSpectrumExtractor(BaseCalculator):
         # because they use discrete pivot k (argmax) which may jump for very small variations of e.g. Omega_m
         # ehpoly has smoother behavior, despite being less accurate
         self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs},
-                         'wiggles': {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, 'engine': 'savgol', **kwargs}}}
+                         'wiggles': {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, 'engine': 'peakaverage', **kwargs}}}
 
     def run(self):
         self.A_p = self.wiggles.power_now(self.kpivot)
@@ -99,10 +104,11 @@ class ShapeFitPowerSpectrumExtractor(BaseCalculator):
         else:
             pk_prim = 1.
         self.m = (np.diff(np.log(self.wiggles.power_now(k) / pk_prim)) / np.diff(np.log(k)))[0]
+        self.kp_rs = self.kpivot * self.cosmo.rs_drag
 
     def __getstate__(self):
         state = {}
-        for name in ['A_p', 'n', 'm', 'n_varied']:
+        for name in ['A_p', 'n', 'm', 'n_varied', 'kp_rs']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -308,7 +314,7 @@ class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
     def run(self, f=None):
         super(ShapeFitPowerSpectrumParameterization, self).run()
         self.f = f
-        for name in ['A_p', 'n', 'm']:
+        for name in ['A_p', 'n', 'm', 'kp_rs']:
             setattr(self, name, getattr(self.template, name))
         self.f_sqrt_A_p = self.f * self.A_p**0.5
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper

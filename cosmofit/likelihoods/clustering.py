@@ -137,15 +137,18 @@ class ShapeFitModel(BAOModel):
     def __init__(self, *args, **kwargs):
         super(ShapeFitModel, self).__init__(*args, **kwargs)
         from cosmofit.theories.power_template import ShapeFitPowerSpectrumExtractor
-        self.requires['shapefit'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff, 'kpivot': self.kpivot})
+        self.requires['shapefit'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff})
 
     def run(self):
-        self.shapefit.n_varied = 'n' in self.quantities
-        self.theory = [getattr(self.shapefit, quantity) for quantity in ['n', 'm'] if quantity in self.quantities]
+        shapefit = self.runtime_info.requires['shapefit']
+        shapefit.n_varied = 'n' in self.quantities
+        shapefit.kpivot = self.kp_rs / shapefit.cosmo.rs_drag
+        shapefit.run()
+        self.theory = [getattr(shapefit, quantity) for quantity in ['n', 'm'] if quantity in self.quantities]
         if 'f_sqrt_A_p' in self.quantities:
-            fo = self.shapefit.cosmo.get_fourier()
+            fo = shapefit.cosmo.get_fourier()
             f = fo.sigma8_z(z=self.zeff, of='theta_cb') / fo.sigma8_z(z=self.zeff, of='delta_cb')
-            self.theory.append(self.shapefit.A_p**0.5 * f)
+            self.theory.append(shapefit.A_p**0.5 * f)
         self.theory += [getattr(self.bao, quantity) for quantity in self.quantities[len(self.theory):]]
         self.theory = np.array(self.theory, dtype='f8')
 
@@ -163,9 +166,9 @@ class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
                     pass
         return nm + ['f_sqrt_A_p'] + super(ShapeFitParameterizationLikelihood, self)._parambasenames
 
-    def __init__(self, *args, kpivot=0.03, **kwargs):
+    def __init__(self, *args, kp_rs=None, **kwargs):
         super(ShapeFitParameterizationLikelihood, self).__init__(*args, **kwargs)
-        self._set_meta(kpivot=kpivot)
+        self._set_meta(kp_rs=kp_rs)
 
 
 class WiggleSplitModel(BaseModel):
@@ -213,7 +216,9 @@ class BandVelocityPowerSpectrumModel(BaseModel):
     def run(self):
         qiso = self.effectap.qiso
         # Anything that will need a new run effectap will also need a new run of bandpower, so it is safe
-        self.runtime_info.requires['bandpower'].kptt = self.kptt / qiso
+        bandpower = self.runtime_info.requires['bandpower']
+        bandpower.kptt = self.kptt / qiso
+        bandpower.run()
         self.theory = []
         if 'f' in self.quantities:
             fo = self.cosmo.get_fourier()
@@ -222,7 +227,7 @@ class BandVelocityPowerSpectrumModel(BaseModel):
             self.theory.append(f)
         if 'qap' in self.quantities:
             self.theory.append(self.effectap.qap)
-        self.theory = np.concatenate([self.bandpower.ptt / qiso**3, self.theory], axis=0)
+        self.theory = np.concatenate([bandpower.ptt / qiso**3, self.theory], axis=0)
 
 
 class BandVelocityPowerSpectrumParameterizationLikelihood(BaseParameterizationLikelihood):
