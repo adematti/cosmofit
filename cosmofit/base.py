@@ -94,7 +94,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
     def __setattr__(self, name, item):
         """Check no attribute is set with the name of a required calculator."""
         super(BaseCalculator, self).__setattr__(name, item)
-        if name in self.requires:
+        if name in self.runtime_info.requires:
             raise PipelineError('Attribute {} is reserved to a calculator, hence cannot be set'.format(name))
 
     def __getattr__(self, name):
@@ -104,7 +104,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
         if name == 'runtime_info':
             self.runtime_info = RuntimeInfo(self)
             return self.runtime_info
-        if name in self.requires:
+        if name in self.runtime_info.requires:
             toret = self.runtime_info.requires[name]
             if toret.runtime_info.torun:
                 toret.run(**toret.runtime_info.params)

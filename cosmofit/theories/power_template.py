@@ -137,7 +137,7 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
 class WiggleSplitPowerSpectrumExtractor(BaseCalculator):
 
-    def __init__(self, zeff=1., kp=0.1, **kwargs):
+    def __init__(self, zeff=1., kp=0.03, **kwargs):
         self.zeff = float(zeff)
         self.kp = float(kp)
         # wallish2018 and hinton2017 engines are inappropriate for cosmological inference over base cosmological parameters (e.g. Omega_m)
@@ -160,13 +160,13 @@ class WiggleSplitPowerSpectrumExtractor(BaseCalculator):
 
 class WiggleSplitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
-    def __init__(self, k=None, kp=0.1, r=8., **kwargs):
+    def __init__(self, k=None, kp=0.03, r=8., **kwargs):
         super(WiggleSplitPowerSpectrumTemplate, self).__init__(k=k, **kwargs)
         WiggleSplitPowerSpectrumExtractor.__init__(self, kp=kp, **kwargs)
         self.r = float(r)
 
     def run(self, qbao=1., dm=0.):
-        super(WiggleSplitPowerSpectrumExtractor, self).run()
+        WiggleSplitPowerSpectrumExtractor.run(self)
         self.m += dm
         self.power_tt = self.wiggles.power_now(self.k) + self.wiggles.wiggles(self.k / qbao)
         self.power_tt *= (self.k / self.kp)**dm

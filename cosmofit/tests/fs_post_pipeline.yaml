@@ -1,12 +1,12 @@
 pipeline:
   like:
     #class: cosmofit.likelihoods.BandVelocityPowerSpectrumParameterizationLikelihood
-    class: cosmofit.likelihoods.ShapeFitParameterizationLikelihood
-    #class: cosmofit.likelihoods.WiggleSplitParameterizationLikelihood
+    #class: cosmofit.likelihoods.ShapeFitParameterizationLikelihood
+    class: cosmofit.likelihoods.WiggleSplitParameterizationLikelihood
     init:
       chains: f'{data_dir}/chain_0.npy'
       burnin: 0.5
-      #fiducial: DESI
+      fiducial: DESI
     save: f'{output_dir}/bao_like.npy'
     #load: True
   #theory:

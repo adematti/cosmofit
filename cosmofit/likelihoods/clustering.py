@@ -137,6 +137,7 @@ class ShapeFitModel(BAOModel):
     def __init__(self, *args, **kwargs):
         super(ShapeFitModel, self).__init__(*args, **kwargs)
         from cosmofit.theories.power_template import ShapeFitPowerSpectrumExtractor
+        self.requires['bao'] = self.requires['extractor']
         self.requires['extractor'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff})
 
     def run(self):
@@ -176,8 +177,9 @@ class WiggleSplitModel(BaseModel):
     def __init__(self, *args, **kwargs):
         super(WiggleSplitModel, self).__init__(*args, **kwargs)
         from cosmofit.theories.base import EffectAP
+        from cosmofit.theories.power_template import WiggleSplitPowerSpectrumExtractor
         self.requires['effectap'] = (EffectAP, {'zeff': self.zeff, 'fiducial': self.fiducial, 'mode': 'distances'})
-        self.requires['extractor'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff})
+        self.requires['extractor'] = (WiggleSplitPowerSpectrumExtractor, {'zeff': self.zeff})
 
     def run(self):
         qiso = self.effectap.qiso
