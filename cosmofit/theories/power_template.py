@@ -39,7 +39,6 @@ class BasePowerSpectrumTemplate(BaseCalculator):
         self.k = np.array(k, dtype='f8')
         self.zeff = float(zeff)
         self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
-        print(self.requires)
 
     def run(self):
         fo = self.cosmo.get_fourier()

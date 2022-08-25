@@ -194,7 +194,7 @@ class EffectAP(BaseCalculator):
 
 class WindowedPowerSpectrumMultipoles(BaseCalculator):
 
-    def __init__(self, k=None, ells=(0, 2, 4), ellsin=None, wmatrix=None, shotnoise=0., theory=None):
+    def __init__(self, k=None, ells=(0, 2, 4), ellsin=None, wmatrix=None, kinrebin=1, shotnoise=0., theory=None):
         if k is None: k = np.linspace(0.01, 0.2, 20)
         if np.ndim(k[0]) == 0:
             k = [k] * len(ells)
@@ -234,14 +234,17 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
             projsin = [proj for proj in wmatrix.projsin if proj.ell in self.ellsin]
             self.ellsin = [proj.ell for proj in projsin]
             wmatrix.select_proj(projsout=[(ell, None) for ell in self.ells], projsin=projsin)
+            wmatrix.slice_x(slicein=slice(0, len(wmatrix.xin[0]) // kinrebin * kinrebin, kinrebin))
+            wmatrix.select_x(xinlim=(0., max(kk.max() for kk in self.k) * 1.2))
             self.kin = wmatrix.xin[0]
             assert all(np.allclose(xin, self.kin) for xin in wmatrix.xin)
             # TODO: implement best match BaseMatrix method
             for iout, (projout, kk) in enumerate(zip(wmatrix.projsout, self.k)):
                 nmk = np.sum((wmatrix.xout[iout] >= 2 * kk[0] - kk[1]) & (wmatrix.xout[iout] <= 2 * kk[-1] - kk[-2]))
                 factorout = nmk // kk.size
-                wmatrix.slice_x(sliceout=slice(0, wmatrix.xout[iout].size // factorout * factorout), projsout=projout)
-                wmatrix.rebin_x(factorout=factorout, projsout=projout)
+                wmatrix.slice_x(sliceout=slice(0, len(wmatrix.xout[iout]) // factorout * factorout, factorout), projsout=projout)
+                #wmatrix.slice_x(sliceout=slice(0, len(wmatrix.xout[iout]) // factorout * factorout), projsout=projout)
+                #wmatrix.rebin_x(factorout=factorout, projsout=projout)
                 istart = np.nanargmin(np.abs(wmatrix.xout[iout] - kk[0]))
                 wmatrix.slice_x(sliceout=slice(istart, istart + kk.size), projsout=projout)
                 if not np.allclose(wmatrix.xout[iout], kk):

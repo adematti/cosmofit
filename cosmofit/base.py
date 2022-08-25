@@ -94,7 +94,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
     def __setattr__(self, name, item):
         """Check no attribute is set with the name of a required calculator."""
         super(BaseCalculator, self).__setattr__(name, item)
-        if name in self.runtime_info.requires:
+        if name in self.requires:
             raise PipelineError('Attribute {} is reserved to a calculator, hence cannot be set'.format(name))
 
     def __getattr__(self, name):
@@ -104,7 +104,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
         if name == 'runtime_info':
             self.runtime_info = RuntimeInfo(self)
             return self.runtime_info
-        if name in self.runtime_info.requires:
+        if name in self.requires:
             toret = self.runtime_info.requires[name]
             if toret.runtime_info.torun:
                 toret.run(**toret.runtime_info.params)
@@ -489,8 +489,8 @@ class CalculatorConfig(SectionConfig):
             else:
                 self._loaded = self['class'].from_state(state)
             self['class'] = type(self._loaded)
-            cls_params = getattr(self._loaded, 'params', None)
-            if self['config_fn'] is None: self['config_fn'] = getattr(self._loaded, 'config_fn', None)
+            cls_params = self._loaded.__dict__.get('params', None)
+            if self['config_fn'] is None: self['config_fn'] = self._loaded.__dict__.get('config_fn', None)
         else:
             cls_params = getattr(self['class'], 'params', None)
             if self['config_fn'] is None: self['config_fn'] = getattr(self['class'], 'config_fn', None)
@@ -642,7 +642,7 @@ class PipelineConfig(BaseConfig):
                 key_requires = requirementbasename
                 requirementnamespace = namespace
                 match_first, match_name = None, None
-                #print(new.__class__, config['class'], config['params'])
+                #print(new.__class__, config['class'], config['init'])
                 for tmpnamespace, tmpbasename, tmpconfig in search_parent_namespace(namespace):
                     if issubclass(tmpconfig['class'], config['class']):
                         #for param in config['params']: print(config['class'], param)
