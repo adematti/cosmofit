@@ -75,6 +75,8 @@ class GridSampler(BaseClass, metaclass=RegisteredSampler):
                 samples.set(ParameterArray(np.full(samples.shape, param.value, dtype='f8'), param))
             samples.update(self.pipeline.derived)
             self.samples = samples
+        else:
+            self.samples = None
 
     def __enter__(self):
         return self

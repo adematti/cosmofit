@@ -79,6 +79,8 @@ class QMCSampler(BaseClass, metaclass=RegisteredSampler):
                 self.samples = samples
             else:
                 self.samples = ParameterValues.concatenate(self.samples, samples)
+        else:
+            self.samples = None
 
     def __enter__(self):
         return self
