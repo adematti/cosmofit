@@ -6,7 +6,7 @@ import numpy as np
 
 from cosmofit import setup_logging
 from cosmofit.base import BaseConfig, BasePipeline, PipelineError, LikelihoodPipeline
-from cosmofit.parameter import ParameterConfig, ParameterCollectionConfig, Parameter, ParameterCollection, ParameterPrior, decode_name, find_names, yield_names_latex
+from cosmofit.parameter import ParameterConfig, ParameterCollectionConfig, Parameter, ParameterArray, ParameterCollection, ParameterPrior, decode_name, find_names, yield_names_latex
 
 
 def test_config():
@@ -83,6 +83,18 @@ def test_params():
 
     prior = ParameterPrior(dist='norm', loc=0., scale=1.)
     assert np.allclose(prior(0.), 0.)
+
+
+def test_param_array():
+    try:
+        import cPickle as pickle
+    except:
+        import pickle
+    array = ParameterArray(np.ones(4), param=Parameter('p'))
+    s = pickle.dumps(array)
+    array2 = pickle.loads(s)
+    print([array, array2])
+
 
 def test_pipeline():
     config = BaseConfig('bao_power_pipeline.yaml')
@@ -165,6 +177,7 @@ if __name__ == '__main__':
 
     setup_logging('info')
 
+    test_param_array()
     # test_config()
     # test_params()
     # test_pipeline()
@@ -181,4 +194,4 @@ if __name__ == '__main__':
     # test_sample(config_fn='png_pipeline.yaml')
     # test_profile(config_fn='png_pipeline.yaml')
     # test_do(config_fn='png_pipeline.yaml')
-    test_run(config_fn='fs_power_pipeline.yaml')
+    # test_run(config_fn='fs_power_pipeline.yaml')

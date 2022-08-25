@@ -255,6 +255,20 @@ class ParameterArray(np.ndarray):
     def __repr__(self):
         return '{}({}, {})'.format(self.__class__.__name__, self.param, self)
 
+    def __reduce__(self):
+        # See https://stackoverflow.com/questions/26598109/preserve-custom-attributes-when-pickling-subclass-of-numpy-array
+        # Get the parent's __reduce__ tuple
+        pickled_state = super(ParameterArray, self).__reduce__()
+        # Create our own tuple to pass to __setstate__
+        new_state = pickled_state[2] + (self.param.__getstate__(),)
+        # Return a tuple that replaces the parent's __setstate__ tuple with our own
+        return (pickled_state[0], pickled_state[1], new_state)
+
+    def __setstate__(self, state):
+        self.param = Parameter.from_state(state[-1])  # Set the info attribute
+        # Call the parent's __setstate__ with the other tuple elements.
+        super(ParameterArray, self).__setstate__(state[:-1])
+
     def __getstate__(self):
         return {'value': self.view(np.ndarray), 'param': self.param.__getstate__()}
 
@@ -517,7 +531,7 @@ class BaseParameterCollection(BaseClass):
             return
 
         if utils.is_sequence(data):
-            dd = self.data.copy()
+            dd = data
             data = {}
             for item in dd:
                 data[self._get_name(item)] = item  # only name is provided
@@ -765,7 +779,7 @@ class BaseParameterCollection(BaseClass):
 
     def __getstate__(self):
         """Return this class state dictionary."""
-        state = {'data': [item.__getstate__() for item in self]}
+        state = {'data': [item.__getstate__() for item in self.data]}
         for name in self._attrs:
             #if hasattr(self, name):
             state[name] = getattr(self, name)

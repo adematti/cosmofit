@@ -237,7 +237,7 @@ class ParameterValues(BaseParameterCollection):
         state['data'] = [array['param'] for array in state['data']]
         mpicomm.send(state, dest=dest, tag=tag)
         for array in self:
-            mpy.send(array, dest=dest, tag=tag)
+            mpy.send(array, dest=dest, tag=tag, mpicomm=mpicomm)
 
     @classmethod
     def recv(cls, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, mpicomm=None):
@@ -507,7 +507,7 @@ class ParameterContours(BaseParameterCollection):
         mpicomm.send(state, dest=dest, tag=tag)
         for arrays in self:
             for array in arrays:
-                mpy.send(array, dest=dest, tag=tag)
+                mpy.send(array, dest=dest, tag=tag, mpicomm=mpicomm)
 
     @classmethod
     def recv(cls, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, mpicomm=None):
