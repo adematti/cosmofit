@@ -110,10 +110,10 @@ class BAOModel(BaseModel):
     def __init__(self, *args, **kwargs):
         super(BAOModel, self).__init__(*args, **kwargs)
         from cosmofit.theories.power_template import BAOExtractor
-        self.requires = {'bao': (BAOExtractor, {'zeff': self.zeff})}
+        self.requires = {'extractor': (BAOExtractor, {'zeff': self.zeff})}
 
     def run(self):
-        self.theory = np.array([getattr(self.bao, quantity) for param in self.quantities], dtype='f8')
+        self.theory = np.array([getattr(self.extractor, quantity) for param in self.quantities], dtype='f8')
 
 
 class BAOParameterizationLikelihood(BaseParameterizationLikelihood):
@@ -137,18 +137,18 @@ class ShapeFitModel(BAOModel):
     def __init__(self, *args, **kwargs):
         super(ShapeFitModel, self).__init__(*args, **kwargs)
         from cosmofit.theories.power_template import ShapeFitPowerSpectrumExtractor
-        self.requires['shapefit'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff})
+        self.requires['extractor'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff})
 
     def run(self):
-        shapefit = self.runtime_info.requires['shapefit']
-        shapefit.n_varied = 'n' in self.quantities
-        shapefit.kpivot = self.kp_rs / shapefit.cosmo.rs_drag
-        shapefit.run()
-        self.theory = [getattr(shapefit, quantity) for quantity in ['n', 'm'] if quantity in self.quantities]
-        if 'f_sqrt_A_p' in self.quantities:
-            fo = shapefit.cosmo.get_fourier()
+        extractor = self.runtime_info.requires['extractor']
+        extractor.n_varied = 'n' in self.quantities
+        extractor.kp = self.kp_rs / extractor.cosmo.rs_drag
+        extractor.run()
+        self.theory = [getattr(extractor, quantity) for quantity in ['n', 'm'] if quantity in self.quantities]
+        if 'f_sqrt_Ap' in self.quantities:
+            fo = extractor.cosmo.get_fourier()
             f = fo.sigma8_z(z=self.zeff, of='theta_cb') / fo.sigma8_z(z=self.zeff, of='delta_cb')
-            self.theory.append(shapefit.A_p**0.5 * f)
+            self.theory.append(extractor.Ap**0.5 * f)
         self.theory += [getattr(self.bao, quantity) for quantity in self.quantities[len(self.theory):]]
         self.theory = np.array(self.theory, dtype='f8')
 
@@ -164,7 +164,7 @@ class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
                     del nm[nm.index(param.basename)]
                 except IndexError:
                     pass
-        return nm + ['f_sqrt_A_p'] + super(ShapeFitParameterizationLikelihood, self)._parambasenames
+        return nm + ['f_sqrt_Ap'] + super(ShapeFitParameterizationLikelihood, self)._parambasenames
 
     def __init__(self, *args, kp_rs=None, **kwargs):
         super(ShapeFitParameterizationLikelihood, self).__init__(*args, **kwargs)
@@ -177,6 +177,7 @@ class WiggleSplitModel(BaseModel):
         super(WiggleSplitModel, self).__init__(*args, **kwargs)
         from cosmofit.theories.base import EffectAP
         self.requires['effectap'] = (EffectAP, {'zeff': self.zeff, 'fiducial': self.fiducial, 'mode': 'distances'})
+        self.requires['extractor'] = (ShapeFitPowerSpectrumExtractor, {'zeff': self.zeff})
 
     def run(self):
         qiso = self.effectap.qiso
@@ -186,8 +187,11 @@ class WiggleSplitModel(BaseModel):
             r = self.r * qiso
             fsigmar = fo.sigma_rz(r, z=self.zeff, of='theta_cb')
             self.theory.append(fsigmar)
-        if 'dn_s' in self.quantities:
-            self.theory.append(self.cosmo.n_s - self.effectap.fiducial.n_s)
+        if 'm' in self.quantities:
+            extractor = self.runtime_info.requires['extractor']
+            extractor.kp = self.kp / qiso
+            extractor.run()
+            self.theory.append(extractor.m)
         if 'qbao' in self.quantities:
             self.theory.append(qiso * self.effectap.fiducial.rs_drag / self.cosmo.rs_drag)
         if 'qap' in self.quantities:
@@ -197,11 +201,11 @@ class WiggleSplitModel(BaseModel):
 
 class WiggleSplitParameterizationLikelihood(BaseParameterizationLikelihood):
 
-    _parambasenames = ('fsigmar', 'dn_s', 'qbao', 'qap')
+    _parambasenames = ('fsigmar', 'm', 'qbao', 'qap')
 
-    def __init__(self, *args, r=None, zeff=None, fiducial=None, **kwargs):
+    def __init__(self, *args, r=None, zeff=None, kp=None, fiducial=None, **kwargs):
         super(WiggleSplitParameterizationLikelihood, self).__init__(*args, **kwargs)
-        self._set_meta(r=r, zeff=zeff, fiducial=fiducial)
+        self._set_meta(r=r, zeff=zeff, kp=kp, fiducial=fiducial)
 
 
 class BandVelocityPowerSpectrumModel(BaseModel):

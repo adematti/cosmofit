@@ -107,7 +107,7 @@ info:
 init:
   fiducial: DESI
   a: 0.6
-  kpivot: 0.03
+  kp: 0.03
 
 params:
   dm:
@@ -131,13 +131,13 @@ params:
       loc: 0.
       scale: 0.1
     latex: dn
-  A_p:
+  Ap:
     derived: True
     latex: 'A_{p}'
   kp_rs:
     derived: True
     latex: 'k_{p} r_{\mathrm{drag}}'
-  f_sqrt_A_p:
+  f_sqrt_Ap:
     derived: True
     latex: 'f A_{p}^{1/2}'
   m:
@@ -231,7 +231,7 @@ params:
       loc: 1.
       scale: 0.02
     latex: '\alpha_{ap}'
-  dn_s:
+  dm:
     value: 0.
     prior:
       dist: uniform
@@ -240,7 +240,13 @@ params:
       dist: norm
       loc: 0.
       scale: 0.1
-    latex: dn_s
+    latex: dm
+  m:
+    derived: True
+    latex: 'm'
+  kp:
+    derived: True
+    latex: 'k_{p}'
   r:
     derived: True
     latex: 'R'

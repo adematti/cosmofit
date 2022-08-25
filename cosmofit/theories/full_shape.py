@@ -15,6 +15,8 @@ class BasePTPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
 class LPTPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles):
 
+    # Slow, ~ 2 sec per iteration
+
     def run(self):
         from velocileptors.LPT.lpt_rsd_fftw import LPT_RSD
         self.lpt = LPT_RSD(self.kin, self.template.power_dd, kIR=0.2, cutoff=10, extrap_min=-4, extrap_max=3, N=2000, threads=1, jn=5)

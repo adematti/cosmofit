@@ -985,13 +985,15 @@ class LikelihoodPipeline(BasePipeline):
 
     def run(self, **params):
         super(LikelihoodPipeline, self).run(**params)
+        if not params:
+            return
         from .samples.utils import outputs_to_latex
         loglikelihood = 0.
         params = []
         for calculator in self.end_calculators:
             params.append(calculator.runtime_info.base_params[self._likelihood_name])
             loglikelihood += calculator.runtime_info.derived[params[-1]]
-        if len(params) == 1 and not params[0].namespace:
+        if len(params) == 1 and not params[0].namespace:  # loglikelihood already set in self.derived
             return
         param = Parameter(self._likelihood_name, namespace=None, latex=outputs_to_latex(self._likelihood_name), derived=True)
         if param in self.derived:

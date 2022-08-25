@@ -121,6 +121,20 @@ def test_likelihood():
     assert len(pipeline.loglikelihood) == 0
 
 
+def test_run(config_fn='bao_power_pipeline.yaml'):
+    config = BaseConfig(config_fn)
+    pipeline = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
+    import time
+    t0 = time.time()
+    niter = 10
+    for i in range(niter):
+        for calculator in pipeline.calculators:
+            if calculator.runtime_info.name != 'cosmo':
+                calculator.runtime_info.torun = True
+        pipeline.end_calculators[0].run()
+    print((time.time() - t0) / niter)
+
+
 def test_sample(config_fn='bao_power_pipeline.yaml'):
     from cosmofit.main import sample_from_config
     sample_from_config(config_fn)
@@ -154,16 +168,17 @@ if __name__ == '__main__':
     # test_config()
     # test_params()
     # test_pipeline()
-    test_likelihood()
+    # test_likelihood()
     # test_sample()
     # test_profile()
     # test_do()
     # test_summarize()
     # test_emulate()
-    # test_emulate(config_fn='fs_pipeline.yaml')
-    # test_profile(config_fn='fs_pipeline.yaml')
-    # test_sample(config_fn='fs_pipeline.yaml')
-    # test_summarize(config_fn='fs_pipeline.yaml')
+    # test_emulate(config_fn='fs_power_pipeline.yaml')
+    # test_profile(config_fn='fs_power_pipeline.yaml')
+    # test_sample(config_fn='fs_power_pipeline.yaml')
+    # test_summarize(config_fn='fs_power_pipeline.yaml')
     # test_sample(config_fn='png_pipeline.yaml')
     # test_profile(config_fn='png_pipeline.yaml')
     # test_do(config_fn='png_pipeline.yaml')
+    test_run(config_fn='fs_power_pipeline.yaml')

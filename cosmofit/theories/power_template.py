@@ -39,7 +39,6 @@ class BasePowerSpectrumTemplate(BaseCalculator):
         self.k = np.array(k, dtype='f8')
         self.zeff = float(zeff)
         self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
-        print(self.requires)
 
     def run(self):
         fo = self.cosmo.get_fourier()
@@ -84,9 +83,9 @@ class BAOExtractor(BaseCalculator):
 
 class ShapeFitPowerSpectrumExtractor(BaseCalculator):
 
-    def __init__(self, zeff=1., kpivot=0.03, n_varied=True, **kwargs):
+    def __init__(self, zeff=1., kp=0.03, n_varied=True, **kwargs):
         self.zeff = float(zeff)
-        self.kpivot = float(kpivot)
+        self.kp = float(kp)
         self.n_varied = bool(n_varied)
         # wallish2018 and hinton2017 engines are inappropriate for cosmological inference over base cosmological parameters (e.g. Omega_m)
         # because they use discrete pivot k (argmax) which may jump for very small variations of e.g. Omega_m
@@ -95,20 +94,20 @@ class ShapeFitPowerSpectrumExtractor(BaseCalculator):
                          'wiggles': {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, 'engine': 'peakaverage', **kwargs}}}
 
     def run(self):
-        self.A_p = self.wiggles.power_now(self.kpivot)
+        self.Ap = self.wiggles.power_now(self.kp)
         self.n = self.cosmo.n_s
         dk = 1e-2
-        k = self.kpivot * np.array([1. - dk, 1. + dk])
+        k = self.kp * np.array([1. - dk, 1. + dk])
         if self.n_varied:
             pk_prim = self.cosmo.get_primordial().pk_interpolator()(k) * k
         else:
             pk_prim = 1.
         self.m = (np.diff(np.log(self.wiggles.power_now(k) / pk_prim)) / np.diff(np.log(k)))[0]
-        self.kp_rs = self.kpivot * self.cosmo.rs_drag
+        self.kp_rs = self.kp * self.cosmo.rs_drag
 
     def __getstate__(self):
         state = {}
-        for name in ['A_p', 'n', 'm', 'n_varied', 'kp_rs']:
+        for name in ['Ap', 'n', 'm', 'n_varied', 'kp_rs']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -116,16 +115,16 @@ class ShapeFitPowerSpectrumExtractor(BaseCalculator):
 
 class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
-    def __init__(self, a=0.6, kpivot=0.03, k=None, **kwargs):
+    def __init__(self, a=0.6, kp=0.03, k=None, **kwargs):
         super(ShapeFitPowerSpectrumTemplate, self).__init__(k=k, **kwargs)
-        ShapeFitPowerSpectrumExtractor.__init__(self, kpivot=kpivot, **kwargs)
+        ShapeFitPowerSpectrumExtractor.__init__(self, kp=kp, **kwargs)
         self.a = float(a)
 
     def run(self, dm=0., dn=0.):
         self.n_varied = self.runtime_info.base_params['dn'].varied  # for ShapeFitPowerSpectrumExtractor
         super(ShapeFitPowerSpectrumTemplate, self).run()
         ShapeFitPowerSpectrumExtractor.run(self)
-        factor = dm / self.a * np.tanh(self.a * np.log(self.k / self.kpivot)) + dn * np.log(self.k / self.kpivot)
+        factor = dm / self.a * np.tanh(self.a * np.log(self.k / self.kp)) + dn * np.log(self.k / self.kp)
         self.power_dd *= np.exp(factor)
         self.n += dn
         self.m += dm
@@ -136,29 +135,52 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         return state
 
 
+class WiggleSplitPowerSpectrumExtractor(BaseCalculator):
+
+    def __init__(self, zeff=1., kp=0.1, **kwargs):
+        self.zeff = float(zeff)
+        self.kp = float(kp)
+        # wallish2018 and hinton2017 engines are inappropriate for cosmological inference over base cosmological parameters (e.g. Omega_m)
+        # because they use discrete pivot k (argmax) which may jump for very small variations of e.g. Omega_m
+        # ehpoly has smoother behavior, despite being less accurate
+        self.requires = {'wiggles': {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, 'of': 'theta_cb', 'engine': 'peakaverage', **kwargs}}}
+
+    def run(self):
+        dk = 1e-2
+        k = self.kp * np.array([1. - dk, 1. + dk])
+        self.m = (np.diff(np.log(self.wiggles.power_now(k))) / np.diff(np.log(k)))[0]
+
+    def __getstate__(self):
+        state = {}
+        for name in ['m']:
+            if hasattr(self, name):
+                state[name] = getattr(self, name)
+        return state
+
+
 class WiggleSplitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
-    def __init__(self, k=None, r=8., **kwargs):
+    def __init__(self, k=None, kp=0.1, r=8., **kwargs):
         super(WiggleSplitPowerSpectrumTemplate, self).__init__(k=k, **kwargs)
-        self.requires = {'wiggles': {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, 'of': 'theta_cb', **kwargs}}}
+        WiggleSplitPowerSpectrumExtractor.__init__(self, kp=kp, **kwargs)
         self.r = float(r)
 
-    def run(self, qbao=1., dn_s=0.):
+    def run(self, qbao=1., dm=0.):
+        super(WiggleSplitPowerSpectrumExtractor, self).run()
+        self.m += dm
         self.power_tt = self.wiggles.power_now(self.k) + self.wiggles.wiggles(self.k / qbao)
-        kp = self.wiggles.cosmo.k_pivot
-        self.power_tt *= (self.k / kp)**dn_s
-        self.n_s = self.wiggles.cosmo.n_s + dn_s
+        self.power_tt *= (self.k / self.kp)**dm
         pdd = self.wiggles.cosmo.get_fourier().pk_interpolator(of='delta_cb').to_1d(z=self.zeff)
         ptt = self.wiggles.power
-        pdd = pdd.clone(pk=pdd.pk * (pdd.k / kp)**dn_s)
-        ptt = ptt.clone(pk=ptt.pk * (pdd.k / kp)**dn_s)
+        pdd = pdd.clone(pk=pdd.pk * (pdd.k / self.kp)**dm)
+        ptt = ptt.clone(pk=ptt.pk * (pdd.k / self.kp)**dm)
         self.sigmar = pdd.sigma_r(self.r)
         self.fsigmar = ptt.sigma_r(self.r)
         self.f = self.fsigmar / self.sigmar
 
     def __getstate__(self):
         state = {}
-        for name in ['power_tt', 'n_s', 'sigmar', 'fsigmar', 'f']:
+        for name in ['power_tt', 'm', 'sigmar', 'fsigmar', 'f', 'kp']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -304,7 +326,7 @@ class FullPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
 class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
-    _parambasenames = ('f', 'A_p', 'f_sqrt_A_p', 'n', 'm', 'DM_over_rd', 'DH_over_rd', 'DH_over_DM', 'DV_over_rd')
+    _parambasenames = ('f', 'Ap', 'f_sqrt_Ap', 'n', 'm', 'DM_over_rd', 'DH_over_rd', 'DH_over_DM', 'DV_over_rd')
 
     def __init__(self, *args, mode=None, **kwargs):
         super(ShapeFitPowerSpectrumParameterization, self).__init__(*args, **kwargs)
@@ -314,9 +336,9 @@ class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
     def run(self, f=None):
         super(ShapeFitPowerSpectrumParameterization, self).run()
         self.f = f
-        for name in ['A_p', 'n', 'm', 'kp_rs']:
+        for name in ['Ap', 'n', 'm', 'kp_rs']:
             setattr(self, name, getattr(self.template, name))
-        self.f_sqrt_A_p = self.f * self.A_p**0.5
+        self.f_sqrt_Ap = self.f * self.Ap**0.5
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
         self.cosmo = self.template.cosmo
         BAOExtractor.run(self, qpar=self.qpar, qper=self.qper)
