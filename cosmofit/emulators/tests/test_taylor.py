@@ -78,5 +78,5 @@ def test_taylor(plot=False):
 if __name__ == '__main__':
 
     setup_logging()
-    test_taylor_power(plot=True)
+    test_taylor_power(plot=False)
     #test_taylor(plot=True)

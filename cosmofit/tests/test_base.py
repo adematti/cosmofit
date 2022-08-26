@@ -173,20 +173,33 @@ def test_emulate(config_fn='bao_power_pipeline.yaml'):
     emulate_from_config(config_fn)
 
 
+def test_emulate(config_fn='fs_power_pipeline.yaml'):
+    config = BaseConfig(config_fn)
+    pipeline = LikelihoodPipeline(config['pipeline'], params=config.get('params', None))
+    pipeline = pipeline.select('QSO.theory', type=BasePipeline)
+    from cosmofit.emulators import PointEmulatorEngine, TaylorEmulatorEngine
+    #emulator = TaylorEmulatorEngine(pipeline, order=1)
+    emulator = PointEmulatorEngine(pipeline)
+    emulator.set_samples()
+    emulator.fit()
+    #emulator.set_samples()
+    emulator.check()
+
+
 if __name__ == '__main__':
 
     setup_logging('info')
 
-    test_param_array()
     # test_config()
     # test_params()
+    # test_param_array()
     # test_pipeline()
     # test_likelihood()
     # test_sample()
     # test_profile()
     # test_do()
     # test_summarize()
-    # test_emulate()
+    test_emulate()
     # test_emulate(config_fn='fs_power_pipeline.yaml')
     # test_profile(config_fn='fs_power_pipeline.yaml')
     # test_sample(config_fn='fs_power_pipeline.yaml')

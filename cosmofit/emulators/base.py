@@ -6,7 +6,7 @@ import numpy as np
 from cosmofit.samples import ParameterValues
 from cosmofit.base import PipelineError, SectionConfig, import_cls
 from cosmofit import utils, plotting
-from cosmofit.utils import BaseClass
+from cosmofit.utils import BaseClass, OrderedSet
 from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError, ParameterCollection, ParameterConfig
 
 
@@ -79,16 +79,18 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
                 calculators.append(calculator)
 
         calculator = self.pipeline.end_calculators[0]
-        calculator.runtime_info.derived_auto = {'.fixed', '.varied'}
+        calculator.runtime_info.derived_auto = OrderedSet('.fixed', '.varied')
         calculators.append(calculator)
         calculators, fixed, varied = self.pipeline._set_derived_auto(calculators)
         self.pipeline.set_params()
-        self.fixed, self.varied = {}, set()
+        self.fixed, self.varied = {}, OrderedSet()
 
         for cc, ff, vv in zip(calculators, fixed, varied):
             bp = cc.runtime_info.base_params
             self.fixed.update({k: v for k, v in ff.items() if k in bp and bp[k].derived})
-            self.varied |= {k for k in vv if k in bp and bp[k].derived}
+            self.varied |= OrderedSet(k for k in vv if k in bp and bp[k].derived)
+            #self.varied += [k for k in vv if k in bp and bp[k].derived and k not in self.varied]
+        self.varied = list(self.varied)
 
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params))
@@ -171,6 +173,16 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         calculator = self.to_calculator(derived=self.varied)
         derived = calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
 
+        #calculator = self.pipeline
+        #calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
+        #derived = calculator.derived
+        #from cosmofit.base import BasePipeline
+        #calculator = BasePipeline(calculator)
+        #derived = calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
+        #from mpi4py import MPI
+        #calculator.mpicomm = MPI.COMM_SELF
+        #derived = calculator.mpirun(**{name: self.mpicomm.bcast(samples[name] if self.mpicomm.rank == 0 else None, root=0) for name in self.varied_params})
+
         if self.mpicomm.rank == 0:
             mse = {}
             for name in self.varied:
@@ -203,9 +215,14 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             fn = [fn]
         samples = self.subsamples(nmax=nmax, **kwargs)
         calculator = self.to_calculator(derived=names)
-        derived = calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
+        #derived = calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
+
+        from mpi4py import MPI
+        calculator.mpicomm = MPI.COMM_SELF
+        derived = calculator.mpirun(**{name: self.mpicomm.bcast(samples[name] if self.mpicomm.rank == 0 else None, root=0) for name in self.varied_params})
 
         from matplotlib import pyplot as plt
+        lax = None
         if self.mpicomm.rank == 0:
             for name, fn in zip(names, fn):
                 plt.close(plt.gcf())
@@ -271,7 +288,11 @@ class PointEmulatorEngine(BaseEmulatorEngine):
         return sampler.samples
 
     def fit(self):
-        self.point = {name: np.asarray(self.samples[name].flat[0]) for name in self.samples.outputs}
+        point = None
+        if self.mpicomm.rank == 0:
+            point = self.samples.ravel()
+            point = {name: np.asarray(point[name][0]) for name in point.outputs}
+        self.point = self.mpicomm.bcast(point, root=0)
 
     def predict(self, **params):
         # Dumb prediction

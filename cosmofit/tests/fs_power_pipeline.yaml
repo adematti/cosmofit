@@ -22,7 +22,7 @@ pipeline:
       #params:
       #  .derived: [.varied]
       #  .fixed: '*'
-      #load: f'{output_dir}/fs_emulator.npy'
+      load: f'{output_dir}/fs_emulator.npy'
       emulator:
         init:
           #order: {'*': 1, 'q*': 2, 'b1': 2}

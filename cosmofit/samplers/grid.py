@@ -69,6 +69,11 @@ class GridSampler(BaseClass, metaclass=RegisteredSampler):
         mpicomm = self.pipeline.mpicomm
         self.pipeline.mpicomm = self.mpicomm
         self.pipeline.mpirun(**(samples.to_dict() if self.mpicomm.rank == 0 else {}))
+
+        #from mpi4py import MPI
+        #self.pipeline.mpicomm = MPI.COMM_SELF
+        #self.pipeline.mpirun(**self.mpicomm.bcast(samples.to_dict() if self.mpicomm.rank == 0 else {}, root=0))
+
         self.pipeline.mpicomm = mpicomm
         if self.mpicomm.rank == 0:
             for param in self.pipeline.params.select(fixed=True, derived=False):

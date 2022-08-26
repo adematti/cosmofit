@@ -10,7 +10,7 @@ from mpytools import CurrentMPIComm
 from mpi4py.MPI import COMM_SELF
 
 from . import utils
-from .utils import BaseClass, NamespaceDict, deep_eq
+from .utils import BaseClass, OrderedSet, NamespaceDict, deep_eq
 from .parameter import Parameter, ParameterArray, ParameterCollectionConfig, ParameterCollection, find_names
 from .io import BaseConfig
 from .samples import ParameterValues
@@ -24,7 +24,7 @@ class RegisteredCalculator(type(BaseClass)):
 
     """Metaclass registering :class:`BaseCalculator`-derived classes."""
 
-    _registry = set()
+    _registry = OrderedSet()
 
     def __new__(meta, *args, **kwargs):
         cls = super().__new__(meta, *args, **kwargs)
@@ -294,7 +294,7 @@ class RuntimeInfo(BaseClass):
         self.config = config
         self.basename = basename
         self.namespace = namespace
-        self.required_by = set(required_by or [])
+        self.required_by = OrderedSet(required_by or [])
         self.requires = requires
         if requires is None:
             self.requires = {}
@@ -304,7 +304,7 @@ class RuntimeInfo(BaseClass):
             self.full_params = full_params
         self.torun = True
         self.calculator = calculator
-        self.derived_auto = set(derived_auto or [])
+        self.derived_auto = OrderedSet(derived_auto or [])
 
     @property
     def full_params(self):
@@ -501,7 +501,7 @@ class CalculatorConfig(SectionConfig):
     def init(self, namespace=None, params=None, globals=None, **kwargs):
         self_params = self['params'].with_namespace(namespace=namespace)
         self_derived = [param for param, b in self_params.derived.items() if b]
-        derived_auto = set()
+        derived_auto = OrderedSet()
         for param in self_derived:
             if param in ['.varied', '.fixed']:
                 derived_auto.add(param)
@@ -575,7 +575,7 @@ class PipelineConfig(BaseConfig):
             return (ParameterConfig(new) != ParameterConfig(old))
 
         self.params = ParameterCollectionConfig(identifier='name')
-        self.updated_params = set()
+        self.updated_params = OrderedSet()
         for namespace in self.namespaces_deepfirst:
             calculators_in_namespace = self.calculators_by_namespace[namespace] = self.calculators_by_namespace.get(namespace, {})
             for basename, calcdict in calculators_in_namespace.items():
@@ -685,7 +685,7 @@ class PipelineConfig(BaseConfig):
 
             return new
 
-        calculators, used = [], set()
+        calculators, used = [], OrderedSet()
         for namespace in reversed(self.namespaces_deepfirst):
             for basename, config in self.calculators_by_namespace[namespace].items():
                 callback_init(namespace, basename, config, required_by=None)
@@ -848,7 +848,7 @@ class BasePipeline(BaseClass):
             calculator.runtime_info = calculator.runtime_info.deepcopy()
             new.calculators.append(calculator)
         for calculator in new.calculators:
-            calculator.runtime_info.required_by = set([new.calculators[self.calculators.index(calc)] for calc in calculator.runtime_info.required_by])
+            calculator.runtime_info.required_by = OrderedSet(new.calculators[self.calculators.index(calc)] for calc in calculator.runtime_info.required_by)
             calculator.runtime_info.requires = {name: new.calculators[self.calculators.index(calc)] for name, calc in calculator.runtime_info.requires.items()}
             calculator.runtime_info.calculator = calculator
             calculator.runtime_info.pipeline = new
@@ -864,10 +864,14 @@ class BasePipeline(BaseClass):
 
         for icalc, end_calculator in enumerate(end_calculators):
             if isinstance(end_calculator, str):
+                found = False
                 for calculator in self.calculators:
                     if calculator.runtime_info.name == end_calculator:
                         end_calculators[icalc] = calculator
+                        found = True
                         break
+                if not found:
+                    raise ValueError('Calculator of name {} not found in {}'.format(end_calculator, self.calculators))
 
         new = self.copy(type=type)
         new.params = ParameterCollection()
@@ -881,7 +885,7 @@ class BasePipeline(BaseClass):
                     callback(calc)
 
         for end_calculator in new.end_calculators:
-            end_calculator.runtime_info.required_by = set()
+            end_calculator.runtime_info.required_by = OrderedSet()
             new.calculators.append(end_calculator)
             callback(end_calculator)
 
@@ -898,7 +902,7 @@ class BasePipeline(BaseClass):
         if calculators is None:
             calculators = []
             for calculator in self.calculators:
-                if any(kw in getattr(calculator.runtime_info, 'derived_auto', {}) for kw in ['.varied', '.fixed']):
+                if any(kw in getattr(calculator.runtime_info, 'derived_auto', OrderedSet()) for kw in ['.varied', '.fixed']):
                     calculators.append(calculator)
 
         states = [{} for i in range(len(calculators))]
@@ -933,12 +937,12 @@ class BasePipeline(BaseClass):
     def _set_derived_auto(self, *args, **kwargs):
         calculators, fixed, varied = self._classify_derived_auto(*args, **kwargs)
         for calculator, fixed_names, varied_names in zip(calculators, fixed, varied):
-            derived_names = set()
+            derived_names = OrderedSet()
             for derived_name in calculator.runtime_info.derived_auto:
                 if derived_name == '.fixed':
-                    derived_names |= set(fixed_names)
+                    derived_names |= OrderedSet(fixed_names)
                 elif derived_name == '.varied':
-                    derived_names |= set(varied_names)
+                    derived_names |= OrderedSet(varied_names)
                 else:
                     derived_names.add(derived_name)
             calculator.runtime_info.derived_auto |= derived_names

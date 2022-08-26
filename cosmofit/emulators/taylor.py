@@ -147,8 +147,6 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
         return sampler.samples
 
     def fit(self):
-        from findiff import FinDiff, coefficients
-        from scipy.interpolate import LinearNDInterpolator
         self.center, self.derivatives, self.powers = {}, {}, {}
         if self.mpicomm.rank == 0:
             ndim = len(self.varied_params)
