@@ -23,7 +23,7 @@ class LPTPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles):
         self.lpt.make_pltable(self.template.f, kv=self.k, apar=self.template.qpar, aperp=self.template.qper, ngauss=3)
         self.lpttable = [self.lpt.p0ktable, self.lpt.p2ktable, self.lpt.p4ktable]
 
-    def combine_bias_terms_power_poles(self, b1=1.69, b2=-1.17, bs=-0.71, b3=0., alpha0=0., alpha2=0., alpha4=0., alpha6=0., sn0=0., sn2=0., sn4=0.):
+    def combine_bias_terms_power_poles(self, b1=0.69, b2=-1.17, bs=-0.71, b3=0., alpha0=0., alpha2=0., alpha4=0., alpha6=0., sn0=0., sn2=0., sn4=0.):
         bias = [b1, b2, bs, b3]
         bias += [alpha0, alpha2, alpha4, alpha6]
         bias += [sn0, sn2, sn4]

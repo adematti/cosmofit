@@ -16,6 +16,7 @@ init:
   ells: [0, 2, 4]
 
 params:
+  .fixed: ['b3', 'alpha[4:7:2]', 'sn*']
   b1:
     value: 1.69
     prior:
@@ -38,6 +39,7 @@ params:
     latex: b_{s}
   b3:
     value: -0.479
+    fixed: True
     prior:
       dist: norm
       loc: 0.
@@ -52,7 +54,6 @@ params:
     latex: \alpha_[]
   sn[:5:2]:
     value: 0.
-    fixed: False
     prior:
       dist: norm
       loc: 0.
@@ -114,6 +115,7 @@ init:
   ells: [0, 2, 4]
 
 params:
+  .fixed: ['b3', 'alpha[4:7:2]', 'sn*']
   b1:
     value: 1.69
     prior:

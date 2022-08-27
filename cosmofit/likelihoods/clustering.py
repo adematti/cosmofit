@@ -1,22 +1,10 @@
-import glob
-
 import numpy as np
 from scipy import constants
 
 from .base import BaseGaussianLikelihood, BaseCalculator
-from cosmofit.samples import Chain
+from cosmofit.samples import Chain, load_samples
 from cosmofit.parameter import ParameterCollection
 from cosmofit import utils
-
-
-def load_chain(chains, burnin=None):
-    if not utils.is_sequence(chains):
-        chains = [chains]
-    if isinstance(chains[0], str):
-        chains = [Chain.load(fn) for ff in chains for fn in glob.glob(ff)]
-    if burnin is not None:
-        chains = [chain.remove_burnin(burnin) for chain in chains]
-    return Chain.concatenate(chains)
 
 
 class BaseModel(BaseCalculator):
@@ -49,7 +37,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
     def __init__(self, chains=None, select=None, burnin=None):
         self.chain = None
         if self.mpicomm.rank == 0:
-            self.chain = load_chain(chains, burnin=burnin)
+            self.chain = load_samples(source='chain', fns=chains, burnin=burnin)
         self.params = self.mpicomm.bcast(self.chain.params() if self.mpicomm.rank == 0 else None, root=0)
         if select is not None:
             self.params = self.params.select(**select)
