@@ -8,7 +8,7 @@ from cosmofit import utils
 from cosmofit.io import ConfigError
 from cosmofit.base import SectionConfig, import_cls
 from cosmofit.utils import BaseClass, TaskManager
-from cosmofit.samples import diagnostics, Chain, ParameterValues
+from cosmofit.samples import diagnostics, Chain, ParameterValues, load_samples
 from cosmofit.parameter import ParameterPriorError, ParameterArray
 
 
@@ -96,9 +96,7 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
             if isinstance(chains, numbers.Number):
                 self.chains = [None] * int(chains)
             else:
-                if not utils.is_sequence(chains):
-                    chains = [chains]
-                self.chains = [chain if isinstance(chain, Chain) else Chain.load(chain) for chain in chains]
+                self.chains = load_samples(source='chain', fn=chains)
         nchains = self.mpicomm.bcast(len(self.chains) if self.mpicomm.rank == 0 else None, root=0)
         if self.mpicomm.rank != 0:
             self.chains = [None] * nchains

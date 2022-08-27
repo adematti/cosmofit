@@ -19,14 +19,14 @@ def load_samples(source='profiles', fn=None, choice=None, burnin=None):
     fns = []
     for ff in fn: fns += glob.glob(ff)
     if source == 'profiles':
-        profiles = [Profiles.load(fn) for fn in fns]
+        profiles = [fn if isinstance(fn, Profiles) else Profiles.load(fn) for fn in fns]
         if choice == 'argmax':
             profiles = Profiles.concatenate(profiles)
             argmax = profiles.bestfit.logposterior.argmax()
             return {str(param): profiles.bestfit[param][argmax] for param in profiles.bestfit.params()}
         return profiles
     if source == 'chain':
-        chains = [Chain.load(fn) for fn in fns]
+        chains = [fn if isinstance(fn, Chain) else Chain.load(fn) for fn in fns]
         if burnin is not None:
             chains = [chain.remove_burnin(burnin) for chain in chains]
         if choice == 'argmax':

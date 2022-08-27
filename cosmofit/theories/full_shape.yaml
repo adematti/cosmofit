@@ -16,32 +16,48 @@ init:
   ells: [0, 2, 4]
 
 params:
+  .fixed: ['b3']
   b1:
-    value: 1.69
+    value: 0.6
     prior:
       dist: uniform
-      limits: [0., 4.0]
+      limits: [-1., 4.0]
+    ref:
+      limits: [0., 1.]
     latex: b_{1}
   b2:
-    value: -1.17
+    value: -3.
     prior:
       dist: norm
       loc: 0.
       scale: 15.
+    ref:
+      dist: norm
+      loc: -3.
+      scale: 0.5
     latex: b_{2}
   bs:
     value: -0.71
     prior:
       dist: norm
       loc: 0.
-      scale: 5.
+      scale: 3.
+    ref:
+      dist: norm
+      loc: 1.
+      scale: 0.5
     latex: b_{s}
   b3:
     value: -0.479
+    fixed: True
     prior:
       dist: norm
       loc: 0.
       scale: 15.
+    ref:
+      dist: norm
+      loc: 1.0
+      scale: 0.5
     latex: b_{3}
   alpha[0:7:2]:
     value: 0.
@@ -49,14 +65,21 @@ params:
       dist: norm
       loc: 0.
       scale: 50.
+    ref:
+      dist: norm
+      loc: 0.
+      scale: 1.0
     latex: \alpha_[]
   sn[:5:2]:
     value: 0.
-    fixed: False
     prior:
       dist: norm
       loc: 0.
       scale: 1000.
+    ref:
+      dist: norm
+      loc: 0
+      scale: 50.
     latex: s_{n, []}
 
 ---
@@ -84,6 +107,8 @@ params:
     prior:
       dist: uniform
       limits: [0., 4.0]
+    ref:
+      limits: [1.0, 2.0]
     latex: b_{1}
   sn0:
     value: 0.
@@ -114,11 +139,14 @@ init:
   ells: [0, 2, 4]
 
 params:
+  .fixed: ['b3', 'alpha[4:7:2]', 'sn*']
   b1:
     value: 1.69
     prior:
       dist: uniform
       limits: [0., 4.0]
+    ref:
+      limits: [1.0, 2.0]
     latex: b_{1}
   b2:
     value: -1.17
@@ -182,4 +210,6 @@ params:
     prior:
       dist: uniform
       limits: [0., 4.0]
+    ref:
+      limits: [1.0, 2.0]
     latex: b_{1}
