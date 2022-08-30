@@ -65,12 +65,12 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             mpicomm = pipeline.mpicomm
         self.mpicomm = mpicomm
         self.pipeline = pipeline.copy()
-        self.pipeline.remove_namespace()
+        self.pipeline.with_namespace(namespace=None)
         self.pipeline.mpicomm = mpicomm
         if len(self.pipeline.end_calculators) > 1:
             raise PipelineError('For emulator, pipeline must have a single end calculator; use pipeline.select()')
 
-        self.params = self.pipeline.params.clone(namespace=None)
+        self.params = self.pipeline.params
         self.varied_params = self.params.names(varied=True, derived=False)
 
         calculators = []
@@ -105,7 +105,8 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             return (clsname, pythonpath)
 
         self._emulator_cls = serialize_cls(self)
-        self._calculator_cls = serialize_cls(calculator)
+        self._end_calculator_cls = serialize_cls(calculator)
+        self._calculators_cls = [serialize_cls(calc) for calc in self.pipeline.calculators]
         self.yaml_data = {}
         self.yaml_data['class'] = calculator.__class__.__name__
         self.yaml_data['info'] = dict(calculator.info)
@@ -250,7 +251,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
 
     def __getstate__(self):
         state = {}
-        for name in ['varied_params', 'fixed', 'varied', 'yaml_data', '_emulator_cls', '_calculator_cls']:
+        for name in ['varied_params', 'fixed', 'varied', 'yaml_data', '_emulator_cls', '_end_calculator_cls', '_calculators_cls']:
             state[name] = getattr(self, name)
         state['params'] = self.params.__getstate__()
         return state
@@ -283,7 +284,7 @@ class PointEmulatorEngine(BaseEmulatorEngine):
 
     def get_default_samples(self):
         from cosmofit.samplers import GridSampler
-        sampler = GridSampler(self.pipeline, ngrid=1)
+        sampler = GridSampler(self.pipeline, ngrid=2)
         sampler.run()
         return sampler.samples
 
@@ -310,8 +311,9 @@ class BaseEmulator(BaseClass):
 
     @classmethod
     def from_state(cls, state):
+        state = dict(state)
         EmulatorEngine = import_cls(*state['_emulator_cls'])
-        Calculator = import_cls(*state['_calculator_cls'])
+        Calculator = import_cls(*state['_end_calculator_cls'])
         new_name = Calculator.__name__
 
         clsdict = {}

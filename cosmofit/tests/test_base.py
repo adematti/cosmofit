@@ -20,8 +20,7 @@ def test_config():
 
 
 def test_params():
-    config = BaseConfig(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'theories', 'bao.yaml'),
-                        index={'class': 'DampedBAOWigglesTracerPowerSpectrumMultipoles'})
+    config = BaseConfig('test_config_bao.yaml')
     params = ParameterCollection(config['params'])
     assert params.params() == params.params()
 
@@ -65,13 +64,14 @@ def test_params():
             print(name)
     config = ParameterCollectionConfig({'a*b': {'value': 1.}})
     assert len(config.init()) == 0
-    config = config.clone({'a2b': {'latex': 'latex'}})
+    config = config.clone({'a2b': {'latex': 'latex', 'ref': {'limits': [0., 1.]}}})
     params = config.init()
     assert len(params) == 1
     assert params['a2b'].value == 1. and params['a2b'].latex() == 'latex'
-    config = config.clone({'a*b': {'value': 2.}})
+    config = config.clone({'a*b': {'value': 2., 'ref': {'rescale': 0.1}}})
     params = config.init()
     assert params['a2b'].value == 2 and params['a2b'].latex() == 'latex'
+    assert params['a2b'].ref.limits == (0.45, 0.55)
     config = config.clone({'.delete': '*'})
     assert not len(config.init())
     params = ParameterCollection({'a': 0.2, 'n.a': 1., 'n.b': 2.})
@@ -94,6 +94,14 @@ def test_param_array():
     s = pickle.dumps(array)
     array2 = pickle.loads(s)
     print([array, array2])
+
+
+def test_namespace():
+    from cosmofit.base import is_in_namespace
+    assert is_in_namespace('', 'a.b')
+    assert is_in_namespace('a.b', 'a.b.c')
+    assert not is_in_namespace('b', 'a.b')
+    assert not is_in_namespace('a.b.c', 'a.b')
 
 
 def test_pipeline():
@@ -193,13 +201,14 @@ if __name__ == '__main__':
     # test_config()
     # test_params()
     # test_param_array()
+    test_namespace()
     # test_pipeline()
     # test_likelihood()
     # test_sample()
     # test_profile()
     # test_do()
     # test_summarize()
-    test_emulate()
+    # test_emulate()
     # test_emulate(config_fn='fs_power_pipeline.yaml')
     # test_profile(config_fn='fs_power_pipeline.yaml')
     # test_sample(config_fn='fs_power_pipeline.yaml')

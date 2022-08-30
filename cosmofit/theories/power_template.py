@@ -33,22 +33,27 @@ class BasePowerSpectrumWiggles(BaseCalculator):
 
 class BasePowerSpectrumTemplate(BaseCalculator):
 
-    def __init__(self, k=None, zeff=1., **kwargs):
+    def __init__(self, k=None, zeff=1., with_now=False, **kwargs):
         if k is None:
             k = np.logspace(-3., 1., 200)
         self.k = np.array(k, dtype='f8')
         self.zeff = float(zeff)
+        self.with_now = bool(with_now)
         self.requires = {'cosmo': {'class': BasePrimordialCosmology, 'init': kwargs}}
+        if self.with_now:
+            self.requires['wiggles'] = {'class': BasePowerSpectrumWiggles, 'init': {'zeff': self.zeff, **kwargs}}
 
     def run(self):
         fo = self.cosmo.get_fourier()
         self.sigma8 = fo.sigma8_z(self.zeff, of='delta_cb')
         self.fsigma8 = fo.sigma8_z(self.zeff, of='theta_cb')
         self.power_dd = fo.pk_interpolator(of='delta_cb')(self.k, z=self.zeff)
+        if self.with_now:
+            self.power_dd_now = self.wiggles.power_now(self.k)
 
     def __getstate__(self):
         state = {}
-        for name in ['k', 'zeff', 'sigma8', 'fsigma8', 'power_dd']:
+        for name in ['k', 'zeff', 'sigma8', 'fsigma8', 'power_dd', 'power_dd_now']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -124,8 +129,10 @@ class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         self.n_varied = self.runtime_info.base_params['dn'].varied  # for ShapeFitPowerSpectrumExtractor
         super(ShapeFitPowerSpectrumTemplate, self).run()
         ShapeFitPowerSpectrumExtractor.run(self)
-        factor = dm / self.a * np.tanh(self.a * np.log(self.k / self.kp)) + dn * np.log(self.k / self.kp)
-        self.power_dd *= np.exp(factor)
+        factor = np.exp(dm / self.a * np.tanh(self.a * np.log(self.k / self.kp)) + dn * np.log(self.k / self.kp))
+        self.power_dd *= factor
+        if self.with_now:
+            self.power_dd_now *= factor
         self.n += dn
         self.m += dm
 
@@ -169,8 +176,11 @@ class WiggleSplitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         WiggleSplitPowerSpectrumExtractor.run(self)
         self.m += dm
         self.power_tt = self.wiggles.power_now(self.k) + self.wiggles.wiggles(self.k / qbao)
-        self.power_tt *= (self.k / self.kp)**dm
-        pdd = self.wiggles.cosmo.get_fourier().pk_interpolator(of='delta_cb').to_1d(z=self.zeff)
+        factor = (self.k / self.kp)**dm
+        self.power_tt *= factor
+        if self.with_now:
+            self.power_tt_now *= factor
+        pdd = self.cosmo.get_fourier().pk_interpolator(of='delta_cb').to_1d(z=self.zeff)
         ptt = self.wiggles.power
         pdd = pdd.clone(pk=pdd.pk * (pdd.k / self.kp)**dm)
         ptt = ptt.clone(pk=ptt.pk * (pdd.k / self.kp)**dm)
@@ -180,7 +190,7 @@ class WiggleSplitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
     def __getstate__(self):
         state = {}
-        for name in ['power_tt', 'm', 'sigmar', 'fsigmar', 'f', 'kp']:
+        for name in ['power_tt', 'power_tt_now', 'm', 'sigmar', 'fsigmar', 'f', 'kp']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -215,7 +225,11 @@ class BandVelocityPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
     def __init__(self, kptt=None, k=None, zeff=1., **kwargs):
         super(BandVelocityPowerSpectrumTemplate, self).__init__(k=k, zeff=zeff, **kwargs)
+        wiggles = self.requires.get('wiggles', None)
         BandVelocityPowerSpectrumExtractor.__init__(self, kptt=kptt, **kwargs)
+        if self.with_now:
+            wiggles['init']['of'] = 'theta_cb'
+            self.requires['wiggles'] = wiggles
 
     def set_params(self, params):
         import re
@@ -264,13 +278,16 @@ class BandVelocityPowerSpectrumTemplate(BasePowerSpectrumTemplate):
             self.ptt[ii] *= (1. + r)
             rptt.append(r)
         self.power_tt = self.power_tt(self.k)
-        self.power_tt *= 1. + np.dot(rptt, self.templates)
+        factor = 1. + np.dot(rptt, self.templates)
+        self.power_tt *= factor
+        if self.with_now:
+            self.power_tt_now = self.wiggles.power_now(self.k) * factor
         fo = self.cosmo.get_fourier()
         self.f = fo.sigma8_z(z=self.zeff, of='theta_cb') / fo.sigma8_z(z=self.zeff, of='delta_cb')
 
     def __getstate__(self):
         state = BandVelocityPowerSpectrumExtractor.__getstate__(self)
-        for name in ['power_tt']:
+        for name in ['power_tt', 'power_tt_now']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
@@ -307,6 +324,8 @@ class BasePowerSpectrumParameterization(BaseCalculator):
 
     def run(self):
         self.power_dd = self.template.power_dd
+        if self.template.with_now:
+            self.power_dd_now = self.template.power_dd_now
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
 
     def ap_k_mu(self, k, mu):
@@ -357,6 +376,8 @@ class WiggleSplitPowerSpectrumParameterization(BasePowerSpectrumParameterization
         self.fsigmar = fsigmar
         self.f = self.fsigmar / self.template.sigmar
         self.power_dd = self.template.power_tt / self.template.f**2
+        if self.template.with_now:
+            self.power_dd_now = self.template.power_tt_now / self.template.f**2
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
 
 
@@ -373,6 +394,8 @@ class BandVelocityPowerSpectrumParameterization(BasePowerSpectrumParameterizatio
         self.f = f
         if f is None: self.f = self.template.f
         self.power_dd = self.template.power_tt / self.template.f**2
+        if self.template.with_now:
+            self.power_dd_now = self.template.power_tt_now / self.template.f**2
         self.ptt = self.template.ptt
         self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
 

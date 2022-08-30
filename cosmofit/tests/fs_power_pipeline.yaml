@@ -17,12 +17,12 @@ pipeline:
       load: True
       plot: f'{output_dir}/power.png'
     theory:
-      #class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
-      class: cosmofit.theories.full_shape.KaiserTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.full_shape.KaiserTracerPowerSpectrumMultipoles
       #params:
       #  .derived: [.varied]
       #  .fixed: '*'
-      load: f'{output_dir}/fs_emulator.npy'
+      #load: f'{output_dir}/fs_emulator.npy'
       emulator:
         init:
           #order: {'*': 1, 'q*': 2, 'b1': 2}
@@ -34,21 +34,21 @@ pipeline:
     #  load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
-    shapefit:
-      class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
+    #shapefit:
+    #  class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
     #full:
     #  class: cosmofit.theories.power_template.FullPowerSpectrumParameterization
     #  init:
     #    fiducial: DESI
     #wiggle:
     #  class: cosmofit.theories.power_template.WiggleSplitPowerSpectrumParameterization
-    #pthetap:
-    #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
-    #  init:
-    #    kptt: e'np.linspace(0.03, 0.18, 2)'
-    #  params:
-    #    #.fixed: [f, qap]
-    #    .fixed: [f]
+    pthetap:
+      class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
+      init:
+        kptt: e'np.linspace(0.03, 0.18, 2)'
+      params:
+        #.fixed: [f, qap]
+        .fixed: [f]
     #ptheta:
     #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumTemplate
     #  params:
@@ -102,6 +102,7 @@ sample:
   class: cosmofit.samplers.EmceeSampler
   init:
     #nwalkers: 40
+    chains: 2
   run:
     max_iterations: 10000
     check_every: 100

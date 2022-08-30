@@ -3,6 +3,7 @@
 import re
 import fnmatch
 import functools
+import copy
 
 import numpy as np
 from scipy import stats
@@ -792,7 +793,6 @@ class BaseParameterCollection(BaseClass):
 
     def __copy__(self):
         new = super(BaseParameterCollection, self).__copy__()
-        import copy
         for name in ['data'] + self._attrs:
             # if hasattr(self, name):
             setattr(new, name, copy.copy(getattr(new, name)))
@@ -821,7 +821,6 @@ class BaseParameterCollection(BaseClass):
         return [(self._get_name(item), item) for item in self.select(**kwargs)]
 
     def deepcopy(self):
-        import copy
         return copy.deepcopy(self)
 
     def __eq__(self, other):
@@ -842,11 +841,31 @@ class ParameterConfig(NamespaceDict):
         state = self.__getstate__()
         if not isinstance(self.get('namespace', None), str):
             state['namespace'] = None
+        for name in ['prior', 'ref']:
+            if name in state and 'rescale' in state[name]:
+                value = copy.copy(state[name])
+                rescale = value.pop('rescale')
+                if 'scale' in value:
+                    value['scale'] *= rescale
+                if 'limits' in value:
+                    limits = np.array(value['limits'])
+                    if np.isfinite(limits).all():
+                        center = np.mean(limits)
+                        value['limits'] = (limits - center) * rescale + center
+                state[name] = value
         return Parameter(**state)
 
     @property
     def param(self):
         return self.init()
+
+    def update(self, *args, exclude=(), **kwargs):
+        other = self.__class__(*args, **kwargs)
+        for name, value in other.items():
+            if name not in exclude:
+                if name in ['prior', 'ref'] and name in self and 'rescale' in value and len(value) == 1:
+                    value = {**self[name], 'rescale': value['rescale']}
+                self[name] = copy.copy(value)
 
     @property
     def name(self):
@@ -868,7 +887,7 @@ class ParameterCollectionConfig(BaseParameterCollection):
 
     _type = ParameterConfig
     _attrs = ['fixed', 'derived', 'namespace', 'delete', 'wildcard', 'identifier']
-    _keywords = {'fixed': [], 'derived': ['.fixed', '.varied'], 'namespace': []}
+    #_keywords = {'fixed': [], 'derived': ['.fixed', '.varied'], 'namespace': []}
 
     def _get_name(self, item):
         if isinstance(item, str):
@@ -934,11 +953,16 @@ class ParameterCollectionConfig(BaseParameterCollection):
         for conf in reversed(self.wildcard):
             for tmpconf in self.select(**{self.identifier: conf[self.identifier]}):
                 tmpconf.update(conf.clone(tmpconf))
+        for name, b in self.delete.items():
+            if b:
+                for param in self.select(**{self.identifier: name}):
+                    del self[param[self.identifier]]
         for conf in self:
             if 'namespace' not in conf:
                 conf.namespace = True
 
     def updated(self, param):
+        # Updated with meta?
         paramname = self._get_name(param)
         for meta_name in ['fixed', 'derived', 'namespace']:
             meta = getattr(self, meta_name)
@@ -987,8 +1011,8 @@ class ParameterCollectionConfig(BaseParameterCollection):
 
         for name, b in other.delete.items():
             if b:
-                for name in (param[self.identifier] for param in self.select(**{self.identifier: name})):
-                    del self[name]
+                for param in self.select(**{self.identifier: name}):
+                    del self[param[self.identifier]]
 
         for meta_name in ['fixed', 'derived', 'namespace']:
             meta = getattr(other, meta_name)
@@ -1244,7 +1268,7 @@ class ParameterPrior(BaseClass):
             ``None`` means :math:`-\infty` for lower bound and :math:`\infty` for upper bound.
             Defaults to :math:`-\infty, \infty`.
         """
-        if not limits:
+        if limits is None:
             limits = (-np.inf, np.inf)
         self.limits = list(limits)
         if self.limits[0] is None: self.limits[0] = -np.inf

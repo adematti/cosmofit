@@ -104,7 +104,12 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
         if name == 'runtime_info':
             self.runtime_info = RuntimeInfo(self)
             return self.runtime_info
-        if name in self.runtime_info.requires:
+        run_name = False
+        if 'runtime_info' in self.__dict__:
+            run_name = name in self.runtime_info.requires
+        elif name in self.requires:
+            run_name = True
+        if run_name:
             toret = self.runtime_info.requires[name]
             if toret.runtime_info.torun:
                 toret.run(**toret.runtime_info.params)
@@ -430,16 +435,28 @@ class SectionConfig(BaseConfig):
                 self[name] = value
 
 
+def is_in_namespace(child, parent):
+
+    def split(namespace):
+        if isinstance(namespace, str):
+            if namespace:
+                return namespace.split(namespace_delimiter)
+            return []
+        return namespace
+
+    child, parent = split(child), split(parent)
+    return child == parent[:len(child)]
+
+
 def _best_match_parameter(namespace, basename, params, choice='max'):
     assert choice in ['min', 'max']
-    splitnamespace = [] if not isinstance(namespace, str) else namespace.split(namespace_delimiter)
     params = [param for param in params if param.basename == basename]
     nnamespaces_in_common, ibestmatch = -1 if choice == 'max' else np.inf, -1
     for iparam, param in enumerate(params):
         namespaces = param.name.split(namespace_delimiter)[:-1]
-        nm = len(namespaces)
-        if nm > len(splitnamespace) or namespaces != splitnamespace[:nm]:
+        if not is_in_namespace(namespaces, namespace):
             continue
+        nm = len(namespaces)
         if (choice == 'max' and nm >= nnamespaces_in_common) or (choice == 'min' and nm <= nnamespaces_in_common):
             nnamespaces_in_common = nm
             ibestmatch = iparam
@@ -479,6 +496,7 @@ class CalculatorConfig(SectionConfig):
             else:
                 load_fn = None
         self._loaded = None
+        self._drop_calculators = self.get('drop_calculators', []) or []
         if load_fn is not None:
             self['init'] = {}
             self['class'].log_info('Loading {}.'.format(load_fn))
@@ -486,6 +504,9 @@ class CalculatorConfig(SectionConfig):
             if '_emulator_cls' in state:  # TODO: better managment of cls names
                 from cosmofit.emulators import BaseEmulator
                 self._loaded = BaseEmulator.from_state(state)
+                self._drop_calculators = self.get('drop_calculators', True) or []
+                if isinstance(self._drop_calculators, bool) and self._drop_calculators:
+                    self._drop_calculators = self._loaded.__dict__.get('_calculators_cls', [])
             else:
                 self._loaded = self['class'].from_state(state)
             self['class'] = type(self._loaded)
@@ -494,6 +515,12 @@ class CalculatorConfig(SectionConfig):
         else:
             cls_params = getattr(self['class'], 'params', None)
             if self['config_fn'] is None: self['config_fn'] = getattr(self['class'], 'config_fn', None)
+        self._drop_calculators = list(self._drop_calculators)
+        for icalc, calc in enumerate(self._drop_calculators):
+            try:
+                self._drop_calculators[icalc] = import_cls(*calc)
+            except ImportError:
+                pass
         if cls_params is not None:
             self['params'] = ParameterCollectionConfig(cls_params).clone(self['params'])
         self['load'], self['save'] = load_fn, save_fn
@@ -619,10 +646,8 @@ class PipelineConfig(BaseConfig):
 
         def search_parent_namespace(namespace):
             toret = []
-            splitnamespace = namespace.split(namespace_delimiter) if namespace else []
             for tmpnamespace in reversed(self.namespaces_deepfirst):
-                tmpsplitnamespace = tmpnamespace.split(namespace_delimiter) if tmpnamespace else []
-                if tmpsplitnamespace == splitnamespace[:len(tmpsplitnamespace)]:
+                if is_in_namespace(tmpnamespace, namespace):
                     for basename, config in self.calculators_by_namespace[tmpnamespace].items():
                         toret.append((tmpnamespace, basename, config))
             return toret
@@ -631,9 +656,12 @@ class PipelineConfig(BaseConfig):
             if required_by is None:
                 globals = None
                 if (namespace, basename) in used: return
+                for ns in drop:
+                    if is_in_namespace(namespace, ns) and config['class'] in drop[ns]: return
             else:
                 globals = required_by.globals
                 required_by = {required_by}
+            drop[namespace] = drop.get(namespace, []) + config._drop_calculators
             new = config.init(namespace=namespace, params=self.params, globals=globals, requires={}, required_by=required_by, basename=basename)
             calculators.append(new)
             for requirementbasename, config in getattr(new, 'requires', {}).items():
@@ -650,7 +678,7 @@ class PipelineConfig(BaseConfig):
                         #tc['params'] = tmpconfig['params'].deepcopy()  # do not change parameter dict, only update names
                         #for param in config['params']: tc['params'].set(param)
                         #print(tc['params'], tmpconfig['params'], config['params'].delete)
-                        tc['class'], tc._loaded = tmpconfig['class'], tmpconfig._loaded
+                        tc['class'], tc._loaded, tc._drop_calculators = tmpconfig['class'], tmpconfig._loaded, tmpconfig._drop_calculators
                         #print(config['class'], tc['class'], list(config['params'].keys()), list(tmpconfig['params'].keys()))
                         #if tc['class'].__name__ == 'DampedBAOWigglesPowerSpectrumMultipoles':
                         #    print(id(tc['params']), id(tmpconfig['params']))
@@ -685,7 +713,7 @@ class PipelineConfig(BaseConfig):
 
             return new
 
-        calculators, used = [], OrderedSet()
+        calculators, used, drop = [], OrderedSet(), {}
         for namespace in reversed(self.namespaces_deepfirst):
             for basename, config in self.calculators_by_namespace[namespace].items():
                 callback_init(namespace, basename, config, required_by=None)
@@ -856,7 +884,7 @@ class BasePipeline(BaseClass):
         new.params = self.params.deepcopy()
         return new
 
-    def select(self, end_calculators, remove_namespace=False, type=None):
+    def select(self, end_calculators, type=None):
 
         if not utils.is_sequence(end_calculators):
             end_calculators = [end_calculators]
@@ -893,10 +921,10 @@ class BasePipeline(BaseClass):
 
         return new
 
-    def remove_namespace(self):
-        self.params = self.params.clone(namespace=None)
+    def with_namespace(self, namespace=None):
+        self.params = self.params.clone(namespace=namespace)
         for calculator in self.calculators:
-            calculator.runtime_info = calculator.runtime_info.clone(full_params=calculator.runtime_info.full_params.clone(namespace=None))
+            calculator.runtime_info = calculator.runtime_info.clone(namespace=namespace, full_params=calculator.runtime_info.full_params.clone(namespace=namespace))
 
     def _classify_derived_auto(self, calculators=None, niterations=3):
         if calculators is None:
