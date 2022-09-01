@@ -269,6 +269,13 @@ class Chain(ParameterValues):
         toret = MCSamples(samples=samples.T, weights=np.asarray(self.weight.ravel()), loglikes=-np.asarray(self.logposterior.ravel()), names=names, labels=labels, label=label)
         return toret
 
+    def choice(self, index='argmax', params=None, **kwargs):
+        if params is None:
+            params = self.params(**kwargs)
+        if index == 'argmax':
+            index = np.unravel_index(self.logposterior.argmax(), shape=self.shape)
+        return {str(param): self[param][index] for param in params}
+
     def cov(self, params=None, ddof=1):
         """
         Estimate weighted param covariance.

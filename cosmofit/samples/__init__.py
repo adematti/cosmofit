@@ -15,24 +15,31 @@ from cosmofit import utils
 
 
 def load_samples(source='profiles', fn=None, choice=None, burnin=None):
-    if not utils.is_sequence(fn): fn = [fn]
-    fns = []
-    for ff in fn: fns += glob.glob(ff)
+    if not utils.is_sequence(fn): fns = [fn]
+    else: fns = fn
     if source == 'profiles':
-        profiles = [fn if isinstance(fn, Profiles) else Profiles.load(fn) for fn in fns]
-        if choice == 'argmax':
+        profiles = []
+        for fn in fns:
+            if isinstance(fn, Profiles):
+                profiles.append(fn)
+            else:
+                profiles += [Profiles.load(ff) for ff in glob.glob(fn)]
+        if choice is not None:
             profiles = Profiles.concatenate(profiles)
-            argmax = profiles.bestfit.logposterior.argmax()
-            return {str(param): profiles.bestfit[param][argmax] for param in profiles.bestfit.params()}
+            return profiles.bestfit.choice(**choice)
         return profiles
     if source == 'chain':
-        chains = [fn if isinstance(fn, Chain) else Chain.load(fn) for fn in fns]
+        chains = []
+        for fn in fns:
+            if isinstance(fn, Chain):
+                chains.append(fn)
+            else:
+                chains += [Chain.load(ff) for ff in glob.glob(fn)]
         if burnin is not None:
             chains = [chain.remove_burnin(burnin) for chain in chains]
-        if choice == 'argmax':
+        if choice is not None:
             chain = Chain.concatenate(chains)
-            argmax = chain.logposterior.argmax()
-            return {str(param): chain[param].flat[argmax] for param in chain.params()}
+            return chain.choice(**choice)
         return chains
     raise ConfigError('source must be one of ["profiles", "chain"]')
 
@@ -47,7 +54,7 @@ class SourceConfig(BaseConfig):
             if source == 'params':
                 params.update({param.name: param.value for param in ParameterCollection(value) if param.name in params})
             else:
-                params.update({param: value for param, value in load_samples(source=source, **{'choice': 'argmax', **value}).items() if param in params})
+                params.update(load_samples(source=source, **{'choice': {'params': params}, **value}))
         return params
 
 

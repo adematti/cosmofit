@@ -323,6 +323,8 @@ class BaseEmulator(BaseClass):
 
         def new_run(self, **params):
             Calculator.__setstate__(self, {**self.fixed, **EmulatorEngine.predict(self, **params)})
+            #for param in self.runtime_info.solved_params:
+            #    self.runtime_info.gradient[param] = EmulatorEngine.gradient(self, param.basename)
 
         def new_getstate(self):
             return Calculator.__getstate__(self)

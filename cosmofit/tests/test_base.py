@@ -5,7 +5,7 @@ import pytest
 import numpy as np
 
 from cosmofit import setup_logging
-from cosmofit.base import BaseConfig, BasePipeline, PipelineError, LikelihoodPipeline
+from cosmofit.base import BaseConfig, BasePipeline, PipelineError, LikelihoodPipeline, BaseCalculator
 from cosmofit.parameter import ParameterConfig, ParameterCollectionConfig, Parameter, ParameterArray, ParameterCollection, ParameterPrior, decode_name, find_names, yield_names_latex
 
 
@@ -20,7 +20,6 @@ def test_config():
 
 
 def test_params():
-    '''
     config = BaseConfig('test_config_bao.yaml')
     params = ParameterCollection(config['params'])
     assert params.params() == params.params()
@@ -81,7 +80,6 @@ def test_params():
     assert _best_match_parameter('n.m', 'a', params, choice='min').name == 'a'
     assert _best_match_parameter('m', 'a', params, choice='min').name == 'a'
     assert _best_match_parameter('m', 'b', params, choice='min') is None
-    '''
 
     config = ParameterCollection({'a': {'value': 1., 'solved': 'best'}, 'b': {'value': 1., 'solved': 'marg'}, 'c': {'value': 1.}})
     assert config.select(solved=['best', 'marg']).names() == ['a', 'b']
@@ -199,12 +197,78 @@ def test_emulate(config_fn='fs_power_pipeline.yaml'):
     emulator.check()
 
 
+def test_solve():
+
+    class AffineModel(BaseCalculator):  # all calculators should inherit from BaseCalculator
+
+        # Model parameters; those can also be declared in a yaml file
+        params = {'a': {'value': 0., 'prior': {'dist': 'norm', 'loc': 0., 'scale': 10.}},
+                  'b': {'value': 0., 'prior': {'dist': 'norm', 'loc': 0., 'scale': 10.}}}
+
+        def __init__(self, x=None):
+            self.x = x
+            self.requires = {}  # no requirement
+
+        def run(self, a=0., b=0.):
+            self.y = a * self.x + b  # simple, affine model
+            gradient = {'a': self.x, 'b': np.ones_like(self.x)}
+            for param in self.runtime_info.solved_params:
+                self.runtime_info.gradient[param] = gradient[param.basename]
+
+        # This is only needed for emulation
+        def __getstate__(self):
+            return {'x': self.x, 'y': self.y}  # dictionary of Python base types and numpy arrays
+
+    a0, b0 = 0.1, 0.3
+
+    class Likelihood(BaseCalculator):  # all calculators should inherit from BaseCalculator
+
+        def __init__(self):
+            # Let us generate some fake data
+            self.x = np.linspace(0., 1., 10)
+            mean = np.zeros_like(self.x)
+            self.covariance = np.eye(len(self.x))
+            self.precision = np.linalg.inv(self.covariance)
+            self.y = a0 * self.x + b0
+            # Requirements: name: {'class': ..., 'init': ...}
+            self.requires = {'theory': {'class': 'AffineModel', 'init': {'x': self.x}}}
+
+        @property
+        def flatdiff(self):
+            return self.y - self.theory.y  # requirements are accessed through .name
+
+        def run(self):
+            self.loglikelihood = -0.5 * self.flatdiff.dot(self.precision).dot(self.flatdiff)  # this attribute must be named loglikelihood
+
+        def plot(self):
+            ax = plt.gca()
+            ax.errorbar(self.x, self.y, yerr=np.diag(self.covariance)**0.5, color='k', linestyle='none', marker='o', label='data')
+            ax.plot(self.x, self.theory.y, color='r', label='theory')
+            ax.grid()
+            ax.legend()
+            return ax
+
+    config = {}
+    config['like'] = {'class': Likelihood}
+    config['model'] = {'class': AffineModel, 'params': {'b': {'solved': 'auto'}}}
+
+    likelihood = LikelihoodPipeline(config)
+
+    from cosmofit.profilers import MinuitProfiler
+
+    profiler = MinuitProfiler(likelihood, seed=42)
+    profiler.maximize(niterations=2)
+    bf = profiler.profiles.bestfit.choice(varied=True)
+    assert np.allclose(bf['a'], a0, rtol=1e-2) and np.allclose(bf['b'], b0, rtol=1e-2)
+
+
 if __name__ == '__main__':
 
     setup_logging('info')
 
+    test_solve()
     # test_config()
-    test_params()
+    # test_params()
     # test_param_array()
     # test_namespace()
     # test_pipeline()

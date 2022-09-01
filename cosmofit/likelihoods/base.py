@@ -56,6 +56,10 @@ class BaseGaussianLikelihood(BaseCalculator):
         diff = self.flatdata - flatmodel
         self.loglikelihood = -0.5 * diff.dot(self.precision).T.dot(diff)
 
+    @property
+    def flatdiff(self):
+        return self.flatdata - self.flatmodel
+
     def __getstate__(self):
         state = {}
         for name in ['flatdata', 'covariance', 'precision', 'loglikelihood']:

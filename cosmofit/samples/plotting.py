@@ -36,7 +36,7 @@ def _make_list(obj, length=None, default=None):
     return obj
 
 
-def _get_default_chain_params(chains, varied=True, output=False, **kwargs):
+def _get_default_chain_params(chains, varied=True, solved=False, output=False, **kwargs):
     chains = _make_list(chains)
     list_params = [chain.names(varied=varied, output=output, **kwargs) for chain in chains]
     return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]

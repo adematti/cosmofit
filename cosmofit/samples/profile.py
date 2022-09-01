@@ -291,6 +291,12 @@ class ParameterBestFit(ParameterValues):
             self[self._logposterior] = np.zeros(self.shape, dtype='f8')
         return self[self._logposterior]
 
+    def choice(self, index='argmax', params=None, **kwargs):
+        if params is None:
+            params = self.params(**kwargs)
+        if index == 'argmax':
+            index = self.logposterior.argmax()
+        return {str(param): self[param][index] for param in params}
 
 class ParameterCovariance(BaseClass):
 

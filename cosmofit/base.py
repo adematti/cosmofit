@@ -112,7 +112,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
         if run_name:
             toret = self.runtime_info.requires[name]
             if toret.runtime_info.torun:
-                toret.run(**toret.runtime_info.params)
+                toret.run(**toret.runtime_info.param_values)
                 # Makes sure run() is not called the second time this calculator is accessed
                 toret.runtime_info.torun = False
             return toret
@@ -379,15 +379,15 @@ class RuntimeInfo(BaseClass):
                 inst.runtime_info.torun = True
 
     @property
-    def params(self):
-        if getattr(self, '_params', None) is None:
-            self.params = {param.basename: param.value for param in self.full_params if not param.derived or param.solved}
-        return self._params
+    def param_values(self):
+        if getattr(self, '_param_values', None) is None:
+            self.param_values = {param.basename: param.value for param in self.full_params if not param.derived or param.solved}
+        return self._param_values
 
-    @params.setter
-    def params(self, params):
+    @param_values.setter
+    def param_values(self, param_values):
         self.torun = True
-        self._params = params
+        self._param_values = param_values
 
     @property
     def name(self):
@@ -797,13 +797,14 @@ class BasePipeline(BaseClass):
         # Init run, e.g. for fixed parameters
         self.set_params(quiet=quiet)
         for calculator in self.end_calculators:
-            calculator.run(**calculator.runtime_info.params)
+            calculator.run(**calculator.runtime_info.param_values)
         self._set_derived_auto()
         self.set_params(quiet=quiet)
 
     def set_params(self, quiet=False):
         params_from_calculator = {}
         self.params = ParameterCollection()
+        self._param_values = {}
         for calculator in self.calculators:
             for param in calculator.runtime_info.full_params:
                 if not quiet and param in self.params:
@@ -816,6 +817,10 @@ class BasePipeline(BaseClass):
                     elif param != self.params[param]:
                         raise PipelineError('Parameter {} of {} is different from that of {}.'.format(param, calculator, params_from_calculator[param.name]))
                 params_from_calculator[param.name] = calculator
+                try:
+                    self._param_values[param.name] = calculator.runtime_info.param_values[param.basename]
+                except KeyError:  # e.g. derived, not solved parameters
+                    pass
                 self.params.set(param)
 
     def run(self, **params):  # params with namespace
@@ -824,12 +829,13 @@ class BasePipeline(BaseClass):
         for calculator in self.calculators:
             for param in calculator.runtime_info.full_params:
                 value = params.get(param.name, None)
-                if value is not None and value != calculator.runtime_info.params[param.basename]:
-                    calculator.runtime_info.params[param.basename] = value
+                if value is not None and value != calculator.runtime_info.param_values[param.basename]:
+                    self._param_values[param.basename] = value
+                    calculator.runtime_info.param_values[param.basename] = value
                     calculator.runtime_info.torun = True  # set torun = True of all required_by instances
         for calculator in self.end_calculators:
             if calculator.runtime_info.torun:
-                calculator.run(**calculator.runtime_info.params)
+                calculator.run(**calculator.runtime_info.param_values)
         self.derived = ParameterValues()
         for calculator in self.calculators:
             self.derived.update(calculator.runtime_info.derived)
@@ -1045,10 +1051,10 @@ class LikelihoodPipeline(BasePipeline):
             if param.varied and not param.solved:
                 sum_logprior += param.prior(value)
         #if self.stop_at_inf_prior and not np.isfinite(sum_logprior): return
-        pipeline_params = params.copy()
-        for param in self.solved_params:
-            pipeline_params[param.name] = 0.
-        super(LikelihoodPipeline, self).run(**pipeline_params)
+        #pipeline_params = params.copy()
+        #for param in self.solved_params:
+        #    pipeline_params[param.name] = 0.
+        super(LikelihoodPipeline, self).run(**params)
 
         if not params:
             return
@@ -1068,23 +1074,24 @@ class LikelihoodPipeline(BasePipeline):
         solve_calculators, projections, inverse_fishers = [], [], []
         for calculator in self.end_calculators:
             gradient = calculator.runtime_info.gradient
-            if gradient.data:
+            if any(param in gradient for param in self.solved_params):
                 solve_calculators.append(calculator)
                 zeros = np.zeros_like(calculator.precision, shape=calculator.precision.shape[0])
                 gradient = np.column_stack([gradient[param] if param in gradient else zeros for param in self.solved_params])
                 projector = calculator.precision.dot(gradient)
-                projection = projector.T.dot(calculator.flatmodel - calculator.flatdata)
+                projection = projector.T.dot(- calculator.flatdiff)  # flatdiff is data - model, here we want model - data
                 invfisher = gradient.T.dot(projector)
                 projections.append(projection)
                 inverse_fishers.append(invfisher)
         x0 = []
         if solve_calculators:
-            inverse_priors = []
+            inverse_priors, offsets = [], []
             for param in self.solved_params:
                 scale = getattr(param.prior, 'scale', None)
                 inverse_priors.append(0. if scale is None or param.fixed else scale**(-2))
+                offsets.append(self._param_values[param.name])
             sum_inverse_fishers = sum(inverse_fishers + [np.diag(inverse_priors)])
-            x0 = - np.linalg.solve(sum_inverse_fishers, sum(projections))
+            x0 = - np.linalg.solve(sum_inverse_fishers, sum(projections)) + offsets
         for param, xx in zip(self.solved_params, x0):
             sum_logprior += self.params[param.name].prior(xx)
             if param.derived:
