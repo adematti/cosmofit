@@ -27,7 +27,10 @@ class ProfilerConfig(SectionConfig):
                 getattr(profiler, name)(**tmp)
 
         if save_fn is not None and profiler.mpicomm.rank == 0:
-            profiler.profiles.save(save_fn)
+            if profiler.profiles is None:
+                profiler.log_warning('No profiling performed, so {} not saved.'.format(save_fn))
+            else:
+                profiler.profiles.save(save_fn)
 
         return profiler
 
@@ -48,8 +51,9 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         if mpicomm is None:
             mpicomm = likelihood.mpicomm
         self.mpicomm = mpicomm
-        self.likelihood = likelihood
-        self.varied_params = self.likelihood.params.select(varied=True, derived=False)
+        self.likelihood = BaseClass.copy(likelihood)
+        self.likelihood.solved_default = 'best'
+        self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False)
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
         if not self.varied_params:
@@ -75,10 +79,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
                 self.derived = [self.likelihood.derived, di]
             else:
                 self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: np.concatenate([self.derived[1][name], di[name]], axis=0) for name in di}]
-            toret = self.likelihood.loglikelihood
-            for array in self.likelihood.derived:
-                if array.param.varied:
-                    toret += array.param.prior(array)
+            toret = self.likelihood.loglikelihood + self.likelihood.logprior
             if isscalar: toret = toret[0]
         toret = self.likelihood.mpicomm.bcast(toret, root=0)
         mask = np.isnan(toret)
@@ -87,14 +88,20 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             self.log_warning('loglikelihood is NaN for {}'.format({k: v[mask] for k, v in di.items()}))
         return toret
 
+    def logprior(self, **params):
+        logprior = 0.
+        for name, value in params.items():
+            logprior += self.varied_params[name].prior(value)
+        return logprior
+
     def logposterior(self, values):
         values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
         params = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}
-        toret = self.likelihood.logprior(**params)
+        toret = self.logprior(**params)
         mask = ~np.isinf(toret)
-        toret[mask] += self.loglikelihood(values[mask])
+        toret[mask] = self.loglikelihood(values[mask])
         if isscalar: toret = toret[0]
         return toret
 

@@ -85,7 +85,9 @@ class ParameterValues(BaseParameterCollection):
         return np.prod(self.shape, dtype='intp')
 
     def __len__(self):
-        return self.shape[0]
+        if self.shape:
+            return self.shape[0]
+        return 0
 
     def select(self, output=None, **kwargs):
         toret = super(ParameterValues, self).select(**kwargs)
@@ -688,8 +690,8 @@ class Profiles(BaseClass):
             Summary table.
         """
         import tabulate
-        ref_params = self.start.params()
-        if params is None: params = ref_params
+        ref_params = self.bestfit.params()
+        if params is None: params = ref_params.select(varied=True)
         else: params = [ref_params[param] for param in params]
         data = []
         allowed_quantities = ['bestfit', 'error', 'interval']
@@ -710,7 +712,10 @@ class Profiles(BaseClass):
             if is_latex: row.append(param.latex(inline=True))
             else: row.append(str(param.name))
             row.append(str(param.varied))
-            ref_error = self.error[param][argmax]
+            if param in self.error:
+                ref_error = self.error[param][argmax]
+            else:
+                ref_error = None
             for quantity in quantities:
                 value = self.get(quantity)
                 if param in value:
@@ -720,7 +725,7 @@ class Profiles(BaseClass):
                     continue
                 if quantity in allowed_quantities[:2]:
                     value = value[argmax]
-                    value = utils.round_measurement(value, ref_error, sigfigs=sigfigs)[0]
+                    value = utils.round_measurement(value, ref_error if ref_error is not None else abs(value), sigfigs=sigfigs)[0]
                     if is_latex: value = '${}$'.format(value)
                     row.append(value)
                 else:

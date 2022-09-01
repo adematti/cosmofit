@@ -136,7 +136,7 @@ class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipo
                 ell = int(match.group(1))
                 pow = int(match.group(2))
                 if ell in self.ells:
-                    self.broadband_coeffs[ell][name] = pow
+                    self.broadband_coeffs[ell][name] = self.k**pow
                 else:
                     del self_params[param]
             else:
@@ -146,8 +146,10 @@ class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipo
     def run(self, **params):
         self.power = self.bao.power.copy()
         for ill, ell in enumerate(self.ells):
-            for name, ii in self.broadband_coeffs[ell].items():
-                self.power[ill] += params[name] * self.k**ii
+            for name, k_i in self.broadband_coeffs[ell].items():
+                self.power[ill] += params.get(name, 0.) * k_i
+        for param in self.runtime_info.solved_params:
+            self.runtime_info.gradient[param] = np.array([self.broadband_coeffs[ell].get(param.basename, np.zeros_like(self.k)) for ell in self.ells])
 
     @property
     def nowiggle(self):

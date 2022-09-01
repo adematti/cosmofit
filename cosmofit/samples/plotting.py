@@ -378,12 +378,13 @@ def plot_aligned(profiles, param, ids=None, labels=None, colors=None, truth=None
             if errors:
                 try:
                     yerr = prof.get(errors)[param]
-                except IndexError:
+                except KeyError:
                     yerr = None
-                if len(yerr) == 1:
-                    yerr = yerr[0]  # only for best fit
                 else:
-                    yerr = yerr[ibest]
+                    if len(yerr) == 1:
+                        yerr = yerr[0]  # only for best fit
+                    else:
+                        yerr = yerr[ibest]
             label = labels[ipoint] if iprof == 0 else None
             ax.errorbar(xmain[iprof] + xaux[ipoint], point, yerr=yerr, color=colors[ipoint], label=label, linestyle='none', **kw_scatter)
         if add_mean:

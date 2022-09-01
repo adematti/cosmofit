@@ -306,9 +306,9 @@ class Parameter(BaseClass):
     latex : string, default=None
         Latex for parameter.
     """
-    _attrs = ['basename', 'namespace', 'value', 'fixed', 'derived', 'prior', 'ref', 'proposal', '_latex']
+    _attrs = ['basename', 'namespace', 'value', 'fixed', 'derived', 'prior', 'ref', 'proposal', '_latex', 'solved']
 
-    def __init__(self, basename, namespace='', value=None, fixed=None, derived=False, prior=None, ref=None, proposal=None, latex=None):
+    def __init__(self, basename, namespace='', value=None, fixed=None, derived=None, prior=None, ref=None, proposal=None, latex=None, solved=False):
         """
         Initialize :class:`Parameter`.
 
@@ -370,10 +370,6 @@ class Parameter(BaseClass):
                 elif self.ref.is_proper():
                     self.value = (self.ref.limits[1] - self.ref.limits[0]) / 2.
         self.latex = latex
-        self.derived = bool(derived)
-        if fixed is None:
-            fixed = self.derived or (prior is None and ref is None)
-        self.fixed = bool(fixed)
         self.proposal = proposal
         if proposal is None:
             if (ref is not None or prior is not None):
@@ -381,6 +377,24 @@ class Parameter(BaseClass):
                     self.proposal = self.ref.scale
                 elif self.ref.is_proper():
                     self.proposal = (self.ref.limits[1] - self.ref.limits[0]) / 2.
+        self.solved = solved
+        allowed_solved = ['best', 'marg', 'auto']
+        if isinstance(solved, str):
+            if solved not in allowed_solved:
+                raise ParameterError('solved must be one of {} for {}'.format(allowed_solved, self))
+            allowed_dists = ['norm', 'uniform']
+            if self.prior.dist not in allowed_dists or self.prior.is_limited():
+                raise ParameterError('Prior must be one of {}, with no limits, to use analytic marginalisation for {}'.format(allowed_dists, self))
+        else:
+            self.solved = bool(solved)
+            if self.solved:
+                raise ParameterError('solved must be False or one of {} for {}'.format(allowed_solved, self))
+        if fixed is None:
+            fixed = prior is None and ref is None
+        self.fixed = bool(fixed)
+        if self.solved and derived is None:
+            derived = True
+        self.derived = bool(derived)
 
     @property
     def name(self):
@@ -723,7 +737,12 @@ class BaseParameterCollection(BaseClass):
                 if key in ['name', 'basename', 'namespace']:
                     key_match = value is None or bool(find_names([param_value], value))
                 else:
-                    key_match = value == param_value
+                    key_match = deep_eq(value, param_value)
+                    if not key_match:
+                        try:
+                            key_match |= any(deep_eq(v, param_value) for v in value)
+                        except TypeError:
+                            pass
                 match &= key_match
                 if not key_match: break
             if match:
@@ -999,7 +1018,12 @@ class ParameterCollectionConfig(BaseParameterCollection):
                 if key in ['name', 'basename', 'namespace']:
                     key_match = value is None or bool(find_names([param_value], value))
                 else:
-                    key_match = value == param_value
+                    key_match = deep_eq(value, param_value)
+                    if not key_match:
+                        try:
+                            key_match |= any(deep_eq(v, param_value) for v in value)
+                        except TypeError:
+                            pass
                 match &= key_match
                 if not key_match: break
             if match:

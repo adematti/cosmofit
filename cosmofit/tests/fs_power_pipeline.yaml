@@ -19,9 +19,13 @@ pipeline:
     theory:
       class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
       #class: cosmofit.theories.full_shape.KaiserTracerPowerSpectrumMultipoles
-      #params:
+      params:
       #  .derived: [.varied]
       #  .fixed: '*'
+        alpha*:
+          solved: 'auto'
+        sn*:
+          solved: 'auto'
       #load: f'{output_dir}/fs_emulator.npy'
       emulator:
         init:
@@ -111,6 +115,8 @@ sample:
 
 profile:
   class: cosmofit.profilers.MinuitProfiler
+  maximize:
+    niterations: 1
   save: f'{output_dir}/profiles.npy'
 
 do:

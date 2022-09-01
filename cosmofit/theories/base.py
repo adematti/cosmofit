@@ -260,15 +260,18 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
         theory['init'].update({'k': self.kin, 'ells': self.ellsin})
         self.requires = {'theory': theory}
 
-    def run(self):
-        theory = np.ravel(self.theory.power + self.shotnoise[:, None])
+    def _apply(self, theory):
+        theory = np.ravel(theory)
         if self.wmatrix is not None:
-            self.flatpower = np.dot(theory, self.wmatrix)
-        elif self.kmask is not None:
-            self.flatpower = theory[self.kmask]
-        else:
-            self.flatpower = theory
-        self.flatpower -= self.flatshotnoise
+            return np.dot(theory, self.wmatrix)
+        if self.kmask is not None:
+            return theory[self.kmask]
+        return theory
+
+    def run(self):
+        self.flatpower = self._apply(self.theory.power + self.shotnoise[:, None]) - self.flatshotnoise
+        for param in self.runtime_info.gradient.params():
+            self.runtime_info.gradient[param] = self._apply(self.theory.runtime_info.gradient[param].ravel())
 
     @property
     def power(self):

@@ -128,13 +128,15 @@ class BaseVelocileptorsTracerCorrelationFunctionMultipoles(BaseTheoryCorrelation
 class LPTPowerSpectrumMultipoles(BaseVelocileptorsPowerSpectrumMultipoles):
 
     _default_options = dict(kIR=0.2, cutoff=10, extrap_min=-5, extrap_max=3, N=2000, nthreads=1, jn=5)
+    _bias_indices = dict(zip(['alpha0', 'alpha2', 'alpha4', 'alpha6', 'sn0', 'sn2', 'sn4'], range(12, 19)))
     # Slow, ~ 2 sec per iteration
 
     def run(self):
         from velocileptors.LPT.lpt_rsd_fftw import LPT_RSD
         self.lpt = LPT_RSD(self.kin, self.template.power_dd, **self.pt_options)
         self.lpt.make_pltable(self.template.f, kv=self.k, apar=self.template.qpar, aperp=self.template.qper, ngauss=3)
-        self.lpttable = [self.lpt.p0ktable, self.lpt.p2ktable, self.lpt.p4ktable]
+        lpttable = {0: self.lpt.p0ktable, 2: self.lpt.p2ktable, 4: self.lpt.p4ktable}
+        self.lpttable = np.array([lpttable[ell] for ell in self.ells])
 
     def combine_bias_terms_poles(self, pars):
         #bias = [b1, b2, bs, b3, alpha0, alpha2, alpha4, alpha6, sn0, sn2, sn4]
@@ -142,7 +144,10 @@ class LPTPowerSpectrumMultipoles(BaseVelocileptorsPowerSpectrumMultipoles):
         # return np.array([pkells[[0, 2, 4].index(ell)] for ell in self.ells])
         b1, b2, bs, b3, alpha0, alpha2, alpha4, alpha6, sn0, sn2, sn4 = pars
         bias_monomials = np.array([1, b1, b1**2, b2, b1 * b2, b2**2, bs, b1 * bs, b2 * bs, bs**2, b3, b1 * b3, alpha0, alpha2, alpha4, alpha6, sn0, sn2, sn4])
-        return np.array([np.sum(self.lpttable[[0, 2, 4].index(ell)] * bias_monomials, axis=-1) for ell in self.ells])
+        return np.sum(self.lpttable * bias_monomials, axis=-1)
+
+    def gradient_bias_terms_poles(self, name):
+        return self.lpttable[..., self._bias_indices[name]]
 
     def __getstate__(self):
         state = {}
@@ -157,6 +162,11 @@ class LPTTracerPowerSpectrumMultipoles(BaseVelocileptorsTracerPowerSpectrumMulti
     def __init__(self, *args, **kwargs):
         super(LPTTracerPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
         self.required_bias_params = dict(b1=0.69, b2=-1.17, bs=-0.71, b3=0., alpha0=0., alpha2=0., alpha4=0., alpha6=0., sn0=0., sn2=0., sn4=0.)
+
+    def run(self, **params):
+        super(LPTTracerPowerSpectrumMultipoles, self).run(**params)
+        for param in self.runtime_info.solved_params:
+            self.runtime_info.gradient[param] = self.pt.gradient_bias_terms_poles(param.basename)
 
 
 class LPTTracerCorrelationFunctionMultipoles(BaseTracerCorrelationFunctionMultipoles):
