@@ -114,7 +114,9 @@ class ParameterValues(BaseParameterCollection):
             if new_names and other_names and set(other_names) != set(new_names):
                 raise ValueError('Cannot concatenate values as parameters do not match: {} != {}.'.format(other_names, new_names))
         for param in new_params:
+            #print(param, [np.atleast_1d(other[param]) for other in others], len(others))
             new[param] = np.concatenate([np.atleast_1d(other[param]) for other in others], axis=0)
+            #print('2', param, new[param], [np.atleast_1d(other[param]) for other in others], len(others))
         return new
 
     def set(self, item, output=None):
@@ -297,6 +299,7 @@ class ParameterBestFit(ParameterValues):
         if index == 'argmax':
             index = self.logposterior.argmax()
         return {str(param): self[param][index] for param in params}
+
 
 class ParameterCovariance(BaseClass):
 

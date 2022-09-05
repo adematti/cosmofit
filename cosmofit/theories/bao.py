@@ -3,6 +3,7 @@ import re
 import numpy as np
 from scipy import special, integrate
 
+from cosmofit.utils import jax, jnp
 from cosmofit.parameter import ParameterCollection
 from .power_template import BasePowerSpectrumWiggles, BAOPowerSpectrumParameterization
 from .base import (BaseTheoryPowerSpectrumMultipoles, TrapzTheoryPowerSpectrumMultipoles,
@@ -126,9 +127,9 @@ class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipo
         for param in bao_params.names():
             if param in self_params: del bao_params[param]
         self.requires['bao']['params'] = bao_params
-        self.broadband_coeffs = {}
+        broadband_coeffs = {}
         for ell in self.ells:
-            self.broadband_coeffs[ell] = {}
+            broadband_coeffs[ell] = {}
         for param in self_params.params():
             name = param.basename
             match = re.match('al(.*)_(.*)', name)
@@ -136,20 +137,28 @@ class BaseBAOWigglesTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipo
                 ell = int(match.group(1))
                 pow = int(match.group(2))
                 if ell in self.ells:
-                    self.broadband_coeffs[ell][name] = self.k**pow
+                    broadband_coeffs[ell][name] = self.x**pow
                 else:
                     del self_params[param]
             else:
                 raise ValueError('Unrecognized parameter {}'.format(param))
+        self.broadband_matrix = []
+        self.broadband_params = [name for ell in self.ells for name in broadband_coeffs[ell]]
+        for ill, ell in enumerate(self.ells):
+            row = [np.zeros_like(self.x) for i in range(len(self.broadband_params))]
+            for name, k_i in broadband_coeffs[ell].items():
+                row[self.broadband_params.index(name)] = k_i
+            self.broadband_matrix.append(np.column_stack(row))
+        self.broadband_matrix = jnp.array(self.broadband_matrix)
         return self_params
 
+    @property
+    def x(self):
+        return self.k
+
     def run(self, **params):
-        self.power = self.bao.power.copy()
-        for ill, ell in enumerate(self.ells):
-            for name, k_i in self.broadband_coeffs[ell].items():
-                self.power[ill] += params.get(name, 0.) * k_i
-        for param in self.runtime_info.solved_params:
-            self.runtime_info.gradient[param] = np.array([self.broadband_coeffs[ell].get(param.basename, np.zeros_like(self.k)) for ell in self.ells])
+        values = jnp.array([params.get(name, 0.) for name in self.broadband_params])
+        self.power = self.bao.power + self.broadband_matrix.dot(values)
 
     @property
     def nowiggle(self):
@@ -194,11 +203,13 @@ class BaseBAOWigglesTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFun
         self.requires = {'bao': {'class': self.__class__.__name__.replace('Tracer', ''),
                                  'init': {'s': self.s, 'zeff': self.zeff, 'ells': self.ells, 'fiducial': self.fiducial, **kwargs}}}
 
+    @property
+    def x(self):
+        return self.s
+
     def run(self, **params):
-        self.corr = self.bao.corr.copy()
-        for ill, ell in enumerate(self.ells):
-            for name, ii in self.broadband_coeffs[ell].items():
-                self.corr[ill] += params[name] * self.s**ii
+        values = jnp.array([params.get(name, 0.) for name in self.broadband_params])
+        self.corr = self.bao.corr + self.broadband_matrix.dot(values)
 
     @property
     def nowiggle(self):

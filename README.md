@@ -11,8 +11,9 @@ Example notebooks are provided in directory nb/.
 
 ## TODOs
 
-- jax
-- analytic marginalization
+- reparametrization
+- jax.jit
+- use Jacobian, if available, in Taylor emulator?
 - finish documentation
 - proper example with cross-covariance (e.g. many redshift slices), potential changes to the infrastructure
 - autodetection of Chain/Profiles types; improve Profiles type

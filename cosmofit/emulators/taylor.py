@@ -3,6 +3,7 @@ import itertools
 import numpy as np
 import mpytools as mpy
 
+from cosmofit.utils import jnp
 from .base import BaseEmulatorEngine
 
 
@@ -161,13 +162,13 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
             cidx = cidx[0]
             for name in self.varied:
                 Y = self.samples[name]
-                self.powers[name] = [[0,] * ndim]
+                self.powers[name] = [np.zeros(ndim, dtype='i4')]
                 self.derivatives[name] = [Y[cidx]]  # F(x=center)
                 prefactor = 1.
                 for order in range(1, max(self.order.values()) + 1):
                     prefactor /= order
                     for indices in itertools.product(range(ndim), repeat=order):
-                        degrees = np.bincount(indices, minlength=ndim)
+                        degrees = np.bincount(indices, minlength=ndim).astype('i4')
                         #if any(degrees[ii] > self.order[name] for ii, name in enumerate(self.varied_params)):
                         if sum(degrees) > min(self.order[name] for ii, name in enumerate(self.varied_params) if degrees[ii]):
                             continue
@@ -183,10 +184,10 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
         self.center = self.mpicomm.bcast(self.center, root=0)
 
     def predict(self, **params):
-        diffs = [params[param] - self.center[param] for param in self.varied_params]
+        diffs = jnp.array([params[param] - self.center[param] for param in self.varied_params])
         toret = {}
         for name in self.derivatives:
-            toret[name] = sum(self.derivatives[name][ii] * np.prod([d**p if p != 0 else 1. for d, p in zip(diffs, powers)]) for ii, powers in enumerate(self.powers[name]))
+            toret[name] = sum(self.derivatives[name][ii] * jnp.prod(jnp.power(diffs, powers)) for ii, powers in enumerate(self.powers[name]))
         return toret
 
     def __getstate__(self):

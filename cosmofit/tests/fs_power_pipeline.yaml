@@ -23,9 +23,11 @@ pipeline:
       #  .derived: [.varied]
       #  .fixed: '*'
         alpha*:
-          solved: 'auto'
+          #solved: 'auto'
+          #derived: True
         sn*:
-          solved: 'auto'
+          #solved: 'auto'
+          #derived: True
       #load: f'{output_dir}/fs_emulator.npy'
       emulator:
         init:
@@ -52,7 +54,8 @@ pipeline:
         kptt: e'np.linspace(0.03, 0.18, 2)'
       params:
         #.fixed: [f, qap]
-        .fixed: [f]
+        #.fixed: [f]
+        .fixed: '*'
     #ptheta:
     #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumTemplate
     #  params:
@@ -82,9 +85,9 @@ summarize:
     nsplits: 4
   plot_geweke: f'{output_dir}/geweke.png'
 
-#summarize:
-#   profiles: f'{output_dir}/profiles.npy'
-#   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
+summarize:
+   profiles: f'{output_dir}/profiles.npy'
+   stats: f'{output_dir}/stats.tex'
 
 sample:
   class: cosmofit.samplers.QMCSampler

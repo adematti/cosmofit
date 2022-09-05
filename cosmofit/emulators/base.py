@@ -4,7 +4,7 @@ import sys
 import numpy as np
 
 from cosmofit.samples import ParameterValues
-from cosmofit.base import PipelineError, SectionConfig, import_cls
+from cosmofit.base import BasePipeline, PipelineError, SectionConfig, import_cls
 from cosmofit import utils, plotting
 from cosmofit.utils import BaseClass, OrderedSet
 from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError, ParameterCollection, ParameterConfig
@@ -26,7 +26,6 @@ class EmulatorConfig(SectionConfig):
                 cls = import_cls(emudict['class'], pythonpath=emudict.get('pythonpath', None), registry=BaseEmulatorEngine._registry)
                 emulator = cls(pipeline.select(calculator), **emudict['init'])
                 sample = emudict.get('sample', {})
-                save_samples_fn = None
                 if not isinstance(sample, dict):
                     sample = {'samples': sample}
                 elif 'class' in sample:
@@ -34,6 +33,9 @@ class EmulatorConfig(SectionConfig):
                     config_sampler = SamplerConfig(sample)
                     sampler = config_sampler.run(emulator.pipeline)
                     sample = {'samples': ParameterValues.concatenate(sampler.chains) if hasattr(sampler, 'chains') else sampler.samples}
+                else:
+                    sample = dict(sample)
+                save_samples_fn = sample.pop('save', None)
                 emulator.set_samples(**sample)
                 if save_samples_fn is not None:
                     emulator.samples.save(save_samples_fn)
@@ -171,8 +173,9 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         item = '- '
         toret = True
         samples = self.subsamples(**kwargs)
-        calculator = self.to_calculator(derived=self.varied)
-        derived = calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
+        pipeline = self.to_pipeline(derived=self.varied)
+        pipeline.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
+        derived = pipeline.derived
 
         #calculator = self.pipeline
         #calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
@@ -215,12 +218,13 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             names = [names]
             fn = [fn]
         samples = self.subsamples(nmax=nmax, **kwargs)
-        calculator = self.to_calculator(derived=names)
+        pipeline = self.to_pipeline(derived=names)
         #derived = calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
 
         from mpi4py import MPI
-        calculator.mpicomm = MPI.COMM_SELF
-        derived = calculator.mpirun(**{name: self.mpicomm.bcast(samples[name] if self.mpicomm.rank == 0 else None, root=0) for name in self.varied_params})
+        pipeline.mpicomm = MPI.COMM_SELF
+        pipeline.mpirun(**{name: self.mpicomm.bcast(samples[name] if self.mpicomm.rank == 0 else None, root=0) for name in self.varied_params})
+        derived = pipeline.derived
 
         from matplotlib import pyplot as plt
         lax = None
@@ -248,6 +252,9 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
                     calculator.runtime_info.full_params.set(param)
                     calculator.runtime_info.full_params = calculator.runtime_info.full_params
         return calculator
+
+    def to_pipeline(self, derived=None):
+        return BasePipeline(self.to_calculator(derived=derived))
 
     def __getstate__(self):
         state = {}
@@ -322,9 +329,8 @@ class BaseEmulator(BaseClass):
             return params
 
         def new_run(self, **params):
-            Calculator.__setstate__(self, {**self.fixed, **EmulatorEngine.predict(self, **params)})
-            #for param in self.runtime_info.solved_params:
-            #    self.runtime_info.gradient[param] = EmulatorEngine.gradient(self, param.basename)
+            predict = EmulatorEngine.predict(self, **params)
+            Calculator.__setstate__(self, {**self.fixed, **predict})
 
         def new_getstate(self):
             return Calculator.__getstate__(self)

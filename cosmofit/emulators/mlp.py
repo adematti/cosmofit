@@ -1,6 +1,6 @@
 import numpy as np
-import scipy as sp
 
+from cosmofit.utils import jnp
 from .base import BaseEmulatorEngine
 from cosmofit import mpi
 
@@ -95,7 +95,7 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
                     operations.append({'eval': 'x @ W + b', 'locals': {'W': self.W[i].numpy(), 'b': self.b[i].numpy()}})
                     # non-linear activation function
                     if i < self.nlayers - 1:
-                        operations.append({'eval': '(beta + (sp.special.expit(alpha * x) * (1 - beta))) * x', 'locals': {'alpha': self.alpha[i].numpy(), 'beta': self.beta[i].numpy()}})
+                        operations.append({'eval': '(beta + (1 - beta) / (1 + np.exp(-alpha * x))) * x', 'locals': {'alpha': self.alpha[i].numpy(), 'beta': self.beta[i].numpy()}})
                 # linear output layer
                 if self.eigenvectors is not None:
                     operations.append({'eval': '(x * sigma + mean) @ eigenvectors', 'locals': {'eigenvectors': eigenvectors, 'mean': mean, 'sigma': sigma}})
@@ -185,9 +185,9 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
         self.yshapes = self.mpicomm.bcast(self.yshapes, root=0)
 
     def predict(self, **params):
-        x = np.array([params[param] for param in self.varied_params])
+        x = jnp.array([params[param] for param in self.varied_params])
         for operation in self.operations:
-            x = eval(operation['eval'], {'np': np, 'sp': sp}, {'x': x, **operation['locals']})
+            x = eval(operation['eval'], {'np': jnp}, {'x': x, **operation['locals']})
         cumsize, toret = 0, {}
         for name, shape in self.yshapes.items():
             size = np.prod(shape, dtype='i')

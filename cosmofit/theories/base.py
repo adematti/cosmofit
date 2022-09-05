@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import special
 
+from cosmofit.utils import jnp
 from cosmofit.base import BaseCalculator
 from cosmofit import plotting
 from . import utils
@@ -261,17 +262,15 @@ class WindowedPowerSpectrumMultipoles(BaseCalculator):
         self.requires = {'theory': theory}
 
     def _apply(self, theory):
-        theory = np.ravel(theory)
+        theory = jnp.ravel(theory)
         if self.wmatrix is not None:
-            return np.dot(theory, self.wmatrix)
+            return jnp.dot(theory, self.wmatrix)
         if self.kmask is not None:
             return theory[self.kmask]
         return theory
 
-    def run(self):
+    def run(self, **params):
         self.flatpower = self._apply(self.theory.power + self.shotnoise[:, None]) - self.flatshotnoise
-        for param in self.runtime_info.gradient.params():
-            self.runtime_info.gradient[param] = self._apply(self.theory.runtime_info.gradient[param].ravel())
 
     @property
     def power(self):

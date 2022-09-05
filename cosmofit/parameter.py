@@ -308,7 +308,7 @@ class Parameter(BaseClass):
     """
     _attrs = ['basename', 'namespace', 'value', 'fixed', 'derived', 'prior', 'ref', 'proposal', '_latex', 'solved']
 
-    def __init__(self, basename, namespace='', value=None, fixed=None, derived=None, prior=None, ref=None, proposal=None, latex=None, solved=False):
+    def __init__(self, basename, namespace='', value=None, fixed=None, derived=False, prior=None, ref=None, proposal=None, latex=None, solved=False):
         """
         Initialize :class:`Parameter`.
 
@@ -392,8 +392,8 @@ class Parameter(BaseClass):
         if fixed is None:
             fixed = prior is None and ref is None
         self.fixed = bool(fixed)
-        if self.solved and derived is None:
-            derived = True
+        #if self.solved and derived is None:
+        #    derived = True
         self.derived = bool(derived)
 
     @property
@@ -453,6 +453,9 @@ class Parameter(BaseClass):
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""
         return type(other) == type(self) and all(getattr(other, name) == getattr(self, name) for name in self._attrs)
+
+    def __hash__(self):
+        return str(self)
 
 
 class GetterSetter(object):
@@ -944,7 +947,7 @@ class ParameterCollectionConfig(BaseParameterCollection):
                 getattr(self, meta_name).update({name: bool(value) for name, value in meta.items()})
         self.data = []
         for name, conf in data.items():
-            conf = conf.copy()
+            conf = (conf or {}).copy()
             latex = conf.pop('latex', None)
             for name, latex in yield_names_latex(name, latex=latex):
                 tmp = conf.__getstate__() if isinstance(conf, ParameterConfig) else conf
@@ -1216,8 +1219,9 @@ class ParameterCollection(BaseParameterCollection):
         return self.__add__(other)
 
     def __iadd__(self, other):
-        if other == 0: return self.copy()
-        return self.__add__(other)
+        if other == 0: return self
+        self.__dict__.update(self.__add__(other).__dict__)
+        return self
 
     def params(self, **kwargs):
         return self.select(**kwargs)

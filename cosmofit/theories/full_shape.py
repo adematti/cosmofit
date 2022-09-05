@@ -1,5 +1,6 @@
 import numpy as np
 
+from cosmofit.utils import jax, jnp
 from .base import TrapzTheoryPowerSpectrumMultipoles
 from .bao import BaseTheoryPowerSpectrumMultipoles, BaseTheoryCorrelationFunctionMultipoles, BaseTheoryCorrelationFunctionFromPowerSpectrumMultipoles
 from .power_template import BasePowerSpectrumParameterization  # to add calculator in the registry
@@ -143,11 +144,8 @@ class LPTPowerSpectrumMultipoles(BaseVelocileptorsPowerSpectrumMultipoles):
         # pkells = self.lpt.combine_bias_terms_pkell(bias)[1:]
         # return np.array([pkells[[0, 2, 4].index(ell)] for ell in self.ells])
         b1, b2, bs, b3, alpha0, alpha2, alpha4, alpha6, sn0, sn2, sn4 = pars
-        bias_monomials = np.array([1, b1, b1**2, b2, b1 * b2, b2**2, bs, b1 * bs, b2 * bs, bs**2, b3, b1 * b3, alpha0, alpha2, alpha4, alpha6, sn0, sn2, sn4])
-        return np.sum(self.lpttable * bias_monomials, axis=-1)
-
-    def gradient_bias_terms_poles(self, name):
-        return self.lpttable[..., self._bias_indices[name]]
+        bias_monomials = jnp.array([1, b1, b1**2, b2, b1 * b2, b2**2, bs, b1 * bs, b2 * bs, bs**2, b3, b1 * b3, alpha0, alpha2, alpha4, alpha6, sn0, sn2, sn4])
+        return jnp.sum(self.lpttable * bias_monomials, axis=-1)
 
     def __getstate__(self):
         state = {}
@@ -165,8 +163,6 @@ class LPTTracerPowerSpectrumMultipoles(BaseVelocileptorsTracerPowerSpectrumMulti
 
     def run(self, **params):
         super(LPTTracerPowerSpectrumMultipoles, self).run(**params)
-        for param in self.runtime_info.solved_params:
-            self.runtime_info.gradient[param] = self.pt.gradient_bias_terms_poles(param.basename)
 
 
 class LPTTracerCorrelationFunctionMultipoles(BaseTracerCorrelationFunctionMultipoles):

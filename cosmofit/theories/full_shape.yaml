@@ -68,7 +68,7 @@ params:
       dist: norm
       loc: 0.
       scale: 1.0
-    latex: \alpha_[]
+    latex: \alpha_{[]}
   sn[:5:2]:
     value: 0.
     prior:
@@ -149,7 +149,7 @@ params:
     latex: 'b_{3}'
   alpha[0:7:2]:
     value: 0.
-    latex: '\alpha_[]'
+    latex: '\alpha_{[]}'
   alpha*:
     prior:
       dist: norm
@@ -301,7 +301,7 @@ params:
       dist: norm
       loc: 0.
       scale: 1.0
-    latex: '\alpha_[]'
+    latex: '\alpha_{[]}'
   sn[:5:2]:
     value: 0.
     prior:
@@ -393,7 +393,7 @@ params:
     latex: 'b_{3}'
   alpha[0:7:2]:
     value: 0.
-    latex: '\alpha_[]'
+    latex: '\alpha_{[]}'
   alpha*:
     prior:
       dist: norm
@@ -785,7 +785,7 @@ params:
       dist: norm
       loc: 0.
       scale: 1.0
-    latex: \alpha_[]
+    latex: \alpha_{[]}
   sn[:5:2]:
     value: 0.
     prior:

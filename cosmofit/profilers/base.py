@@ -162,6 +162,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             for ii in tm.iterate(range(niterations)):
                 self.derived = None
                 start = self._get_start()
+                self.derived = None
                 profile = self._maximize_one(start, **kwargs)
                 if self.likelihood.mpicomm.rank == 0:
                     for param in self.likelihood.params.select(fixed=True, derived=False):

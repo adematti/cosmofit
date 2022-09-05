@@ -12,6 +12,15 @@ import numpy as np
 from numpy.linalg import LinAlgError
 from mpytools import CurrentMPIComm
 
+try:
+    #raise ImportError
+    import jax
+    from jax.config import config; config.update('jax_enable_x64', True)
+    import jax.numpy as jnp
+except ImportError:
+    jax = None
+    import numpy as jnp
+
 
 @CurrentMPIComm.enable
 def exception_handler(exc_type, exc_value, exc_traceback, mpicomm=None):
@@ -186,7 +195,7 @@ def deep_eq(obj1, obj2):
         elif isinstance(obj1, (tuple, list)):
             if len(obj2) == len(obj1):
                 return all(deep_eq(o1, o2) for o1, o2 in zip(obj1, obj2))
-        elif isinstance(obj1, np.ndarray):
+        elif isinstance(obj1, (np.ndarray, jnp.ndarray)):
             return np.all(obj2 == obj1)
         else:
             return obj2 == obj1

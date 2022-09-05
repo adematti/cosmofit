@@ -54,7 +54,7 @@ class BaseGaussianLikelihood(BaseCalculator):
                 self.log_info('Using synthetic data.')
             self.flatdata = self.synthetic.flatdata + flatmodel
         diff = self.flatdata - flatmodel
-        self.loglikelihood = -0.5 * diff.dot(self.precision).T.dot(diff)
+        self.loglikelihood = -0.5 * diff.dot(self.precision).dot(diff)
 
     @property
     def flatdiff(self):

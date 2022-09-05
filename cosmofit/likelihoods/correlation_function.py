@@ -128,7 +128,7 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
 
     @property
     def std(self):
-        return self.unpack(np.diag(self.covariance) ** 0.5)
+        return self.unpack(np.diag(self.covariance)**0.5)
 
     def __getstate__(self):
         state = super(CorrelationFunctionMultipolesLikelihood, self).__getstate__()
