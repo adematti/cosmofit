@@ -1036,7 +1036,7 @@ class LikelihoodPipeline(BasePipeline):
                 calculator.runtime_info.full_params = calculator.runtime_info.full_params
         self.set_params()
         #self.stop_at_inf_prior = False
-        self.solved_default = 'best'
+        self.solved_default = '.best'
 
     def set_params(self, *args, **kwargs):
         super(LikelihoodPipeline, self).set_params(*args, **kwargs)
