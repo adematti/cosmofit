@@ -86,7 +86,7 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
             mpicomm = likelihood.mpicomm
         self.mpicomm = mpicomm
         self.likelihood = BaseClass.copy(likelihood)
-        self.likelihood.solved_default = 'marg'
+        self.likelihood.solved_default = '.marg'
         self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False)
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
@@ -124,6 +124,7 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
         toret = self.likelihood.mpicomm.bcast(toret, root=0)
         mask = np.isnan(toret)
         toret[mask] = -np.inf
+        if mask.any(): exit()
         if mask.any() and self.mpicomm.rank == 0:
             self.log_warning('loglikelihood is NaN for {}'.format({k: v[mask] for k, v in di.items()}))
         return toret

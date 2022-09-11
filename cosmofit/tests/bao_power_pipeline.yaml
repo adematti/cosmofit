@@ -25,10 +25,9 @@ pipeline:
     init:
       nowiggle: False
     params:
-      .fixed: ['al*-3', 'al*-2', 'al*-1', 'al*1']
+      .delete: ['al*-3', 'al*-2', 'al*-1', 'al*1']
       al*:
-        solved: 'auto'
-        derived: True
+        derived: '.marg'
         prior:
           dist: 'norm'
           loc: 0.
@@ -51,11 +50,6 @@ pipeline:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 
 emulate:
-  class: TaylorEmulatorEngine
-  init:
-    order: {'*': 2, 'al*': 1}
-
-emulate:
   class: MLPEmulatorEngine
   sample: #f'{output_dir}/samples.npy'
     niterations: 1000
@@ -64,6 +58,11 @@ emulate:
     epochs: 10
   init:
     npcs: 10
+
+emulate:
+  class: TaylorEmulatorEngine
+  init:
+    order: {'*': 2, 'al*': 1}
 
 do:
   source:
@@ -91,7 +90,7 @@ summarize:
      - f'{output_dir}/stats.tex'
      - f'{output_dir}/stats_nowiggle.tex'
    plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
-   #plot_profile_comparison: f'{output_dir}/profile_comparison.png'
+   plot_profile_comparison: f'{output_dir}/profile_comparison.png'
 
 sample:
   class: cosmofit.samplers.DynestySampler

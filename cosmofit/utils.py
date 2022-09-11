@@ -430,6 +430,27 @@ def cov_to_corrcoef(cov):
     return c
 
 
+def subspace(X, precision=None, npcs=None, chi2min=None, **kwargs):
+    # See https://arxiv.org/pdf/2009.03311.pdf
+    X = np.asarray(X)
+    X = X.reshape(X.shape[0], -1)
+    if precision is None:
+        L = np.array(1.)
+    else:
+        L = np.linalg.cholesky(precision)
+    X = X.dot(L)
+    cov = np.cov(X, rowvar=False, ddof=0, **kwargs)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    if npcs is None:
+        if chi2min is None:
+            npcs = len(eigenvalues)
+        else:
+            npcs = len(eigenvalues) - np.sum(np.cumsum(eigenvalues) < chi2min)
+    if npcs > len(eigenvectors):
+        raise ValueError('Number of requested components is {0:d}, but dimension is already {1:d} < {0:d}.'.format(npcs, len(eigenvalues)))
+    return L.dot(eigenvectors)[..., -npcs:]
+
+
 def txt_to_latex(txt):
     """Transform standard text into latex by replacing '_xxx' with '_{xxx}' and '^xxx' with '^{xxx}'."""
     latex = ''

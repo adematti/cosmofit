@@ -162,7 +162,7 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
             cidx = cidx[0]
             for name in self.varied:
                 Y = self.samples[name]
-                self.powers[name] = [np.zeros(ndim, dtype='i4')]
+                self.powers = [np.zeros(ndim, dtype='i4')]
                 self.derivatives[name] = [Y[cidx]]  # F(x=center)
                 prefactor = 1.
                 for order in range(1, max(self.order.values()) + 1):
@@ -176,8 +176,10 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
                         dx = prefactor * deriv_nd(X, Y, orders, center=center)
                         if np.isnan(dx).any():
                             raise ValueError('Some derivatives are NaN: NaN in {}'.format(name))
-                        self.powers[name].append(degrees)
+                        self.powers.append(degrees)
                         self.derivatives[name].append(dx)
+                self.powers = np.array(self.powers)
+                self.derivatives[name] = np.array(self.derivatives[name])
 
         self.derivatives = {name: mpy.bcast(self.derivatives[name] if self.mpicomm.rank == 0 else None, mpicomm=self.mpicomm, mpiroot=0) for name in self.varied}
         self.powers = self.mpicomm.bcast(self.powers, root=0)
@@ -185,9 +187,10 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
 
     def predict(self, **params):
         diffs = jnp.array([params[param] - self.center[param] for param in self.varied_params])
+        powers = jnp.prod(jnp.where(self.powers > 0, diffs ** self.powers, 1.), axis=-1)
         toret = {}
         for name in self.derivatives:
-            toret[name] = sum(self.derivatives[name][ii] * jnp.prod(jnp.power(diffs, powers)) for ii, powers in enumerate(self.powers[name]))
+            toret[name] = jnp.tensordot(self.derivatives[name], powers, axes=(0, 0))
         return toret
 
     def __getstate__(self):

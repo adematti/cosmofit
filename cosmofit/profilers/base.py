@@ -52,7 +52,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             mpicomm = likelihood.mpicomm
         self.mpicomm = mpicomm
         self.likelihood = BaseClass.copy(likelihood)
-        self.likelihood.solved_default = 'best'
+        self.likelihood.solved_default = '.best'
         self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False)
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))

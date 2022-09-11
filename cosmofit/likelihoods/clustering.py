@@ -5,7 +5,7 @@ from .base import BaseGaussianLikelihood, BaseCalculator
 from cosmofit.samples import Chain, load_samples
 from cosmofit.parameter import ParameterCollection
 from cosmofit.theories.base import EffectAP
-from cosmofit.theories.power_template import BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor
+from cosmofit.theories.power_template import BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor, BandVelocityPowerSpectrumExtractor
 from cosmofit import utils
 
 
@@ -39,7 +39,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
     def __init__(self, chains=None, select=None, burnin=None):
         self.chain = None
         if self.mpicomm.rank == 0:
-            self.chain = load_samples(source='chain', fns=chains, burnin=burnin)
+            self.chain = Chain.concatenate(load_samples(source='chain', fn=chains, burnin=burnin))
         self.params = self.mpicomm.bcast(self.chain.params() if self.mpicomm.rank == 0 else None, root=0)
         if select is not None:
             self.params = self.params.select(**select)
@@ -98,11 +98,12 @@ class FullParameterizationLikelihood(BaseParameterizationLikelihood):
 class BAOModel(BaseModel):
 
     def __init__(self, *args, **kwargs):
-        super(BAOModel, self).__init__(quantities, *args, **kwargs)
+        super(BAOModel, self).__init__(*args, **kwargs)
         BAOExtractor.__init__(self, zeff=self.zeff)
 
     def run(self):
-        self.theory = np.array([getattr(self, quantity) for param in self.quantities], dtype='f8')
+        BAOExtractor.run(self)
+        self.theory = np.array([getattr(self, quantity) for quantity in self.quantities], dtype='f8')
 
 
 class BAOParameterizationLikelihood(BaseParameterizationLikelihood):
@@ -128,15 +129,18 @@ class ShapeFitModel(BAOModel):
         ShapeFitPowerSpectrumExtractor.__init__(self, zeff=self.zeff)
 
     def run(self):
-        super(ShapeFitModel, self).run()
+        BAOExtractor.run(self)
         self.n_varied = 'n' in self.quantities
-        self.kp = self.kp_rs / extractor.cosmo.rs_drag
+        self.kp = self.kp_rs / self.cosmo.rs_drag
         ShapeFitPowerSpectrumExtractor.run(self)
-        self.theory += [getattr(self, quantity) for quantity in ['n', 'm'] if quantity in self.quantities]
-        if 'f_sqrt_Ap' in self.quantities:
-            fo = extractor.cosmo.get_fourier()
-            f = fo.sigma8_z(z=self.zeff, of='theta_cb') / fo.sigma8_z(z=self.zeff, of='delta_cb')
-            self.theory.append(self.Ap**0.5 * f)
+        self.theory = []
+        for quantity in self.quantities:
+            if quantity == 'f_sqrt_Ap':
+                fo = self.cosmo.get_fourier()
+                f = fo.sigma8_z(z=self.zeff, of='theta_cb') / fo.sigma8_z(z=self.zeff, of='delta_cb')
+                self.theory.append(self.Ap**0.5 * f)
+            else:
+                self.theory.append(getattr(self, quantity))
         self.theory = np.array(self.theory, dtype='f8')
 
 
@@ -162,25 +166,29 @@ class WiggleSplitModel(BaseModel):
 
     def __init__(self, *args, **kwargs):
         super(WiggleSplitModel, self).__init__(*args, **kwargs)
+        self.kp_fid = self.kp
         WiggleSplitPowerSpectrumExtractor.__init__(self, zeff=self.zeff, kp=self.kp_fid)
+        requires = self.requires
         EffectAP.__init__(self, zeff=self.zeff, fiducial=self.fiducial, mode='distances', eta=self.eta)
+        self.requires = {**requires, **self.requires}
 
     def run(self):
         EffectAP.run(self)
         self.theory = []
-        if 'fsigmar' in self.quantities:
-            fo = self.cosmo.get_fourier()
-            r = self.r * self.qiso
-            fsigmar = fo.sigma_rz(r, z=self.zeff, of='theta_cb')
-            self.theory.append(fsigmar)
-        if 'm' in self.quantities:
-            self.kp = self.kp_fid / self.qiso
-            WiggleSplitPowerSpectrumExtractor.run(self)
-            self.theory.append(self.m)
-        if 'qbao' in self.quantities:
-            self.theory.append(self.qiso * self.effectap.fiducial.rs_drag / self.cosmo.rs_drag)
-        if 'qap' in self.quantities:
-            self.theory.append(self.effectap.qap)
+        for quantity in self.quantities:
+            if quantity == 'fsigmar':
+                fo = self.cosmo.get_fourier()
+                r = self.r * self.qiso
+                fsigmar = fo.sigma_rz(r, z=self.zeff, of='theta_cb')
+                self.theory.append(fsigmar)
+            elif quantity == 'm':
+                self.kp = self.kp_fid / self.qiso
+                WiggleSplitPowerSpectrumExtractor.run(self)
+                self.theory.append(self.m)
+            elif quantity == 'qbao':
+                self.theory.append(self.qiso * self.fiducial.rs_drag / self.cosmo.rs_drag)
+            else:  # qap
+                self.theory.append(getattr(self, 'qap'))
         self.theory = np.array(self.theory, dtype='f8')
 
 
@@ -190,13 +198,14 @@ class WiggleSplitParameterizationLikelihood(BaseParameterizationLikelihood):
 
     def __init__(self, *args, r=None, zeff=None, kp=None, eta=1./3., fiducial=None, **kwargs):
         super(WiggleSplitParameterizationLikelihood, self).__init__(*args, **kwargs)
-        self._set_meta(r=r, zeff=zeff, kp_fid=kp, eta=eta, fiducial=fiducial)
+        self._set_meta(r=r, zeff=zeff, kp=kp, eta=eta, fiducial=fiducial)
 
 
 class BandVelocityPowerSpectrumModel(BaseModel):
 
     def __init__(self, *args, **kwargs):
         super(BandVelocityPowerSpectrumModel, self).__init__(*args, **kwargs)
+        self.kptt_fid = self.kptt
         BandVelocityPowerSpectrumExtractor.__init__(self, zeff=self.zeff, kptt=self.kptt_fid)
         EffectAP.__init__(self, zeff=self.zeff, fiducial=self.fiducial, mode='distances', eta=self.eta)
 
@@ -219,6 +228,6 @@ class BandVelocityPowerSpectrumParameterizationLikelihood(BaseParameterizationLi
 
     _parambasenames = ('ptt', 'f', 'qap')
 
-    def __init__(self, *args, kptt=None, zeff=None, fiducial=None, **kwargs):
+    def __init__(self, *args, zeff=None, kptt=None, eta=1./3., r=8., fiducial=None, **kwargs):
         super(BandVelocityPowerSpectrumParameterizationLikelihood, self).__init__(*args, **kwargs)
-        self._set_meta(kptt_fid=kptt, zeff=zeff, fiducial=fiducial)
+        self._set_meta(zeff=zeff, kptt=kptt, eta=eta, r=r, fiducial=fiducial)

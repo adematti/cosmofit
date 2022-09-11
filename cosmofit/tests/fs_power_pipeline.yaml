@@ -5,7 +5,7 @@ pipeline:
       init:
         data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
-        wmatrix: f'{data_dir}/window.npy'
+        #wmatrix: f'{data_dir}/window.npy'
         klim:
           0: [0.02, 0.2]
           2: [0.02, 0.2]
@@ -17,18 +17,16 @@ pipeline:
       load: True
       plot: f'{output_dir}/power.png'
     theory:
-      class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.full_shape.KaiserTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.full_shape.KaiserTracerPowerSpectrumMultipoles
       params:
       #  .derived: [.varied]
       #  .fixed: '*'
         alpha*:
-          #solved: 'auto'
-          #derived: True
-        sn*:
-          #solved: 'auto'
-          #derived: True
-      #load: f'{output_dir}/fs_emulator.npy'
+          derived: '.auto'
+        #sn*:
+        #  derived: '.auto'
+      load: f'{output_dir}/fs_emulator.npy'
       emulator:
         init:
           #order: {'*': 1, 'q*': 2, 'b1': 2}
@@ -42,20 +40,20 @@ pipeline:
     #    save: f'{output_dir}/emulator.npy'
     #shapefit:
     #  class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
-    #full:
-    #  class: cosmofit.theories.power_template.FullPowerSpectrumParameterization
-    #  init:
-    #    fiducial: DESI
+    full:
+      class: cosmofit.theories.power_template.FullPowerSpectrumParameterization
+      init:
+        fiducial: DESI
     #wiggle:
     #  class: cosmofit.theories.power_template.WiggleSplitPowerSpectrumParameterization
-    pthetap:
-      class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
-      init:
-        kptt: e'np.linspace(0.03, 0.18, 2)'
-      params:
+    #pthetap:
+    #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
+    #  init:
+    #    kptt: e'np.linspace(0.03, 0.18, 2)'
+    #  params:
         #.fixed: [f, qap]
         #.fixed: [f]
-        .fixed: '*'
+    #    .fixed: '*'
     #ptheta:
     #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumTemplate
     #  params:
@@ -109,7 +107,7 @@ sample:
   class: cosmofit.samplers.EmceeSampler
   init:
     #nwalkers: 40
-    chains: 2
+    chains: 1
   run:
     max_iterations: 10000
     check_every: 100

@@ -271,7 +271,7 @@ class RuntimeInfo(BaseClass):
     @full_params.setter
     def full_params(self, full_params):
         self._full_params = full_params
-        self._base_params = self._solved_params = self._all_solved_params = self._derived_params = self._param_values = None
+        self._base_params = self._solved_params = self._derived_params = self._param_values = None
 
     @property
     def base_params(self):
@@ -282,7 +282,7 @@ class RuntimeInfo(BaseClass):
     @property
     def solved_params(self):
         if getattr(self, '_solved_params', None) is None:
-            self._solved_params = self.full_params.select(varied=True, solved=['best', 'marg', 'auto'])
+            self._solved_params = self.full_params.select(solved=True)
         return self._solved_params
 
     @property
@@ -333,7 +333,7 @@ class RuntimeInfo(BaseClass):
     @property
     def param_values(self):
         if getattr(self, '_param_values', None) is None:
-            self._param_values = {param.basename: param.value for param in self.full_params if not param.derived or param.solved}
+            self._param_values = {param.basename: param.value for param in self.full_params if not param.drop and (not param.derived or param.solved)}
         return self._param_values
 
     @param_values.setter
@@ -747,6 +747,8 @@ class BasePipeline(BaseClass):
 
         self.mpicomm = mpicomm
         # Init run, e.g. for fixed parameters
+        #for calculator in self.calculators:
+        #    print(calculator, calculator.runtime_info.full_params.select(varied=True))
         self.set_params(quiet=quiet)
         for calculator in self.end_calculators:
             calculator.runtime_info.torun = True
@@ -770,21 +772,30 @@ class BasePipeline(BaseClass):
                     elif param != self.params[param]:
                         raise PipelineError('Parameter {} of {} is different from that of {}.'.format(param, calculator, params_from_calculator[param.name]))
                 params_from_calculator[param.name] = calculator
-                try:
-                    self._param_values[param.name] = calculator.runtime_info.param_values[param.basename]
-                except KeyError:  # e.g. derived, not solved parameters
-                    pass
+                self._param_values[param.name] = param.value
                 self.params.set(param)
+        self._derived = None
+
+    def eval_params(self, params):
+        toret = {}
+        all_params = {**self._param_values, **params}
+        for param in params:
+            try:
+                toret[param] = self.params[param].eval(**all_params)
+            except KeyError:
+                pass
+        return toret
 
     def run(self, **params):  # params with namespace
-        torun = False
+        torun = self._derived is None
+        self._param_values.update(params)
+        params = self.eval_params(params)
         for calculator in self.calculators:
-            calculator.runtime_info.torun = False
+            calculator.runtime_info.torun = torun
         for calculator in self.calculators:
             for param in calculator.runtime_info.full_params:
                 value = params.get(param.name, None)
                 if value is not None and param.basename in calculator.runtime_info.param_values and value != calculator.runtime_info.param_values[param.basename]:
-                    self._param_values[param.basename] = value
                     calculator.runtime_info.param_values[param.basename] = value
                     torun = calculator.runtime_info.torun = True  # set torun = True of all required_by instances
         if torun:
@@ -832,7 +843,11 @@ class BasePipeline(BaseClass):
 
     def jac(self, calculator, name, params=None):
 
+        if jax is None:
+            raise PipelineError('jax is required to compute the Jacobian')
+
         def fun(params):
+            params = self.eval_params(params)
             for calc in self.calculators:
                 calc.runtime_info.torun = False
             for calc in self.calculators:
@@ -990,6 +1005,7 @@ class LikelihoodPipeline(BasePipeline):
 
     _loglikelihood_name = 'loglikelihood'
     _logprior_name = 'logprior'
+    _logposterior_name = 'logposterior'
 
     def __init__(self, *args, **kwargs):
         super(LikelihoodPipeline, self).__init__(*args, quiet=True, **kwargs)
@@ -1038,11 +1054,6 @@ class LikelihoodPipeline(BasePipeline):
         self.solved_params = sum(self.solved_params_by_calculator.values())
 
     def run(self, **params):
-        sum_logprior = 0.
-        for name, value in params.items():
-            param = self.params[name]
-            if param.varied and not param.solved:
-                sum_logprior += param.prior(value)
         #if self.stop_at_inf_prior and not np.isfinite(sum_logprior): return
         #pipeline_params = params.copy()
         #for param in self.solved_params:
@@ -1051,27 +1062,34 @@ class LikelihoodPipeline(BasePipeline):
         if not torun:
             return torun
 
-        for array in self.derived:
-            param = array.param
-            if param.varied and param.name not in params:
-                sum_logprior += param.prior(array)
+        sum_logprior = 0.
+        for param in self.params:
+            if param.varied and not param.solved:
+                if param.derived:
+                    array = self.derived[param]
+                    sum_logprior += array.param.prior(array)
+                else:
+                    sum_logprior += param.prior(params.get(param.name, self._param_values[param.name]))
+
         #if self.stop_at_inf_prior and not np.isfinite(sum_logprior): return
         indices_best, indices_marg = [], []
         for iparam, param in enumerate(self.solved_params):
-            solved = param.solved
-            if solved == 'auto': solved = self.solved_default
-            if solved == 'best':
+            solved = param.derived
+            if solved == '.auto': solved = self.solved_default
+            if solved == '.best':
                 indices_best.append(iparam)
-            else:  # marg
+            elif solved == '.marg':  # marg
                 indices_marg.append(iparam)
+            else:
+                raise PipelineError('Unknown option for solved = {}'.format(solved))
         loglikelihoods, solve_calculators, projections, inverse_fishers = [], [], [], []
         for calculator in self.end_calculators:
             loglikelihood_param = calculator.runtime_info.base_params[self._loglikelihood_name]
             loglikelihoods.append(calculator.runtime_info.derived[loglikelihood_param].copy())
             solved_params = self.solved_params_by_calculator[calculator]
             if solved_params:
-                flatdiff = - calculator.flatdiff  # flatdiff is data - model, here we want model - data
-                jac = self.jac(calculator, 'flatmodel', solved_params)
+                flatdiff = calculator.flatdiff  # flatdiff is model - data
+                jac = self.jac(calculator, 'flatdiff', solved_params)
                 solve_calculators.append(calculator)
                 zeros = np.zeros_like(calculator.precision, shape=calculator.precision.shape[0])
                 jac = np.column_stack([jac[param.name] if param.name in jac else zeros for param in self.solved_params])
@@ -1087,10 +1105,11 @@ class LikelihoodPipeline(BasePipeline):
                 scale = getattr(param.prior, 'scale', None)
                 inverse_priors.append(0. if scale is None or param.fixed else scale**(-2))
                 offsets.append(self._param_values[param.name])
+            inverse_priors = np.array(inverse_priors)
             sum_inverse_fishers = sum(inverse_fishers + [np.diag(inverse_priors)])
             x0 = - np.linalg.solve(sum_inverse_fishers, sum(projections)) + offsets
         for param, xx in zip(self.solved_params, x0):
-            sum_logprior += self.params[param.name].prior(xx)
+            sum_logprior += self.params[param].prior(xx)
             if param.derived:
                 self.derived.set(ParameterArray(xx, param), output=True)
         #if self.stop_at_inf_prior and not np.isfinite(sum_logprior): return
@@ -1116,7 +1135,8 @@ class LikelihoodPipeline(BasePipeline):
             #sum_loglikelihood += 1. / 2. * len(indices_marg) * np.log(2. * np.pi)
             # Convention: in the limit of no likelihood constraint on x0, no change to the loglikelihood
             # This allows to ~ keep the interpretation in terms of -1./2. chi2
-            sum_loglikelihood += 1. / 2. * np.sum(np.log(inverse_priors))  # logdet
+            ip = inverse_priors[indices_marg]
+            sum_loglikelihood += 1. / 2. * np.sum(np.log(ip[ip > 0.]))  # logdet
             #sum_loglikelihood -= 1. / 2. * len(indices_marg) * np.log(2. * np.pi)
         if len(self.end_calculators) == 1 and not loglikelihood_param.namespace:  # loglikelihood already set in self.derived
             self.derived[loglikelihood_param] = sum_loglikelihood
@@ -1125,6 +1145,12 @@ class LikelihoodPipeline(BasePipeline):
             if param in self.derived:
                 raise PipelineError('{} is a reserved parameter name, do not use it!'.format(self._loglikelihood_name))
             self.derived.set(ParameterArray(sum_loglikelihood, param), output=True)
+
+        param = Parameter(self._logposterior_name, namespace=None, latex=outputs_to_latex(self._logposterior_name), derived=True)
+        if param in self.derived:
+            raise PipelineError('{} is a reserved parameter name, do not use it!'.format(self._logposterior_name))
+        #print(sum_logprior, sum_loglikelihood, indices_marg, indices_best)
+        self.derived.set(ParameterArray(sum_logprior + sum_loglikelihood, param), output=True)
 
         return torun
 

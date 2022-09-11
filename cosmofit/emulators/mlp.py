@@ -1,5 +1,6 @@
 import numpy as np
 
+from cosmofit import utils
 from cosmofit.utils import jnp
 from .base import BaseEmulatorEngine
 from cosmofit import mpi
@@ -146,13 +147,13 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
             eigenvectors, mean, sigma = None, None, None
             architecture = [len(self.varied_params)] + list(self.nhidden)
             if self.npcs is not None:
-                cov = np.cov(samples['Y_training'], rowvar=False, ddof=1)
-                eigenvalues, eigenvectors = np.linalg.eigh(cov)
+                ndim = samples['Y_training'].shape[-1]
+                if self.npcs > ndim:
+                    self.log_warning('Number of requested components is {0:d}, but dimension is already {1:d} < {0:d}.'.format(self.npcs, ndim))
+                    self.npcs = ndim
+                eigenvectors = utils.subspace(samples['Y_training'], npcs=self.npcs)
+                tmp = samples['Y_training'].dot(eigenvectors)
                 eigenvectors = eigenvectors.T
-                if self.npcs > len(eigenvectors):
-                    self.log_warning('Number of requested components is {0:d}, but dimension is already {1:d} < {0:d}.'.format(self.npcs, len(eigenvectors)))
-                eigenvectors = eigenvectors[-self.npcs:]
-                tmp = samples['Y_training'] @ eigenvectors.T
                 mean, sigma = np.mean(tmp, axis=0), np.std(tmp, ddof=1, axis=0)
                 architecture += [len(mean)]
             else:

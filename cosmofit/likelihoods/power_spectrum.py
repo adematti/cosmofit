@@ -87,7 +87,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             covariance = self.mpicomm.bcast(covariance if self.mpicomm.rank == 0 else None, root=0)
 
         self.k, self.ells, flatdata, shotnoise, nobs = self.mpicomm.bcast((self.k, self.ells, flatdata, shotnoise, nobs) if self.mpicomm.rank == 0 else None, root=0)
-        flatdata += 1e3
+        #flatdata += 1e3
         super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=flatdata, nobs=nobs)
         self.requires['theory'] = ('cosmofit.theories.base.WindowedPowerSpectrumMultipoles',
                                    {'k': self.k, 'ells': self.ells, 'wmatrix': wmatrix, 'shotnoise': shotnoise,
@@ -130,7 +130,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
             raise ValueError('Theory {} has no mode nowiggle'.format(self.theory.theory.__class__)) from exc
         self.theory.theory.nowiggle = True
         for calc in self.runtime_info.pipeline.calculators: calc.runtime_info.torun = True
-        self.run()
+        self.runtime_info.run()
         nowiggle = self.model
         self.theory.theory.nowiggle = mode
         for ill, ell in enumerate(self.ells):

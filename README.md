@@ -11,7 +11,8 @@ Example notebooks are provided in directory nb/.
 
 ## TODOs
 
-- reparametrization
+- reparametrization (in process)
+- dimensionality reduction (in process)
 - jax.jit
 - use Jacobian, if available, in Taylor emulator?
 - finish documentation
@@ -20,7 +21,6 @@ Example notebooks are provided in directory nb/.
 - allow emulators to use result of previous calculators as input (not only parameters)
 - implement external likelihoods (Planck, Pantheon, DES, etc.)
 - more PT theory models
-- dimensionality reduction
 - real science work...
 
 ## Documentation

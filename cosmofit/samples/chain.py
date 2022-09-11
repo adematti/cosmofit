@@ -108,7 +108,7 @@ class Chain(ParameterValues):
             default = kwargs['default']
         try:
             return self.data[self.index(name)]
-        except IndexError:
+        except KeyError:
             if name == self._weight:
                 return self.weight
             if has_default:

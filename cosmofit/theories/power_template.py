@@ -180,7 +180,7 @@ class WiggleSplitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
         self.power_tt *= factor
         if self.with_now:
             self.power_tt_now *= factor
-        pdd = self.cosmo.get_fourier().pk_interpolator(of='delta_cb').to_1d(z=self.zeff)
+        pdd = self.wiggles.cosmo.get_fourier().pk_interpolator(of='delta_cb').to_1d(z=self.zeff)
         ptt = self.wiggles.power
         pdd = pdd.clone(pk=pdd.pk * (pdd.k / self.kp)**dm)
         ptt = ptt.clone(pk=ptt.pk * (pdd.k / self.kp)**dm)

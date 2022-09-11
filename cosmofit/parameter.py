@@ -306,9 +306,10 @@ class Parameter(BaseClass):
     latex : string, default=None
         Latex for parameter.
     """
-    _attrs = ['basename', 'namespace', 'value', 'fixed', 'derived', 'prior', 'ref', 'proposal', '_latex', 'solved']
+    _attrs = ['basename', 'namespace', 'value', 'fixed', '_derived', 'prior', 'ref', 'proposal', '_latex', 'depends', 'drop', 'saved']
+    _allowed_solved = ['.best', '.marg', '.auto']
 
-    def __init__(self, basename, namespace='', value=None, fixed=None, derived=False, prior=None, ref=None, proposal=None, latex=None, solved=False):
+    def __init__(self, basename, namespace='', value=None, fixed=None, derived=False, prior=None, ref=None, proposal=None, latex=None, drop=False, saved=True):
         """
         Initialize :class:`Parameter`.
 
@@ -377,24 +378,51 @@ class Parameter(BaseClass):
                     self.proposal = self.ref.scale
                 elif self.ref.is_proper():
                     self.proposal = (self.ref.limits[1] - self.ref.limits[0]) / 2.
-        self.solved = solved
-        allowed_solved = ['best', 'marg', 'auto']
-        if isinstance(solved, str):
-            if solved not in allowed_solved:
-                raise ParameterError('solved must be one of {} for {}'.format(allowed_solved, self))
-            allowed_dists = ['norm', 'uniform']
-            if self.prior.dist not in allowed_dists or self.prior.is_limited():
-                raise ParameterError('Prior must be one of {}, with no limits, to use analytic marginalisation for {}'.format(allowed_dists, self))
-        else:
-            self.solved = bool(solved)
+        self._derived = derived
+        self.depends = {}
+        if isinstance(derived, str):
             if self.solved:
-                raise ParameterError('solved must be False or one of {} for {}'.format(allowed_solved, self))
+                allowed_dists = ['norm', 'uniform']
+                if self.prior.dist not in allowed_dists or self.prior.is_limited():
+                    raise ParameterError('Prior must be one of {}, with no limits, to use analytic marginalisation for {}'.format(allowed_dists, self))
+            else:
+                placeholders = re.finditer(r'\{.*?\}', derived)
+                for placeholder in placeholders:
+                    placeholder = placeholder.group()
+                    key = '_' * len(derived) + '{:d}_'.format(len(di) + 1)
+                    assert key not in derived
+                    derived = derived.replace(placeholder, key)
+                    self.depends[key] = placeholder
+                self._derived = derived
+        else:
+            self._derived = bool(self._derived)
         if fixed is None:
             fixed = prior is None and ref is None
         self.fixed = bool(fixed)
-        #if self.solved and derived is None:
-        #    derived = True
-        self.derived = bool(derived)
+        self.saved = bool(saved)
+        self.drop = bool(drop)
+
+    def eval(self, **values):
+        if isinstance(self._derived, str) and not self.solved:
+            try:
+                values = {k: values[n] for k, n in self.depends.items()}
+            except KeyError:
+                raise ParameterError('Parameter {} is derived from {}, following {}'.format(self, list(self.depends.values()), self.derived))
+            return eval(self._derived, {'np': np, 'sp': sp}, values)
+        return values[self.name]
+
+    @property
+    def derived(self):
+        if isinstance(self._derived, str) and not self.solved:
+            toret = self._derived
+            for k, v in self.depends.items():
+                toret.replace(k, '{{{}}}'.format(v))
+            return toret
+        return self._derived
+
+    @property
+    def solved(self):
+        return self._derived in self._allowed_solved
 
     @property
     def name(self):
@@ -409,8 +437,10 @@ class Parameter(BaseClass):
             state.update({key: getattr(args[0], key) for key in args[0]._attrs})
         elif len(args):
             raise ValueError('Unrecognized arguments {}'.format(args))
-        state['latex'] = state.pop('_latex')
+        for name in ['derived', 'latex']:
+            state[name] = state.pop('_{}'.format(name))
         state.update(kwargs)
+        state.pop('depends', None)
         self.__init__(**state)
 
     def clone(self, *args, **kwargs):
@@ -428,6 +458,11 @@ class Parameter(BaseClass):
         """Parameter limits."""
         return self.prior.limits
 
+    def __copy__(self):
+        new = super(Parameter, self).__copy__()
+        new.depends = copy.copy(new.depends)
+        return new
+
     def __getstate__(self):
         """Return this class state dictionary."""
         state = {}
@@ -435,7 +470,9 @@ class Parameter(BaseClass):
             state[key] = getattr(self, key)
             if hasattr(state[key], '__getstate__'):
                 state[key] = state[key].__getstate__()
-        state['latex'] = state.pop('_latex')
+        for name in ['derived', 'latex']:
+            state[name] = state.pop('_{}'.format(name))
+        state.pop('depends', None)
         return state
 
     def __setstate__(self, state):
@@ -633,7 +670,7 @@ class BaseParameterCollection(BaseClass):
         toret = self.get(name, *args, **kwargs)
         try:
             del self[name]
-        except IndexError:
+        except (IndexError, KeyError):
             pass
         return toret
 
@@ -664,10 +701,10 @@ class BaseParameterCollection(BaseClass):
             default = kwargs['default']
         try:
             return self.data[self.index(name)]
-        except IndexError:
+        except KeyError:
             if has_default:
                 return default
-            raise KeyError('Column {} does not exist'.format(name))
+            raise KeyError('Parameter {} not found'.format(name))
 
     def set(self, item):
         """
@@ -677,7 +714,7 @@ class BaseParameterCollection(BaseClass):
         """
         try:
             self.data[self.index(item)] = item
-        except IndexError:
+        except KeyError:
             self.data.append(item)
 
     def setdefault(self, item):
@@ -709,7 +746,7 @@ class BaseParameterCollection(BaseClass):
         for ii, item in enumerate(self.data):
             if self._get_name(item) == name:
                 return ii
-        raise IndexError('Parameter {} not found'.format(name))
+        raise KeyError('Parameter {} not found'.format(name))
 
     def __contains__(self, name):
         """Whether collection contains parameter ``name``."""
@@ -889,6 +926,15 @@ class ParameterConfig(NamespaceDict):
                     value = {**self[name], 'rescale': value['rescale']}
                 self[name] = copy.copy(value)
 
+    def is_in_derived(self, name):
+        if self.get('derived', False) and isinstance(self.derived, str) and self.derived not in Parameter._allowed_solved:
+            return '{{{}}}'.format(str(name)) in self.derived
+        return
+
+    def update_derived(self, oldname, newname):
+        if self.is_in_derived(oldname):
+            self.derived = self.derived.replace('{{{}}}'.format(str(oldname)), '{{{}}}'.format(str(newname)))
+
     @property
     def name(self):
         namespace = self.get('namespace', None)
@@ -975,10 +1021,7 @@ class ParameterCollectionConfig(BaseParameterCollection):
         for conf in reversed(self.wildcard):
             for tmpconf in self.select(**{self.identifier: conf[self.identifier]}):
                 tmpconf.update(conf.clone(tmpconf))
-        for name, b in self.delete.items():
-            if b:
-                for param in self.select(**{self.identifier: name}):
-                    del self[param[self.identifier]]
+
         for conf in self:
             if 'namespace' not in conf:
                 conf.namespace = True
@@ -1073,8 +1116,14 @@ class ParameterCollectionConfig(BaseParameterCollection):
         for name, param in new.items():
             if not isinstance(param.namespace, str) and param.namespace:
                 param.namespace = namespace
+                for dparam in new:
+                    dparam.update_derived(param.basename, param.name)
                 #self.namespace.pop(name, None)
                 #self.namespace[name] = namespace
+        for name, param in new.items():
+            if param.get('drop', None):
+                if any(p.is_in_derived(param) for p in new):
+                    param.drop = True
         return new
 
     def init(self, namespace=None):
@@ -1085,7 +1134,7 @@ class ParameterCollectionConfig(BaseParameterCollection):
             item = ParameterConfig(item)
         try:
             self.data[self.index(item)] = item
-        except IndexError:
+        except KeyError:
             self.data.append(item)
 
     def __setitem__(self, name, item):
@@ -1201,8 +1250,14 @@ class ParameterCollection(BaseParameterCollection):
             if 'namespace' in kwargs:
                 namespace = kwargs['namespace']
                 indices = [self.index(name) for name in list_update]
+                oldnames = self.names()
                 for index in indices:
                     self.data[index] = self.data[index].clone(namespace=namespace)
+                newnames = self.names()
+                for index in indices:
+                    dparam = self.data[index]
+                    for k, v in dparam.depends.items():
+                        if v in oldnames: dparam.depends[k] = newnames[oldnames.index(v)]
                 names = {}
                 for param in self.data: names[param.name] = names.get(param.name, 0) + 1
                 duplicates = {name: multiplicity for basename, multiplicity in names.items() if multiplicity > 1}

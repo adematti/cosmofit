@@ -12,8 +12,10 @@ nmesh = 100
 boxsize = 500
 boxcenter = 0
 los = 'x'
-pklin = DESI().get_fourier().pk_interpolator().to_1d(z=0.5)
-f = 0.8
+z = 0.5
+cosmo = DESI()
+pklin = cosmo.get_fourier().pk_interpolator().to_1d(z=z)
+f = cosmo.growth_rate(z)
 bias = 2.
 
 
@@ -67,7 +69,7 @@ def plot_window(save_fn):
     kout = wmatrix.xout[0]
 
     pkin = pklin(kin)
-    beta = f/bias
+    beta = f / bias
     pk = []
     pk.append(bias**2 * (1. + 2. / 3. * beta + 1. / 5. * beta**2) * pkin)
     pk.append(bias**2 * (4. / 3. * beta + 4. / 7. * beta**2) * pkin)
@@ -97,7 +99,7 @@ if __name__ == '__main__':
     power_fn, mock_power_fn = os.path.join(power_dir, 'data.npy'), os.path.join(power_dir, 'mock_{:d}.npy')
     corr_fn, mock_corr_fn = os.path.join(corr_dir, 'data.npy'), os.path.join(corr_dir, 'mock_{:d}.npy')
     window_fn = os.path.join(power_dir, 'window.npy')
-    todo = ['mock']
+    todo = ['mock', 'window']
 
     if 'mock' in todo:
         run_box_mock(power_fn=power_fn, corr_fn=corr_fn, unitary_amplitude=True, seed=0)
