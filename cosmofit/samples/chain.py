@@ -214,7 +214,7 @@ class Chain(ParameterValues):
         kwargs : dict
             Arguments for :func:`numpy.savetxt`.
         """
-        if params is None: params = self.names()
+        if params is None: params = self.params()
         columns = list([str(param) for param in params])
         outputs_columns = [self._weight, self._logposterior]
         for column in self.outputs:
@@ -263,6 +263,7 @@ class Chain(ParameterValues):
         from getdist import MCSamples
         toret = None
         if params is None: params = self.params(varied=True)
+        else: params = self.params(name=[str(param) for param in params])
         labels = [param.latex() for param in params]
         samples = self.to_array(params=params, struct=False).reshape(-1, self.size)
         names = [str(param) for param in params]
@@ -270,8 +271,7 @@ class Chain(ParameterValues):
         return toret
 
     def choice(self, index='argmax', params=None, **kwargs):
-        if params is None:
-            params = self.params(**kwargs)
+        if params is None: params = self.params(**kwargs)
         if index == 'argmax':
             index = np.unravel_index(self.logposterior.argmax(), shape=self.shape)
         return {str(param): self[param][index] for param in params}
@@ -295,10 +295,8 @@ class Chain(ParameterValues):
             If single parameter provided as ``columns``, returns variance for that parameter (scalar).
             Else returns covariance (2D array).
         """
-        if params is None:
-            params = self.params()
-        if not utils.is_sequence(params):
-            params = [params]
+        if params is None: params = self.params()
+        if not utils.is_sequence(params): params = [params]
         values = np.concatenate([self[param].reshape(self.size, -1) for param in params], axis=-1)
         return np.atleast_2d(np.cov(values, rowvar=False, fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof))
 
@@ -420,6 +418,7 @@ class Chain(ParameterValues):
         """
         import tabulate
         if params is None: params = self.params(varied=True)
+        else: params = self.params(name=[str(param) for param in params])
         data = []
         if quantities is None: quantities = ['argmax', 'mean', 'median', 'std', 'quantile:1sigma', 'interval:1sigma']
         is_latex = 'latex_raw' in tablefmt

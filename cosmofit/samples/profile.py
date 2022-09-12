@@ -5,9 +5,8 @@ import os
 import numpy as np
 from mpi4py import MPI
 
-from cosmofit.utils import BaseClass, is_sequence
+from cosmofit.utils import BaseClass
 from cosmofit.parameter import Parameter, ParameterArray, ParameterCollection, BaseParameterCollection
-from .utils import outputs_to_latex
 from . import utils
 
 
@@ -103,7 +102,7 @@ class ParameterValues(BaseParameterCollection):
         Concatenate input collections.
         Unique items only are kept.
         """
-        if len(others) == 1 and is_sequence(others[0]):
+        if len(others) == 1 and utils.is_sequence(others[0]):
             others = others[0]
         if not others: return cls()
         new = cls()
@@ -158,7 +157,7 @@ class ParameterValues(BaseParameterCollection):
             except TypeError:
                 pass
             is_output = str(name) in self.outputs
-            param = Parameter(name, latex=outputs_to_latex(str(name)) if is_output else None, derived=is_output)
+            param = Parameter(name, latex=utils.outputs_to_latex(str(name)) if is_output else None, derived=is_output)
             if param in self:
                 param = self[param].param.clone(param)
             item = ParameterArray(item, param, **self._enforce)
@@ -205,9 +204,8 @@ class ParameterValues(BaseParameterCollection):
         -------
         array : array
         """
-        if params is None:
-            params = self.params()
-        names = [self._get_name(name) for name in params]
+        if params is None: params = self.params()
+        names = [str(param) for param in params]
         if struct:
             toret = np.empty(len(self), dtype=[(name, self[name].dtype, self.shape[1:]) for name in names])
             for name in names: toret[name] = self[name]
@@ -636,7 +634,7 @@ class Profiles(BaseClass):
         :attr:`attrs` of returned profiles contains, for each key, the last value found in ``others`` :attr:`attrs` dictionaries.
         """
         if not others: return cls()
-        if len(others) == 1 and is_sequence(others[0]):
+        if len(others) == 1 and utils.is_sequence(others[0]):
             others = others[0]
         new = others[0].copy()
         concatenable_attrs = list(new._attrs.keys())[:3]

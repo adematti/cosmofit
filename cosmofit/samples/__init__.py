@@ -4,14 +4,13 @@ import glob
 
 from .chain import Chain
 from .profile import ParameterValues, Profiles
-from . import diagnostics
+from . import diagnostics, utils
 
 __all__ = ['Chain', 'Profiles', 'diagnostics']
 
 
 from cosmofit.parameter import ParameterCollection
 from cosmofit.io import BaseConfig, ConfigError
-from cosmofit import utils
 
 
 def load_samples(source='profiles', fn=None, choice=None, burnin=None):

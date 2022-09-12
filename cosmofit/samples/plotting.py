@@ -2,10 +2,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import gridspec, transforms
 
-from cosmofit import utils
 from cosmofit.plotting import savefig
-from .utils import nsigmas_to_deltachi2
-from . import diagnostics
+from . import diagnostics, utils
 
 
 def _make_list(obj, length=None, default=None):
@@ -296,7 +294,7 @@ def plot_triangle(chains, params=None, labels=None, fn=None, kw_save=None, **kwa
     if params is None:
         params = _get_default_chain_params(chains)
     params = [str(param) for param in _make_list(params)]
-    chains = [chain.to_getdist(label=label) for chain, label in zip(chains, labels)]
+    chains = [chain.to_getdist(label=label, params=params) for chain, label in zip(chains, labels)]
     lax = g.triangle_plot(chains, params, **kwargs)
     if fn is not None:
         savefig(fn, **(kw_save or {}))
@@ -520,7 +518,7 @@ def plot_profile(profiles, params=None, offsets=0., nrows=1, labels=None, colors
             if param1 not in pro: continue
             ax.plot(pro[param1][0], pro[param1][1] - offsets[ipro], color=colors[ipro], linestyle=linestyles[ipro], label=labels[ipro], **kw_profile)
         for nsigma in cl:
-            y = nsigmas_to_deltachi2(nsigma, ddof=1)
+            y = utils.nsigmas_to_deltachi2(nsigma, ddof=1)
             ax.axhline(y=y, xmin=0., xmax=1., **kw_cl)
             ax.text(xshift_cl, y + 0.1, r'${:d}\sigma$'.format(nsigma), horizontalalignment='left', verticalalignment='bottom',
                     transform=transforms.blended_transform_factory(ax.transAxes, ax.transData), color='k', fontsize=labelsize)
