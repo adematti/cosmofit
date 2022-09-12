@@ -1,5 +1,5 @@
 pipeline:
-  ELG:
+  LRG:
     like:
       class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
       init:
@@ -32,7 +32,7 @@ pipeline:
         .varied: 'sigmap*r'
         bias:
           ref:
-            limits: [1., 2.]
+            limits: [1.8, 2.2]
         al*:
           ref:
             limits: [-10., 10.]
@@ -117,7 +117,7 @@ profile:
   #profile:
   #  params: qiso
 
-z: 1.1
+z: 0.8
 imock: '*'
 tmp_dir: tmp_pk_bao_fits
 scratch_dir: /global/cfs/cdirs/desi/users/adematti

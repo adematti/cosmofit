@@ -108,7 +108,7 @@ profile:
   #profile:
   #  params: qiso
 
-z: 1.1
+z: 0.8
 imock: '*'
 tmp_dir: tmp_xi_bao_fits
 scratch_dir: /global/cfs/cdirs/desi/users/adematti
