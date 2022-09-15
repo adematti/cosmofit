@@ -109,7 +109,7 @@ def do_from_config(config, mpicomm=None):
         raise ConfigError('Provide pipeline')
     pipeline = BasePipeline(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
 
-    params = SourceConfig(config_do['source']).choice(params=pipeline.params.select(derived=False))
+    params = SourceConfig(config_do['source']).choice(params=pipeline.params)
     pipeline.run(**params)
     config_do.run(pipeline)
 

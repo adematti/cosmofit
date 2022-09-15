@@ -10,7 +10,7 @@ class BasePTPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
     def __init__(self, *args, **kwargs):
         super(BasePTPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
-        self.kin = np.geomspace(min(1e-3, self.k[0] / 2), max(10., self.k[0] * 2), 200)  # margin for AP effect
+        self.kin = np.geomspace(min(1e-3, self.k[0] / 2), max(1., self.k[0] * 2), 600)  # margin for AP effect
         self.requires = {'template': (BasePowerSpectrumParameterization, {'k': self.kin, 'zeff': self.zeff, 'fiducial': self.fiducial})}
 
 
@@ -18,7 +18,7 @@ class BasePTCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMultipole
 
     def __init__(self, s=None, zeff=1., ells=(0, 2, 4), fiducial=None):
         super(BasePTCorrelationFunctionMultipoles, self).__init__(s=s, zeff=zeff, ells=ells, fiducial=fiducial)
-        self.kin = np.geomspace(min(1e-3, 1 / self.s[-1] / 2), max(10., 1 / self.s[0] * 2), 200)  # margin for AP effect
+        self.kin = np.geomspace(min(1e-3, 1 / self.s[-1] / 2), max(2., 1 / self.s[0] * 2), 1000)  # margin for AP effect
         self.requires = {'template': (BasePowerSpectrumParameterization, {'k': self.kin, 'zeff': self.zeff, 'fiducial': self.fiducial})}
 
 
@@ -128,7 +128,7 @@ class BaseVelocileptorsTracerCorrelationFunctionMultipoles(BaseTheoryCorrelation
 
 class LPTPowerSpectrumMultipoles(BaseVelocileptorsPowerSpectrumMultipoles):
 
-    _default_options = dict(kIR=0.2, cutoff=10, extrap_min=-5, extrap_max=3, N=2000, nthreads=1, jn=5)
+    _default_options = dict(kIR=0.2, cutoff=10, extrap_min=-5, extrap_max=3, N=4000, nthreads=1, jn=5)
     _bias_indices = dict(zip(['alpha0', 'alpha2', 'alpha4', 'alpha6', 'sn0', 'sn2', 'sn4'], range(12, 19)))
     # Slow, ~ 2 sec per iteration
 

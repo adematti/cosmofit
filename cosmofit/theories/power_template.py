@@ -35,7 +35,7 @@ class BasePowerSpectrumTemplate(BaseCalculator):
 
     def __init__(self, k=None, zeff=1., with_now=False, **kwargs):
         if k is None:
-            k = np.logspace(-3., 1., 200)
+            k = np.logspace(-3., 1., 400)
         self.k = np.array(k, dtype='f8')
         self.zeff = float(zeff)
         self.with_now = bool(with_now)

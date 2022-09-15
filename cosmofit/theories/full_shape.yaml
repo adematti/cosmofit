@@ -41,7 +41,7 @@ params:
     prior:
       dist: norm
       loc: 0.
-      scale: 3.
+      scale: 15.
     ref:
       dist: norm
       loc: 1.
@@ -63,18 +63,18 @@ params:
     prior:
       dist: norm
       loc: 0.
-      scale: 50.
+      scale: 1e6
     ref:
       dist: norm
       loc: 0.
-      scale: 1.0
+      scale: 1.
     latex: \alpha_{[]}
   sn[:5:2]:
     value: 0.
     prior:
       dist: norm
       loc: 0.
-      scale: 1000.
+      scale: 1e7
     ref:
       dist: norm
       loc: 0

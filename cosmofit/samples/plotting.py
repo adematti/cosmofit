@@ -78,7 +78,8 @@ def plot_trace(chains, params=None, figsize=None, colors=None, labelsize=None, f
         ax.set_ylabel(chains[0][param].param.latex(inline=True), fontsize=labelsize)
         ax.set_xlim(steps[0], steps[-1])
         for ichain, chain in enumerate(chains):
-            ax.plot(steps, chain[param].ravel(), color=colors[ichain], **kw_plot)
+            tmp = chain[param].ravel()
+            ax.plot(steps[:len(tmp)], tmp, color=colors[ichain], **kw_plot)
 
     lax[-1].set_xlabel('step', fontsize=labelsize)
 
@@ -123,7 +124,7 @@ def plot_gelman_rubin(chains, params=None, multivariate=False, threshold=None, s
         params = _get_default_chain_params(chains)
     params = [str(param) for param in _make_list(params)]
     if slices is None:
-        nsteps = np.min([chain.size for chain in chains])
+        nsteps = min(chain.size for chain in chains)
         slices = np.arange(100, nsteps, 500)
     gr_multi = []
     gr = {param: [] for param in params}
@@ -182,7 +183,7 @@ def plot_geweke(chains, params=None, threshold=None, slices=None, labelsize=None
         params = _get_default_chain_params(chains)
     params = [str(param) for param in _make_list(params)]
     if slices is None:
-        nsteps = np.min([chain.size for chain in chains])
+        nsteps = min(chain.size for chain in chains)
         slices = np.arange(100, nsteps, 500)
     geweke = {param: [] for param in params}
     for end in slices:
@@ -240,7 +241,7 @@ def plot_autocorrelation_time(chains, params=None, threshold=50, slices=None, la
         params = _get_default_chain_params(chains)
     params = [str(param) for param in _make_list(params)]
     if slices is None:
-        nsteps = np.min([chain.size for chain in chains])
+        nsteps = min(chain.size for chain in chains)
         slices = np.arange(100, nsteps, 500)
     autocorr = {param: [] for param in params}
     for end in slices:

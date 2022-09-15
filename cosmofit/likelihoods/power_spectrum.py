@@ -74,8 +74,9 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         if data is not None:
             if self.mpicomm.rank == 0:
                 list_y, list_shotnoise = all_mocks(data)
-                if isinstance(covariance_scale, bool) and covariance_scale:
-                    covariance_scale = 1. / len(list_y)
+                if isinstance(covariance_scale, bool):
+                    if covariance_scale: covariance_scale = 1. / len(list_y)
+                    else: covariance_scale = 1.
                 flatdata = np.mean(list_y, axis=0)
                 shotnoise = np.mean(list_shotnoise, axis=0)
 

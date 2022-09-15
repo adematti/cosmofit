@@ -67,10 +67,10 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
     def _set_meta(self, **kwargs):
         for name, value in kwargs.items():
             if value is None:
-                param = self.chain.params(basename=[name])
+                param = self.mpicomm.bcast(self.chain.params(basename=[name]) if self.mpicomm.rank == 0 else None, root=0)
                 if not param:
                     raise ValueError('{} must be provided either as arguments or input samples'.format(name))
-                value = self.chain.mean(param[0])
+                value = self.mpicomm.bcast(self.chain.mean(param[0]) if self.mpicomm.rank == 0 else None, root=0)
             elif not isinstance(value, str):
                 value = np.array(value, dtype='f8')
             setattr(self, name, value)
@@ -150,7 +150,7 @@ class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
     def _parambasenames(self):
         nm = ['n', 'm']
         for param in self.params.select(basename=nm):
-            if np.allclose(self.chain[param], np.mean(self.chain[param]), equal_nan=True):
+            if self.mpicomm.bcast(np.allclose(self.chain[param], np.mean(self.chain[param]), equal_nan=True) if self.mpicomm.rank == 0 else None, root=0):
                 try:
                     del nm[nm.index(param.basename)]
                 except IndexError:

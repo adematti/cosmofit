@@ -80,9 +80,11 @@ class SummaryConfig(BaseConfig):
         from . import plotting
         for section, options in self.items():
             if section == 'stats':
+                sources = self.source
                 if not utils.is_sequence(options):
                     options = [options]
-                for source, option in zip(self.source, options):
+                    sources = [Chain.concatenate(self.source)]
+                for source, option in zip(sources, options):
                     if isinstance(option, str):
                         option = {'fn': option}
                     source.to_stats(**option)

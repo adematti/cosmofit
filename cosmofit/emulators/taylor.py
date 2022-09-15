@@ -140,7 +140,7 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
             if acc % 2 or acc <= 0:
                 raise ValueError('Accuracy is {:d} for parameter {}, but it must be positive EVEN integer'.format(acc, name))
 
-    def get_default_samples(self, scale=1e-2):
+    def get_default_samples(self, scale=1e-1):
         from cosmofit.samplers import GridSampler
         sampler = GridSampler(self.pipeline, ngrid={name: deriv_ncoeffs(order, acc=self.accuracy[name]) for name, order in self.order.items()},
                               scale=scale, sphere=self.order)
