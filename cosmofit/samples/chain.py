@@ -6,7 +6,7 @@ import glob
 
 import numpy as np
 
-from cosmofit.parameter import ParameterCollection, Parameter, ParameterArray
+from cosmofit.parameter import ParameterCollection, Parameter, ParameterPrior, ParameterArray
 
 from .profile import ParameterValues, _reshape
 from . import utils
@@ -167,7 +167,7 @@ class Chain(ParameterValues):
                             if lh == 'N': lh = li
                             else: lh = float(lh)
                             limits.append(lh)
-                        params[name.strip()].prior.set_limits(limits=limits)
+                        params[name.strip()].prior = ParameterPrior(limits=limits)
             else:
                 self.log_info('Parameter ranges file {} does not exist.'.format(ranges_fn))
 
@@ -263,7 +263,7 @@ class Chain(ParameterValues):
         from getdist import MCSamples
         toret = None
         if params is None: params = self.params(varied=True)
-        else: params = self.params(name=[str(param) for param in params])
+        else: params = [self[param].param for param in params]
         labels = [param.latex() for param in params]
         samples = self.to_array(params=params, struct=False).reshape(-1, self.size)
         names = [str(param) for param in params]
@@ -418,7 +418,7 @@ class Chain(ParameterValues):
         """
         import tabulate
         if params is None: params = self.params(varied=True)
-        else: params = self.params(name=[str(param) for param in params])
+        else: params = [self[param].param for param in params]
         data = []
         if quantities is None: quantities = ['argmax', 'mean', 'median', 'std', 'quantile:1sigma', 'interval:1sigma']
         is_latex = 'latex_raw' in tablefmt

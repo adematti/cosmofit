@@ -213,8 +213,7 @@ class ParameterValues(BaseParameterCollection):
         return np.array([self[name] for name in names])
 
     def to_dict(self, params=None):
-        if params is None:
-            params = self.params()
+        if params is None: params = self.params()
         return {str(param): self[param] for param in params}
 
     @classmethod

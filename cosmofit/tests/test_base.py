@@ -81,8 +81,8 @@ def test_params():
     assert _best_match_parameter('m', 'a', params, choice='min').name == 'a'
     assert _best_match_parameter('m', 'b', params, choice='min') is None
 
-    config = ParameterCollection({'a': {'value': 1., 'solved': 'best'}, 'b': {'value': 1., 'solved': 'marg'}, 'c': {'value': 1.}})
-    assert config.select(solved=['best', 'marg']).names() == ['a', 'b']
+    config = ParameterCollection({'a': {'value': 1., 'derived': '.best'}, 'b': {'value': 1., 'derived': '.marg'}, 'c': {'value': 1.}})
+    assert config.select(derived=['.best', '.marg']).names() == ['a', 'b']
 
     prior = ParameterPrior(dist='norm', loc=0., scale=1.)
     assert np.allclose(prior(0.), 0.)
@@ -266,9 +266,9 @@ if __name__ == '__main__':
 
     setup_logging('info')
 
-    test_solve()
-    # test_config()
-    # test_params()
+    # test_solve()
+    test_config()
+    test_params()
     # test_param_array()
     # test_namespace()
     # test_pipeline()

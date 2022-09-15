@@ -492,7 +492,7 @@ class Parameter(BaseClass):
         return type(other) == type(self) and all(getattr(other, name) == getattr(self, name) for name in self._attrs)
 
     def __hash__(self):
-        return str(self)
+        return hash(str(self))
 
 
 class GetterSetter(object):
@@ -1313,7 +1313,9 @@ class ParameterPrior(BaseClass):
             Distribution name in :mod:`scipy.stats`
 
         limits : tuple, default=None
-            Limits. See :meth:`set_limits`.
+            Tuple corresponding to lower, upper limits.
+            ``None`` means :math:`-\infty` for lower bound and :math:`\infty` for upper bound.
+            Defaults to :math:`-\infty, \infty`.
 
         kwargs : dict
             Arguments for :func:`scipy.stats.dist`, typically ``loc``, ``scale``
@@ -1323,15 +1325,23 @@ class ParameterPrior(BaseClass):
             self.__dict__.update(dist.__dict__)
             return
 
-        self.set_limits(limits)
-        self.dist = dist
+        if limits is None:
+            limits = (-np.inf, np.inf)
+        limits = list(limits)
+        if limits[0] is None: limits[0] = -np.inf
+        if limits[1] is None: limits[1] = np.inf
+        limits = tuple(limits)
+        if limits[1] <= limits[0]:
+            raise ParameterPriorError('ParameterPrior range {} has min greater than max'.format(limits))
+        self.limits = limits
+        self.dist = dist.lower()
         self.attrs = kwargs
 
         # improper prior
-        if not self.is_proper():
+        if self.dist == 'uniform' and np.isinf(self.limits).any():
             return
 
-        if self.is_limited():
+        if not np.isinf(self.limits).all():
             dist = getattr(stats, self.dist if self.dist.startswith('trunc') or self.dist == 'uniform' else 'trunc{}'.format(self.dist))
             if self.dist == 'uniform':
                 self.rv = dist(self.limits[0], self.limits[1] - self.limits[0])
@@ -1339,29 +1349,7 @@ class ParameterPrior(BaseClass):
                 self.rv = dist(*self.limits, **kwargs)
         else:
             self.rv = getattr(stats, self.dist)(**kwargs)
-
-    def set_limits(self, limits=None):
-        r"""
-        Set limits.
-
-        Parameters
-        ----------
-        limits : tuple, default=None
-            Tuple corresponding to lower, upper limits.
-            ``None`` means :math:`-\infty` for lower bound and :math:`\infty` for upper bound.
-            Defaults to :math:`-\infty, \infty`.
-        """
-        if limits is None:
-            limits = (-np.inf, np.inf)
-        self.limits = list(limits)
-        if self.limits[0] is None: self.limits[0] = -np.inf
-        if self.limits[1] is None: self.limits[1] = np.inf
-        self.limits = tuple(self.limits)
-        if self.limits[1] <= self.limits[0]:
-            raise ParameterPriorError('ParameterPrior range {} has min greater than max'.format(self.limits))
-        if np.isinf(self.limits).any():
-            return 1
-        return 0
+        self.limits = self.rv.support()
 
     def isin(self, x):
         """Whether ``x`` is within prior, i.e. within limits - strictly positive probability."""

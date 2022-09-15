@@ -34,9 +34,24 @@ def _make_list(obj, length=None, default=None):
     return obj
 
 
-def _get_default_chain_params(chains, varied=True, solved=False, output=False, **kwargs):
+def _get_default_chain_params(chains, params=None, varied=True, output=False, **kwargs):
     chains = _make_list(chains)
-    list_params = [chain.names(varied=varied, output=output, **kwargs) for chain in chains]
+    if params is not None:
+        params = _make_list(params)
+        list_params = [chain.params(name=[str(param) for param in params]) for chain in chains]
+    else:
+        list_params = [chain.params(varied=varied, output=output, **kwargs) for chain in chains]
+    return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]
+
+
+def _get_default_profiles_params(profiles, params=None, of='bestfit', varied=True, output=False, **kwargs):
+    profiles = _make_list(profiles)
+    if params is not None:
+        params = _make_list(params)
+        list_params = [profile.get(of).params(name=[str(param) for param in params]) for profile in profiles]
+    else:
+        list_params = [profile.get(of).params(varied=varied, output=output, **kwargs) for profile in profiles]
+    list_params = [profile.get(of).params(varied=varied, output=output, **kwargs) for profile in profiles]
     return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]
 
 
@@ -61,9 +76,7 @@ def plot_trace(chains, params=None, figsize=None, colors=None, labelsize=None, f
         Array of axes.
     """
     chains = _make_list(chains)
-    if params is None:
-        params = _get_default_chain_params(chains)
-    params = _make_list(params)
+    params = _get_default_chain_params(chains, params=params)
     nparams = len(params)
     colors = _make_list(colors, length=len(chains), default=None)
     kw_plot = kw_plot or {'alpha': 0.2}
@@ -120,9 +133,7 @@ def plot_gelman_rubin(chains, params=None, multivariate=False, threshold=None, s
     -------
     ax : matplotlib.axes.Axes
     """
-    if params is None:
-        params = _get_default_chain_params(chains)
-    params = [str(param) for param in _make_list(params)]
+    params = _get_default_chain_params(chains, params=params)
     if slices is None:
         nsteps = min(chain.size for chain in chains)
         slices = np.arange(100, nsteps, 500)
@@ -179,9 +190,7 @@ def plot_geweke(chains, params=None, threshold=None, slices=None, labelsize=None
     -------
     ax : matplotlib.axes.Axes
     """
-    if params is None:
-        params = _get_default_chain_params(chains)
-    params = [str(param) for param in _make_list(params)]
+    params = _get_default_chain_params(chains, params=params)
     if slices is None:
         nsteps = min(chain.size for chain in chains)
         slices = np.arange(100, nsteps, 500)
@@ -237,9 +246,7 @@ def plot_autocorrelation_time(chains, params=None, threshold=50, slices=None, la
     ax : matplotlib.axes.Axes
     """
     chains = _make_list(chains)
-    if params is None:
-        params = _get_default_chain_params(chains)
-    params = [str(param) for param in _make_list(params)]
+    params = _get_default_chain_params(chains, params=params)
     if slices is None:
         nsteps = min(chain.size for chain in chains)
         slices = np.arange(100, nsteps, 500)
@@ -292,20 +299,12 @@ def plot_triangle(chains, params=None, labels=None, fn=None, kw_save=None, **kwa
     g = plots.get_subplot_plotter()
     chains = _make_list(chains)
     labels = _make_list(labels, length=len(chains), default=None)
-    if params is None:
-        params = _get_default_chain_params(chains)
-    params = [str(param) for param in _make_list(params)]
+    params = _get_default_chain_params(chains, params=params)
     chains = [chain.to_getdist(label=label, params=params) for chain, label in zip(chains, labels)]
-    lax = g.triangle_plot(chains, params, **kwargs)
+    lax = g.triangle_plot(chains, [str(param) for param in params], **kwargs)
     if fn is not None:
         savefig(fn, **(kw_save or {}))
     return lax
-
-
-def _get_default_profiles_params(profiles, of='bestfit', varied=True, output=False, **kwargs):
-    profiles = _make_list(profiles)
-    list_params = [profile.get(of).names(varied=varied, output=output, **kwargs) for profile in profiles]
-    return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]
 
 
 def plot_aligned(profiles, param, ids=None, labels=None, colors=None, truth=None, errors='error',
@@ -453,9 +452,7 @@ def plot_aligned_stacked(profiles, params=None, ids=None, labels=None, truths=No
         Array of axes.
     """
     profiles = _make_list(profiles)
-    if params is None:
-        params = _get_default_profiles_params(profiles)
-    params = [str(param) for param in _make_list(params)]
+    params = _get_default_profiles_params(profiles, params=params)
     truths = _make_list(truths, length=len(params), default=None)
     ybands = _make_list(ybands, length=len(params), default=None)
     ylimits = _make_list(ybands, length=len(params), default=None)
@@ -488,9 +485,7 @@ def plot_profile(profiles, params=None, offsets=0., nrows=1, labels=None, colors
                  kw_legend=None, figsize=None, fn=None, kw_save=None, **kwargs):
 
     profiles = _make_list(profiles)
-    if params is None:
-        params = _get_default_profiles_params(profiles, of='profile')
-    params = [profiles[0].profile[param].param for param in _make_list(params)]
+    params = _get_default_profiles_params(profiles, params=params, of='profile')
     nprofiles = len(profiles)
     offsets = _make_list(offsets, length=nprofiles, default=0.)
     labels = _make_list(labels, length=nprofiles, default=None)
