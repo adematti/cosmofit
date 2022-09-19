@@ -254,18 +254,17 @@ class BandVelocityPowerSpectrumTemplate(BasePowerSpectrumTemplate):
                                  latex=r'(\Delta P / P)_{{\{0}\{0}}}(k={1:.3f})'.format('theta', kp)))
         params = self_params.clone(params)
 
-        zeros = (self.kptt[:-1] + self.kptt[1:]) / 2.
         if self.kptt[0] < self.k[0]:
             raise ValueError('Theory k starts at {0:.2e} but first point is {1:.2e} < {0:.2e}'.format(self.k[0], self.kptt[0]))
         if self.kptt[-1] > self.k[-1]:
             raise ValueError('Theory k ends at {0:.2e} but last point is {1:.2e} > {0:.2e}'.format(self.k[-1], self.kptt[-1]))
-        zeros = np.concatenate([[self.k[0]], zeros, [self.k[-1]]], axis=0)
+        ekptt = np.concatenate([[self.k[0]], self.kptt, [self.k[-1]]], axis=0)
         self.templates = []
         for ip, kp in enumerate(self.kptt):
             diff = self.k - kp
             mask_neg = diff < 0
-            diff[mask_neg] /= (zeros[ip] - kp)
-            diff[~mask_neg] /= (zeros[ip + 1] - kp)
+            diff[mask_neg] /= (ekptt[ip] - kp)
+            diff[~mask_neg] /= (ekptt[ip + 2] - kp)
             self.templates.append(np.maximum(1. - diff, 0.))
         self.templates = np.array(self.templates)
         return params

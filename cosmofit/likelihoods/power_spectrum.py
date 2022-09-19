@@ -57,7 +57,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
                     mock_k, mock_ells, mock_y, mock_shotnoise = lim_data(mock)
                     if self.k is None:
                         self.k, self.ells = mock_k, mock_ells
-                    if not all(np.allclose(sk, mk) for sk, mk in zip(self.k, mock_k)):
+                    if not all(np.allclose(sk, mk, atol=0., rtol=1e-3) for sk, mk in zip(self.k, mock_k)):
                         raise ValueError('{} does not have expected k-binning (based on previous data)'.format(mock))
                     if mock_ells != self.ells:
                         raise ValueError('{} does not have expected poles (based on previous data)'.format(mock))

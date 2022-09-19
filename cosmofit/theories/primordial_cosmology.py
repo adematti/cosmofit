@@ -25,20 +25,23 @@ class Cosmoprimo(BasePrimordialCosmology):
     def __init__(self, fiducial=None, engine='class', extra_params=None):
         self.engine = engine
         self.extra_params = extra_params or {}
-        self.fiducial = fiducial
+        if fiducial is not None:
+            from .base import get_cosmo
+            fiducial = get_cosmo(fiducial)
+        else:
+            fiducial = Cosmology()
+        self.fiducial = fiducial.clone(extra_params=self.extra_params, engine=self.engine)
         self.requires = {}
 
     def set_params(self, params):
         if self.fiducial is not None:
-            from .base import get_cosmo
-            cosmo = get_cosmo(self.fiducial)
             for param in params:
-                param.value = get_from_cosmo(cosmo, param.basename)
+                param.value = get_from_cosmo(self.fiducial, param.basename)
                 param.fixed = param.get('fixed', True)
         return params
 
     def run(self, **params):
-        self.cosmo = Cosmology(**params, extra_params=self.extra_params, engine=self.engine)
+        self.cosmo = self.fiducial.clone(**params)
 
     def __getattr__(self, name):
         try:

@@ -507,8 +507,8 @@ class CalculatorConfig(SectionConfig):
         if params is None:
             params = self_params
         #for iparam, param in enumerate(self_params):
-            #if param in params:
-            #    self_params[iparam] = params[param]
+        #    if param in params:
+        #        self_params[iparam] = params[param]
         if self._loaded is None:
             new = self['class'].__new__(self['class'])
         else:

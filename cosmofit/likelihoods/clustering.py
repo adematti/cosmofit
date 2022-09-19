@@ -43,16 +43,21 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
         self.params = self.mpicomm.bcast(self.chain.params() if self.mpicomm.rank == 0 else None, root=0)
         if select is not None:
             self.params = self.params.select(**select)
+            self._select_params()
         if self._parambasenames is not None:
             self.params = self.params.select(basename=self._parambasenames)
-            for param in list(self.params):
-                if param.fixed and not param.derived:
-                    # if self.mpicomm.rank == 0:
-                    #     self.log_info('Parameter {} is found to be fixed, ignoring.'.format(param))
-                    del self.params[param]
             self.params.sort([self._parambasenames.index(param.basename) for param in self.params if param.basename in self._parambasenames])
         self.requires = {'theory': {'class': self.__class__.__name__.replace('ParameterizationLikelihood', 'Model'),
                                     'init': {'quantities': self.params.basenames()}}}
+
+    def _select_params(self):
+        for param in list(self.params):
+            if param.fixed and not param.derived:
+                # if self.mpicomm.rank == 0:
+                #     self.log_info('Parameter {} is found to be fixed, ignoring.'.format(param))
+                del self.params[param]
+            elif self.mpicomm.bcast(np.allclose(self.chain[param], np.mean(self.chain[param]), equal_nan=True) if self.mpicomm.rank == 0 else None, root=0):
+                del self.params[param]
 
     def _prepare(self):
         params = {param.basename: param for param in self.params}
@@ -148,14 +153,7 @@ class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
 
     @property
     def _parambasenames(self):
-        nm = ['n', 'm']
-        for param in self.params.select(basename=nm):
-            if self.mpicomm.bcast(np.allclose(self.chain[param], np.mean(self.chain[param]), equal_nan=True) if self.mpicomm.rank == 0 else None, root=0):
-                try:
-                    del nm[nm.index(param.basename)]
-                except IndexError:
-                    pass
-        return super(ShapeFitParameterizationLikelihood, self)._parambasenames + nm + ['f_sqrt_Ap']
+        return super(ShapeFitParameterizationLikelihood, self)._parambasenames + ('n', 'm', 'f_sqrt_Ap')
 
     def __init__(self, *args, kp_rs=None, **kwargs):
         super(ShapeFitParameterizationLikelihood, self).__init__(*args, **kwargs)

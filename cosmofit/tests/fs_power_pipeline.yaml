@@ -26,7 +26,7 @@ pipeline:
           derived: '.auto'
         #sn*:
         #  derived: '.auto'
-      load: f'{output_dir}/fs_emulator.npy'
+      #load: f'{output_dir}/fs_emulator.npy'
       emulator:
         init:
           #order: {'*': 1, 'q*': 2, 'b1': 2}
@@ -38,12 +38,14 @@ pipeline:
     #  load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
-    #shapefit:
-    #  class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
-    full:
-      class: cosmofit.theories.power_template.FullPowerSpectrumParameterization
-      init:
-        fiducial: DESI
+    shapefit:
+      class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
+    #full:
+    #  class: cosmofit.theories.power_template.FullPowerSpectrumParameterization
+    #  init:
+    #    fiducial: DESI
+    #  params:
+    #    .fixed: n_s
     #wiggle:
     #  class: cosmofit.theories.power_template.WiggleSplitPowerSpectrumParameterization
     #pthetap:

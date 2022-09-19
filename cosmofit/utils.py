@@ -175,12 +175,17 @@ def dict_to_yaml(d):
         if isinstance(v, dict):
             v = dict_to_yaml(v)
         elif is_sequence(v):
-            v = list(v)
+            v = dict_to_yaml({i: vv for i, vv in enumerate(v)})
+            v = [v[i] for i in range(len(v))]
         elif isinstance(v, np.ndarray):
             if v.size == 1:
                 v = v.item()
             else:
                 v = v.tolist()
+        elif isinstance(v, np.floating):
+            v = float(v)
+        elif isinstance(v, np.integer):
+            v = int(v)
         elif not isinstance(v, (bool, numbers.Number)):
             v = str(v)
         toret[k] = v
