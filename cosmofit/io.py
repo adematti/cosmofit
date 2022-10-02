@@ -162,8 +162,7 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
                         assert key not in word
                         di[key] = freplace
                         word = word.replace(placeholder, key)
-                return eval(word, {'np': np}, di)
-                #return eval(word, {'np': np})
+                return utils.evaluate(word, locals=di)
             return None
 
         def decode_format(word):

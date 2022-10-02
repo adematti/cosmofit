@@ -28,12 +28,12 @@ pipeline:
         latex: \Omega_{m}
 
 emulate:
-  class: TaylorEmulatorEngine
+  class: TaylorEmulator
   init:
     order: 1
 
 summarize:
-  chain:
+  source:
     fn: f'{output_dir}/chain_0.npy'
     burnin: 0.3
   plot_triangle: f'{output_dir}/triangle.png'

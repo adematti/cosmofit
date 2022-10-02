@@ -408,7 +408,7 @@ class Parameter(BaseClass):
                 values = {k: values[n] for k, n in self.depends.items()}
             except KeyError:
                 raise ParameterError('Parameter {} is derived from {}, following {}'.format(self, list(self.depends.values()), self.derived))
-            return eval(self._derived, {'np': np, 'sp': sp}, values)
+            return utils.evaluate(self._derived, locals=values)
         return values[self.name]
 
     @property
@@ -657,11 +657,7 @@ class BaseParameterCollection(BaseClass):
 
     def sort(self, key=None):
         if key is not None:
-            data = []
-            indices = np.argsort(key)
-            for ii in indices:
-                data.append(self[ii])
-            self.data = data
+            self.data = [self[kk] for kk in key]
         else:
             self.data = data.copy()
         return self
@@ -1419,6 +1415,15 @@ class ParameterPrior(BaseClass):
     def is_limited(self):
         """Whether distribution has (at least one) finite limit."""
         return not np.isinf(self.limits).all()
+
+    def affine_transform(self, loc=0., scale=1.):
+        state = self.__getstate__()
+        for name, value in state.items():
+            if name in ['loc', 'limits']:
+                state[name] = (value + loc) * scale
+            elif name in ['scale']:
+                state[name] = value * scale
+        return self.__class__(**state)
 
     def __getattr__(self, name):
         """Make :attr:`rv` attributes directly available in :class:`ParameterPrior`."""

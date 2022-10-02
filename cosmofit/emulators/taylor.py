@@ -4,7 +4,7 @@ import numpy as np
 import mpytools as mpy
 
 from cosmofit.utils import jnp
-from .base import BaseEmulatorEngine
+from .base import BaseEmulator
 
 
 def deriv_ncoeffs(order, acc=2):
@@ -119,10 +119,10 @@ def deriv_nd(X, Y, orders, center=None):
     return toret
 
 
-class TaylorEmulatorEngine(BaseEmulatorEngine):
+class TaylorEmulator(BaseEmulator):
 
     def __init__(self, pipeline, order=4, accuracy=2, **kwargs):
-        super(TaylorEmulatorEngine, self).__init__(pipeline=pipeline, **kwargs)
+        super(TaylorEmulator, self).__init__(pipeline=pipeline, **kwargs)
         for name, item in zip(['order', 'accuracy'], [order, accuracy]):
             if not isinstance(item, dict):
                 item = {'*': item}
@@ -194,7 +194,7 @@ class TaylorEmulatorEngine(BaseEmulatorEngine):
         return toret
 
     def __getstate__(self):
-        state = super(TaylorEmulatorEngine, self).__getstate__()
+        state = super(TaylorEmulator, self).__getstate__()
         for name in ['center', 'derivatives', 'powers', 'order']:
             state[name] = getattr(self, name)
         return state

@@ -1,7 +1,7 @@
 import numpy as np
 
 from cosmofit.base import BaseCalculator
-from cosmofit.samples import load_samples
+from cosmofit.samples import load_source
 from cosmofit import utils
 
 
@@ -37,7 +37,7 @@ class BaseGaussianLikelihood(BaseCalculator):
             if not isinstance(project, dict):
                 self.eigenvectors = np.array(project)
             else:
-                samples = load_samples(source='samples', fn=project['samples'], burnin=project.get('burnin', None))
+                samples = load_source(project['samples'], burnin=project.get('burnin', None))
                 samples = samples[0].concatenate(samples)
                 method = project.get('fiducial', 'diag')
                 if method == 'diag':

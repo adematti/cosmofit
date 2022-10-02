@@ -375,15 +375,17 @@ def round_measurement(x, u=0.1, v=None, sigfigs=2, positive_sign=False, notation
         v = -abs(u)
     else:
         v = float(v)
-    logx = 0
-    if x != 0.: logx = math.floor(math.log10(abs(x)))
-    if u == 0.: logu = logx
+    if x == 0. or not np.isfinite(u): logx = 0
+    else: logx = math.floor(math.log10(abs(x)))
+    if u == 0. or not np.isfinite(u): logu = logx
     else: logu = math.floor(math.log10(abs(u)))
-    if v == 0.: logv = logx
+    if v == 0. or not np.isfinite(u): logv = logx
     else: logv = math.floor(math.log10(abs(v)))
     if x == 0.: logx = max(logu, logv)
 
     def round_notation(val, sigfigs, notation='auto', positive_sign=False):
+        if not np.isfinite(val):
+            return str(val)
         if notation == 'auto':
             # if 1e-3 < abs(val) < 1e3 or center and (1e-3 - abs(u) < abs(x) < 1e3 + abs(v)):
             if (1e-3 - abs(u) < abs(x) < 1e3 + abs(v)):
@@ -391,6 +393,7 @@ def round_measurement(x, u=0.1, v=None, sigfigs=2, positive_sign=False, notation
             else:
                 notation = 'sci'
         notation_dict = {'std': std_notation, 'sci': sci_notation}
+
         if notation in notation_dict:
             return notation_dict[notation](val, sigfigs=sigfigs, positive_sign=positive_sign)
         return notation(val, sigfigs=sigfigs, positive_sign=positive_sign)

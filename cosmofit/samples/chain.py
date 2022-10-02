@@ -8,16 +8,16 @@ import numpy as np
 
 from cosmofit.parameter import ParameterCollection, Parameter, ParameterPrior, ParameterArray
 
-from .profile import ParameterValues, _reshape
+from .samples import Samples, _reshape
 from . import utils
 
 
-class Chain(ParameterValues):
+class Chain(Samples):
 
     """Class that holds samples drawn from likelihood."""
 
     _type = ParameterArray
-    _attrs = ParameterValues._attrs + ['_logposterior', '_aweight', '_fweight', '_weight']
+    _attrs = Samples._attrs + ['_logposterior', '_aweight', '_fweight', '_weight']
 
     def __init__(self, data=None, params=None, logposterior='logposterior', aweight='aweight', fweight='fweight', weight='weight', **kwargs):
         self._logposterior = logposterior
@@ -120,7 +120,7 @@ class Chain(ParameterValues):
         return 'Chain(shape={}, params={})'.format(self.shape, self.params())
 
     @classmethod
-    def read_cosmomc(cls, base_fn, ichains=None):
+    def read_getdist(cls, base_fn, ichains=None):
         """
         Load samples in *CosmoMC* format, i.e.:
 
@@ -171,30 +171,30 @@ class Chain(ParameterValues):
             else:
                 self.log_info('Parameter ranges file {} does not exist.'.format(ranges_fn))
 
-            chain_fn = '{}{{}}.txt'.format(base_fn)
-            chain_fns = []
-            if ichains is not None:
-                if np.ndim(ichains) == 0:
-                    ichains = [ichains]
-                for ichain in ichains:
-                    chain_fns.append(chain_fn.format('_{:d}'.format(ichain)))
-            else:
-                chain_fns = glob.glob(chain_fn.format('*'))
+        chain_fn = '{}{{}}.txt'.format(base_fn)
+        chain_fns = []
+        if ichains is not None:
+            if np.ndim(ichains) == 0:
+                ichains = [ichains]
+            for ichain in ichains:
+                chain_fns.append(chain_fn.format('_{:d}'.format(ichain)))
+        else:
+            chain_fns = glob.glob(chain_fn.format('*'))
 
-            samples = []
-            for chain_fn in chain_fns:
-                self.log_info('Loading chain file: {}.'.format(chain_fn))
-                samples.append(np.loadtxt(chain_fn, unpack=True))
+        samples = []
+        for chain_fn in chain_fns:
+            self.log_info('Loading chain file: {}.'.format(chain_fn))
+            samples.append(np.loadtxt(chain_fn, unpack=True))
 
-            samples = np.concatenate(samples, axis=-1)
-            self.aweight = samples[0]
-            self.logposterior = -samples[1]
-            for param, values in zip(params, samples[2:]):
-                self.set(ParameterArray(values, param))
+        samples = np.concatenate(samples, axis=-1)
+        self.aweight = samples[0]
+        self.logposterior = -samples[1]
+        for param, values in zip(params, samples[2:]):
+            self.set(ParameterArray(values, param))
 
         return self
 
-    def write_cosmomc(self, base_fn, params=None, ichain=None, fmt='%.18e', delimiter=' ', **kwargs):
+    def write_getdist(self, base_fn, params=None, ichain=None, fmt='%.18e', delimiter=' ', **kwargs):
         """
         Save samples to disk in *CosmoMC* format.
 
@@ -268,6 +268,29 @@ class Chain(ParameterValues):
         samples = self.to_array(params=params, struct=False).reshape(-1, self.size)
         names = [str(param) for param in params]
         toret = MCSamples(samples=samples.T, weights=np.asarray(self.weight.ravel()), loglikes=-np.asarray(self.logposterior.ravel()), names=names, labels=labels, label=label)
+        return toret
+
+    def to_anesthetic(self, params=None, label=None):
+        """
+        Return *GetDist* hook to samples.
+
+        Parameters
+        ----------
+        columns : list, ParameterCollection, default=None
+            Parameters to share to *GetDist*. Defaults to all parameters (weight and logposterior treated separatey).
+
+        Returns
+        -------
+        samples : anesthetic.MCMCSamples
+        """
+        from anesthetic import MCMCSamples
+        toret = None
+        if params is None: params = self.params(varied=True)
+        else: params = [self[param].param for param in params]
+        labels = [param.latex() for param in params]
+        samples = self.to_array(params=params, struct=False).reshape(-1, self.size)
+        names = [str(param) for param in params]
+        toret = MCMCSamples(samples=samples.T, columns=names, weights=np.asarray(self.weight.ravel()), logL=-np.asarray(self.logposterior.ravel()), labels=labels, label=label, logzero=-np.inf)
         return toret
 
     def choice(self, index='argmax', params=None, **kwargs):

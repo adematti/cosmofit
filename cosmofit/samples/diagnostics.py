@@ -217,7 +217,7 @@ def _autocorrelation_1d(x):
     return acf
 
 
-def geweke(chains, params=None, first=0.25, last=0.75):
+def geweke(chains, params=None, first=0.1, last=0.5):
 
     if not utils.is_sequence(chains):
         chains = [chains]
@@ -228,12 +228,14 @@ def geweke(chains, params=None, first=0.25, last=0.75):
 
     toret = []
     for chain in chains:
+        # params is single param
         value, aweight, fweight = chain[params].ravel(), chain.aweight.ravel(), chain.fweight.ravel()
         ifirst, ilast = int(first * value.size + 0.5), int(last * value.size + 0.5)
         value_first, value_last = value[:ifirst], value[ilast:]
         aweight_first, aweight_last = aweight[:ifirst], aweight[ilast:]
         fweight_first, fweight_last = fweight[:ifirst], fweight[ilast:]
-        diff = abs(np.average(value_first, weights=aweight_first * fweight_first) - np.average(value_last, weights=aweight_last * fweight_last))
+        diff = np.abs(np.average(value_first, weights=aweight_first * fweight_first) - np.average(value_last, weights=aweight_last * fweight_last))
+        # np.cov is 0-d
         diff /= (np.cov(value_first, aweights=aweight_first, fweights=fweight_first) + np.cov(value_last, aweights=aweight_last, fweights=fweight_last))**0.5
         toret.append(diff)
 

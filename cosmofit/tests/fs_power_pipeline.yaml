@@ -26,7 +26,7 @@ pipeline:
           derived: '.auto'
         #sn*:
         #  derived: '.auto'
-      #load: f'{output_dir}/fs_emulator.npy'
+      load: f'{output_dir}/fs_emulator.npy'
       emulator:
         init:
           #order: {'*': 1, 'q*': 2, 'b1': 2}
@@ -69,12 +69,12 @@ pipeline:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 
 emulate:
-  class: TaylorEmulatorEngine
+  class: TaylorEmulator
   init:
     order: 1
 
 summarize:
-  chain:
+  source:
     fn: f'{output_dir}/chain_0.npy'
     burnin: 0.5
   plot_triangle: f'{output_dir}/triangle.png'
@@ -86,7 +86,7 @@ summarize:
   plot_geweke: f'{output_dir}/geweke.png'
 
 summarize:
-   profiles: f'{output_dir}/profiles.npy'
+   source: f'{output_dir}/profiles.npy'
    stats: f'{output_dir}/stats.tex'
 
 sample:
@@ -94,16 +94,6 @@ sample:
   run:
     niterations: 2
   save: f'{output_dir}/grid.npy'
-
-sample:
-  class: cosmofit.samplers.DynestySampler
-  init:
-    mode: static
-  run:
-    max_iterations: 10000
-    check_every: 100
-  check: True
-  save: f'{output_dir}/chain_*.npy'
 
 sample:
   class: cosmofit.samplers.EmceeSampler
@@ -116,16 +106,76 @@ sample:
   check: True
   save: f'{output_dir}/chain_*.npy'
 
+sample:
+  class: cosmofit.samplers.ZeusSampler
+  init:
+    #nwalkers: 40
+    chains: 1
+  run:
+    max_iterations: 10000
+    check_every: 100
+  check: True
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.DynestySampler
+  init:
+    chains: 1 #f'{output_dir}/chain_0.npy'
+    mode: static
+  run:
+    dlogz: 1
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.PolychordSampler
+  init:
+    chains: 1 #f'{output_dir}/chain_0.npy'
+  run:
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.PocoMCSampler
+  init:
+    #nwalkers: 40
+    chains: 1
+  run:
+    max_iterations: 10000
+    check_every: 100
+  check: True
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.MCMCSampler
+  init:
+    chains: 1 #f'{output_dir}/chain_0.npy'
+  run:
+  check: True
+  save: f'{output_dir}/chain_*.npy'
+
 profile:
   class: cosmofit.profilers.MinuitProfiler
   maximize:
     niterations: 1
   save: f'{output_dir}/profiles.npy'
 
+profile:
+  class: cosmofit.profilers.BOBYQAProfiler
+  init:
+    rescale: True
+  maximize:
+    niterations: 1
+  save: f'{output_dir}/profiles.npy'
+
+profile:
+  class: cosmofit.profilers.ScipyProfiler
+  init:
+    rescale: True
+  maximize:
+    niterations: 1
+  save: f'{output_dir}/profiles.npy'
+
 do:
-  source:
-    #profiles: f'{output_dir}/profiles.npy'
-    chain: f'{output_dir}/chain_0.npy'
+  source: f'{output_dir}/chain_0.npy'
   do: plot
 
 data_dir: _pk

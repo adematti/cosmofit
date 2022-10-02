@@ -1,23 +1,35 @@
 import numpy as np
 import mpytools as mpy
 
-from cosmofit.base import SectionConfig, import_cls
+from cosmofit.base import SectionConfig, import_class
 from cosmofit.utils import BaseClass, TaskManager
-from cosmofit.samples import Profiles, ParameterValues
+from cosmofit.samples import load_source
+from cosmofit.samples.profiles import Profiles, ParameterValues, ParameterBestFit
 from cosmofit.parameter import ParameterArray, ParameterCollection
 
 
 class ProfilerConfig(SectionConfig):
 
-    _sections = ['init']
+    _sections = ['source', 'init']
 
     def __init__(self, *args, **kwargs):
         # cls, init kwargs
         super(ProfilerConfig, self).__init__(*args, **kwargs)
-        self['class'] = import_cls(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseProfiler._registry)
+        self['class'] = import_class(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseProfiler._registry)
 
     def run(self, likelihood):
-        profiler = self['class'](likelihood, **self['init'])
+        from cosmofit.samples import SourceConfig
+        values = SourceConfig(self['source']).choice(params=likelihood.params)
+        likelihood = likelihood.copy()
+        params = likelihood.params.deepcopy()
+        for param, value in zip(params, values): param.value = value
+        likelihood.set_params(params)
+
+        save_fn = self.get('save', None)
+        if 'save_fn' in self['init'] and 'save' in self:
+            raise ConfigError('Provide either init: save_fn or save, not both')
+
+        profiler = self['class'](likelihood, **{'save_fn': save_fn, **self['init']})
         save_fn = self.get('save', None)
 
         for name in ['maximize', 'interval', 'profile', 'contour']:
@@ -25,12 +37,6 @@ class ProfilerConfig(SectionConfig):
                 tmp = self[name]
                 if tmp is None: tmp = {}
                 getattr(profiler, name)(**tmp)
-
-        if save_fn is not None and profiler.mpicomm.rank == 0:
-            if profiler.profiles is None:
-                profiler.log_warning('No profiling performed, so {} not saved.'.format(save_fn))
-            else:
-                profiler.profiles.save(save_fn)
 
         return profiler
 
@@ -47,11 +53,11 @@ class RegisteredProfiler(type(BaseClass)):
 
 class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
-    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, profiles=None, mpicomm=None):
+    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, profiles=None, covariance=None, rescale=False, save_fn=None, mpicomm=None):
         if mpicomm is None:
             mpicomm = likelihood.mpicomm
-        self.mpicomm = mpicomm
         self.likelihood = BaseClass.copy(likelihood)
+        self.mpicomm = mpicomm
         self.likelihood.solved_default = '.best'
         self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False)
         if self.mpicomm.rank == 0:
@@ -63,7 +69,51 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         if profiles is not None and not isinstance(profiles, Profiles):
             self.profiles = Profiles.load(profiles)
         self._set_rng(rng=rng, seed=seed)
-        self._set_profiler()
+        covariance = load_source(covariance, cov=True)
+        if covariance is not None:
+            for param in self.varied_params:
+                if param in covariance.params():
+                    param.ref = ParameterPrior(loc=param.value, scale=np.sqrt(covariance.cov(params=param)), dist='norm')
+        # Get the covariance for all parameters
+        covariance = load_source(covariance, cov=True, params=self.varied_params)
+        self._original_params = self.varied_params
+
+        if rescale:
+
+            self._params_transform_loc = np.array([param.value for param in self.varied_params], dtype='f8')
+            self._params_transform_scale = np.diag(covariance)**0.5
+
+            def _params_forward_transform(values):
+                return values * self._params_transform_scale + self._params_transform_loc
+
+            def _params_backward_transform(values):
+                return (values - self._params_transform_loc) / self._params_transform_scale
+
+            self.varied_params = ParameterCollection()
+            for param, loc, scale in zip(self._original_params, self._params_transform_loc, self._params_transform_scale):
+                loc, scale = - loc, 1. / scale
+                param = param.clone(prior=param.prior.affine_transform(loc=loc, scale=scale),
+                                    ref=param.ref.affine_transform(loc=loc, scale=scale),
+                                    proposal=param.proposal * scale)
+                self.varied_params.set(param)
+
+        else:
+
+            self._params_transform_loc = np.zeros(len(self.varied_params), dtype='f8')
+            self._params_transform_scale = np.ones(len(self.varied_params), dtype='f8')
+
+            def _params_forward_transform(values):
+                return values
+
+            def _params_backward_transform(values):
+                return values
+
+            self.varied_params = self.varied_params.deepcopy()
+
+        self._params_forward_transform = _params_forward_transform
+        self._params_backward_transform = _params_backward_transform
+
+        self.save_fn = save_fn
 
     def loglikelihood(self, values):
         values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
@@ -71,35 +121,36 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             return -np.inf
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
-        di = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}
-        self.likelihood.mpirun(**di)
+        values = self._params_forward_transform(values)
+        points = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}
+        self.likelihood.mpirun(**points)
         toret = None
         if self.likelihood.mpicomm.rank == 0:
             if self.derived is None:
-                self.derived = [self.likelihood.derived, di]
+                self.derived = [self.likelihood.derived, points]
             else:
-                self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: np.concatenate([self.derived[1][name], di[name]], axis=0) for name in di}]
+                self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: np.concatenate([self.derived[1][name], points[name]], axis=0) for name in points}]
             toret = self.likelihood.loglikelihood + self.likelihood.logprior
-            if isscalar: toret = toret[0]
         toret = self.likelihood.mpicomm.bcast(toret, root=0)
         mask = np.isnan(toret)
         toret[mask] = -np.inf
         if mask.any() and self.mpicomm.rank == 0:
-            self.log_warning('loglikelihood is NaN for {}'.format({k: v[mask] for k, v in di.items()}))
+            self.log_warning('loglikelihood is NaN for {}'.format({k: v[mask] for k, v in points.items()}))
+        if isscalar: toret = toret[0]
         return toret
 
-    def logprior(self, **params):
+    def logprior(self, values):
         logprior = 0.
-        for name, value in params.items():
-            logprior += self.varied_params[name].prior(value)
+        values = self._params_forward_transform(values)
+        for param, value in zip(self.varied_params, values.T):
+            logprior += param.prior(value)
         return logprior
 
     def logposterior(self, values):
         values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
-        params = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}
-        toret = self.logprior(**params)
+        toret = self.logprior(values)
         mask = ~np.isinf(toret)
         toret[mask] = self.loglikelihood(values[mask])
         if isscalar: toret = toret[0]
@@ -139,12 +190,13 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         logposterior = np.inf
         for itry in range(max_tries):
             if np.isfinite(logposterior): break
+            self.derived = None
             start = np.ravel(get_start(size=1))
             logposterior = self.logposterior(start)
 
         if np.isnan(logposterior):
             raise ValueError('Could not find finite log posterior after {:d} tries'.format(itry))
-        return start
+        return start, logposterior
 
     def __enter__(self):
         return self
@@ -152,40 +204,81 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         pass
 
+    @property
+    def mpicomm(self):
+        return self.likelihood.mpicomm
+
+    @mpicomm.setter
+    def mpicomm(self, mpicomm):
+        self.likelihood.mpicomm = mpicomm
+
+    def _profiles_transform(self, profiles):
+        toret = profiles.deepcopy()
+
+        def transform_array(array, scale_only=False):
+            try:
+                iparam = self._original_params.index(array.param)
+            except KeyError:
+                return array
+            array.param = self._original_params[iparam]
+            array = array * self._params_transform_scale[iparam]
+            if not scale_only: array += self._params_transform_loc[iparam]
+            return array
+
+        for name, item in toret.items():
+            if name == 'covariance':
+                iparams = [self._original_params.index(param) for param in item._params]
+                item._params = self._original_params.sort(key=iparams)
+                item._value = item._value * (self._params_transform_scale[iparams, None] * self._params_transform_scale[iparams])
+            elif name == 'contour':
+                item.data = [tuple(transform_array(array) for array in arrays) for arrays in item.data]
+            else: # 'start', 'bestfit', 'error', 'interval', 'profile'
+                item.data = [transform_array(array, scale_only= name == 'error') for array in item.data]
+            toret.set(name=item)
+        return toret
+
     def maximize(self, niterations=None, **kwargs):
         if niterations is None: niterations = max(self.mpicomm.size - 1, 1)
         niterations = int(niterations)
         nprocs_per_iteration = max((self.mpicomm.size - 1) // niterations, 1)
         list_profiles = [None] * niterations
+        mpicomm_bak = self.mpicomm
         with TaskManager(nprocs_per_task=nprocs_per_iteration, use_all_nprocs=True, mpicomm=self.mpicomm) as tm:
-            self.likelihood.mpicomm = tm.mpicomm
+            self.likelihood.mpicomm = self.mpicomm = tm.mpicomm
             for ii in tm.iterate(range(niterations)):
-                self.derived = None
-                start = self._get_start()
-                self.derived = None
-                profile = self._maximize_one(start, **kwargs)
-                if self.likelihood.mpicomm.rank == 0:
+                start, logposterior = self._get_start()
+                p = self._maximize_one(start, **kwargs)
+                if self.mpicomm.rank == 0:
+                    profiles = Profiles(start=ParameterValues(start, params=self.varied_params),
+                                        bestfit=ParameterBestFit(list(start) + [logposterior], params=self.varied_params + ['logposterior']))
+                    profiles.update(p)
+                    profiles = self._profiles_transform(profiles)
                     for param in self.likelihood.params.select(fixed=True, derived=False):
-                        profile.bestfit.set(ParameterArray(np.array(param.value, dtype='f8'), param))
-                    index_in_profile, index = ParameterValues(self.derived[1]).match(profile.bestfit, params=self.varied_params)
+                        profiles.bestfit.set(ParameterArray(np.array(param.value, dtype='f8'), param))
+                    index_in_profile, index = ParameterValues(self.derived[1]).match(profiles.bestfit, params=profiles.start.params())
                     assert index_in_profile[0].size == 1
                     for array in self.derived[0]:
-                        profile.bestfit.set(array[index], output=True)
+                        profiles.bestfit.set(array[index], output=True)
                 else:
-                    profile = None
-                list_profiles[ii] = profile
+                    profiles = None
+                list_profiles[ii] = profiles
+        self.mpicomm = mpicomm_bak
         for iprofile, profile in enumerate(list_profiles):
             mpiroot_worker = self.mpicomm.rank if profile is not None else None
             for mpiroot_worker in self.mpicomm.allgather(mpiroot_worker):
                 if mpiroot_worker is not None: break
             assert mpiroot_worker is not None
             list_profiles[iprofile] = Profiles.bcast(profile, mpicomm=self.mpicomm, mpiroot=mpiroot_worker)
+
         profiles = Profiles.concatenate(list_profiles)
 
         if self.profiles is None:
             self.profiles = profiles
         else:
             self.profiles = Profiles.concatenate(self.profiles, profiles)
+
+        if self.mpicomm.rank == 0 and self.save_fn is not None:
+            self.profiles.save(self.save_fn)
 
     def _iterate_over_params(self, params, method, **kwargs):
         nparams = len(params)
@@ -194,13 +287,16 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             start = self._get_start()
         else:
             argmax = self.profiles.bestfit.logposterior.argmax()
-            start = [self.profiles.bestfit[param][argmax] for param in self.varied_params]
+            start = self._params_backward_transform([self.profiles.bestfit[param][argmax] for param in self.varied_params])
         list_profiles = [None] * nparams
+        mpicomm_bak = self.mpicomm
         with TaskManager(nprocs_per_task=nprocs_per_param, use_all_nprocs=True, mpicomm=self.mpicomm) as tm:
-            self.likelihood.mpicomm = tm.mpicomm
+            self.likelihood.mpicomm = self.mpicomm = tm.mpicomm
             for iparam, param in tm.iterate(enumerate(params)):
                 self.derived = None
-                list_profiles[iparam] = method(start, param, **kwargs)
+                profiles = method(start, param, **kwargs)
+                list_profiles[iparam] = self._profiles_transform(profiles) if self.mpicomm.rank == 0 else None
+        self.mpicomm = mpicomm_bak
         profiles = Profiles()
         for iprofile, profile in enumerate(list_profiles):
             mpiroot_worker = self.mpicomm.rank if profile is not None else None
@@ -213,6 +309,9 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             self.profiles = profiles
         else:
             self.profiles.update(profiles)
+
+        if self.mpicomm.rank == 0 and self.save_fn is not None:
+            self.profiles.save(self.save_fn)
 
     def interval(self, params=None, **kwargs):
         if params is None:

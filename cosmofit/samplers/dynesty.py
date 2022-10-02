@@ -1,8 +1,10 @@
+import os
+
 import numpy as np
 
 from cosmofit.samples import Chain
 from cosmofit.parameter import ParameterError
-from .base import BasePosteriorSampler
+from .base import BasePosteriorSampler, load_source, ParameterValues
 
 
 class FakePool(object):
@@ -16,39 +18,52 @@ class FakePool(object):
 
 class DynestySampler(BasePosteriorSampler):
 
-    def __init__(self, *args, mode='static', nlive=500, bound='multi', sample='auto', update_interval=None, dlogz=0.01, **kwargs):
+    check = None
+
+    def __init__(self, *args, mode='static', nlive=500, bound='multi', sample='auto', update_interval=None, **kwargs):
         self.mode = mode
         self.nlive = int(nlive)
-        self.bound = bound
-        self.sample = sample
-        self.update_interval = update_interval
-        self.dlogz = float(dlogz)
+        self.attrs = {'bound': bound, 'sample': sample, 'update_interval': update_interval}
         super(DynestySampler, self).__init__(*args, **kwargs)
-        for param in self.varied_params:
-            if not param.prior.is_proper():
-                raise ParameterError('Prior for {} is improper, Dynesty requires proper priors'.format(param.name))
+        if self.save_fn is None:
+            raise ValueError('save_fn must be provided to save dynesty state')
+        self.state_fn = [os.path.splitext(fn)[0] + 'dynesty.state' for fn in self.save_fn]
 
-    def mpiprior_transform(self, values):
+    def prior_transform(self, values):
         toret = np.empty_like(values)
         for iparam, (value, param) in enumerate(zip(values.T, self.varied_params)):
             toret[..., iparam] = param.prior.ppf(value)
         return toret
 
-    def _set_sampler(self):
-        import dynesty
-        ndim = len(self.varied_params)
-        self.pool = FakePool(size=self.mpicomm.size)
-        use_pool = {'prior_transform': True, 'loglikelihood': True, 'propose_point': False, 'update_bound': False}
-        if self.mode == 'static':
-            self.sampler = dynesty.NestedSampler(self.loglikelihood, self.mpiprior_transform, ndim, nlive=self.nlive, bound=self.bound, sample=self.sample, update_interval=self.update_interval, pool=self.pool, use_pool=use_pool)
-        else:
-            self.sampler = dynesty.DynamicNestedSampler(self.loglikelihood, self.mpiprior_transform, ndim, bound=self.bound, sample=self.sample, update_interval=self.update_interval, pool=self.pool, use_pool=use_pool)
+    def _prepare(self):
+        self.resume = self.mpicomm.bcast(self.chains[0] is not None, root=0)
 
-    def _run_one(self, start, niterations=300, thin_by=1):
-        if self.mode == 'static':
-            self.sampler.run_nested(maxiter=niterations + self.sampler.it, dlogz=self.dlogz)
+    def _run_one(self, start, max_iterations=100000, **kwargs):
+        import dynesty
+        from dynesty import utils
+
+        # Instantiation already runs somes samples
+        if not hasattr(self, 'sampler'):
+            ndim = len(self.varied_params)
+            use_pool = {'prior_transform': True, 'loglikelihood': True, 'propose_point': False, 'update_bound': False}
+            pool = FakePool(size=self.mpicomm.size)
+            if self.mode == 'dynamic':
+                self.sampler = dynesty.DynamicNestedSampler(self.loglikelihood, self.prior_transform, ndim, pool=pool, use_pool=use_pool, **self.attrs)
+            else:
+                self.sampler = dynesty.NestedSampler(self.loglikelihood, self.prior_transform, ndim, nlive=self.nlive, pool=pool, use_pool=use_pool, **self.attrs)
+
+        if self.resume:
+            sampler = utils.restore_sampler(self.state_fn[self._ichain])
+            del sampler.loglikelihood, sampler.prior_transform, sampler.pool, sampler.M
+            if type(sampler) is not type(self.sampler):
+                raise ValueError('Previous run used {}, not {}.'.format(type(sampler), type(self.sampler)))
+            self.sampler.__dict__.update(sampler.__dict__)
+
+        if self.mode == 'dynamic':
+            self.sampler.run_nested(nlive_init=self.nlive, maxiter=max_iterations, **kwargs)
         else:
-            self.sampler.run_nested(nlive_init=self.nlive, maxiter=niterations + self.sampler.it, dlogz_init=self.dlogz)
+            self.sampler.run_nested(maxiter=max_iterations, **kwargs)
+
         results = self.sampler.results
         chain = [results['samples'][..., iparam] for iparam, param in enumerate(self.varied_params)]
         logprior = sum(param.prior(value) for param, value in zip(self.varied_params, chain))
@@ -56,5 +71,16 @@ class DynestySampler(BasePosteriorSampler):
         chain.append(results['logl'] + logprior)
         chain.append(results['logwt'])
         chain.append(np.exp(results.logwt - results.logz[-1]))
-        for ivalue, value in enumerate(chain): chain[ivalue] = value[..., None]
+        if self.mpicomm.rank == 0:
+            utils.save_sampler(self.sampler, self.state_fn[self._ichain])
+            if self.resume:
+                derived = load_source(self.save_fn[self._ichain])[0]
+                points = {}
+                for param in self.varied_params:
+                    points[param.name] = derived.pop(param)
+                derived = derived.select(derived=True)
+                if self.derived is None:
+                    self.derived = [derived, points]
+                else:
+                    self.derived = [ParameterValues.concatenate([self.derived[0], derived]), {name: np.concatenate([self.derived[1][name], points[name]], axis=0) for name in points}]
         return Chain(chain, params=self.varied_params + ['logprior', 'logposterior', 'logweight', 'aweight'])

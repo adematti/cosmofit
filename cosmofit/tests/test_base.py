@@ -267,7 +267,7 @@ if __name__ == '__main__':
     setup_logging('info')
 
     # test_solve()
-    test_config()
+    # test_config()
     test_params()
     # test_param_array()
     # test_namespace()

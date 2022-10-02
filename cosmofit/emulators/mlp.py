@@ -2,7 +2,7 @@ import numpy as np
 
 from cosmofit import utils
 from cosmofit.utils import jnp
-from .base import BaseEmulatorEngine
+from .base import BaseEmulator
 from cosmofit import mpi
 
 
@@ -30,10 +30,10 @@ def _make_tuple(obj, length=None):
     return tuple(obj)
 
 
-class MLPEmulatorEngine(BaseEmulatorEngine):
+class MLPEmulator(BaseEmulator):
 
     def __init__(self, pipeline, nhidden=(100, 100, 100), ytransform='', npcs=None, **kwargs):
-        super(MLPEmulatorEngine, self).__init__(pipeline=pipeline, **kwargs)
+        super(MLPEmulator, self).__init__(pipeline=pipeline, **kwargs)
         self.nhidden = tuple(nhidden)
         self.npcs = npcs
         self.ytransform = str(ytransform)
@@ -197,7 +197,7 @@ class MLPEmulatorEngine(BaseEmulatorEngine):
         return toret
 
     def __getstate__(self):
-        state = super(MLPEmulatorEngine, self).__getstate__()
+        state = super(MLPEmulator, self).__getstate__()
         for name in ['operations', 'yshapes', 'tfmodel']:
             if hasattr(self, name):
                 tmp = getattr(self, name)

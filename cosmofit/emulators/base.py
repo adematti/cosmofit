@@ -4,9 +4,9 @@ import sys
 import numpy as np
 
 from cosmofit.samples import ParameterValues
-from cosmofit.base import BasePipeline, PipelineError, SectionConfig, import_cls
+from cosmofit.base import BasePipeline, PipelineError, SectionConfig
 from cosmofit import utils, plotting
-from cosmofit.utils import BaseClass, OrderedSet
+from cosmofit.utils import BaseClass, OrderedSet, import_class, serialize_class
 from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError, ParameterCollection, ParameterConfig
 
 
@@ -15,6 +15,13 @@ class EmulatorConfig(SectionConfig):
     _sections = ['source', 'init', 'fit', 'check']
 
     def run(self, pipeline):
+        from cosmofit.samples import SourceConfig
+        values = SourceConfig(self['source']).choice(params=pipeline.params)
+        pipeline = pipeline.copy()
+        params = pipeline.params.deepcopy()
+        for param, value in zip(params, values): param.value = value
+        pipeline.set_params(params)
+
         for calculator in pipeline.calculators:
             calcdict = calculator.runtime_info.config
             if 'emulator' in calcdict:
@@ -23,7 +30,7 @@ class EmulatorConfig(SectionConfig):
                     emudict = {'save': emudict}
                 emudict = self.clone(EmulatorConfig(emudict))
                 save_fn = emudict.get('save', calcdict.get('save', None))
-                cls = import_cls(emudict['class'], pythonpath=emudict.get('pythonpath', None), registry=BaseEmulatorEngine._registry)
+                cls = import_class(emudict['class'], pythonpath=emudict.get('pythonpath', None), registry=BaseEmulator._registry)
                 emulator = cls(pipeline.select(calculator), **emudict['init'])
                 sample = emudict.get('sample', {})
                 if not isinstance(sample, dict):
@@ -50,7 +57,7 @@ class EmulatorConfig(SectionConfig):
                     emulator.save(save_fn)
 
 
-class RegisteredEmulatorEngine(type(BaseClass)):
+class RegisteredEmulator(type(BaseClass)):
 
     _registry = set()
 
@@ -60,7 +67,7 @@ class RegisteredEmulatorEngine(type(BaseClass)):
         return cls
 
 
-class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
+class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
 
     def __init__(self, pipeline, mpicomm=None):
         if mpicomm is None:
@@ -98,17 +105,8 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             self.log_info('Varied parameters: {}.'.format(self.varied_params))
             self.log_info('Found varying {} and fixed {} outputs.'.format(self.varied, list(self.fixed.keys())))
 
-        def serialize_cls(self):
-            clsname = '.'.join([self.__module__, self.__class__.__name__])
-            try:
-                pythonpath = os.path.dirname(sys.modules[self.__module__].__file__)
-            except AttributeError:
-                pythonpath = None
-            return (clsname, pythonpath)
-
-        self._emulator_cls = serialize_cls(self)
-        self._end_calculator_cls = serialize_cls(calculator)
-        self._calculators_cls = [serialize_cls(calc) for calc in self.pipeline.calculators]
+        self.end_calculator__class__ = serialize_class(calculator)
+        self.calculators__class__ = [serialize_class(calc) for calc in self.pipeline.calculators]
         self.yaml_data = {}
         self.yaml_data['class'] = calculator.__class__.__name__
         self.yaml_data['info'] = dict(calculator.info)
@@ -244,7 +242,40 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
         return lax
 
     def to_calculator(self, derived=None):
-        calculator = BaseEmulator.from_state(self.__getstate__())
+
+        state = self.__getstate__()
+        Emulator = self.__class__
+        Calculator = import_class(*state['end_calculator__class__'])
+        new_name = Calculator.__name__
+
+        clsdict = {}
+
+        def new_set_params(self, params):
+            return params
+
+        def new_run(self, **params):
+            predict = Emulator.predict(self, **params)
+            Calculator.__setstate__(self, {**self.fixed, **predict})
+
+        def new_getstate(self):
+            return Calculator.__getstate__(self)
+
+        clsdict = {'set_params': new_set_params, 'run': new_run, '__getstate__': new_getstate, '__module__': Calculator.__module__}
+
+        new_meta = type('MetaEmulatorCalculator', (type(Emulator), type(Calculator)), {})
+        new_cls = new_meta(new_name, (Emulator, Calculator), clsdict)
+        try:
+            new_cls.config_fn = Calculator.config_fn
+        except AttributeError:
+            pass
+
+        def from_state(cls, *args, **kwargs):
+            new = cls.__new__(cls)
+            new.__dict__.update(Emulator.from_state(*args, **kwargs).__dict__)  # should update config_fn
+            return new
+
+        calculator = from_state(new_cls, state)
+
         if derived is not None:
             for name in derived:
                 if name not in calculator.runtime_info.base_params:
@@ -258,7 +289,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
 
     def __getstate__(self):
         state = {}
-        for name in ['varied_params', 'fixed', 'varied', 'yaml_data', '_emulator_cls', '_end_calculator_cls', '_calculators_cls']:
+        for name in ['varied_params', 'fixed', 'varied', 'yaml_data', 'end_calculator__class__', 'calculators__class__']:
             state[name] = getattr(self, name)
         state['params'] = self.params.__getstate__()
         return state
@@ -266,7 +297,7 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
     def save(self, filename, yaml=True):
         self.log_info('Saving {}.'.format(filename))
         utils.mkdir(os.path.dirname(filename))
-        state = self.__getstate__()
+        state = {'__class__': serialize_class(self), **self.__getstate__()}
         if yaml:
             state['config_fn'] = fn = os.path.splitext(filename)[0] + '.yaml'
             self.log_info('Saving {}.'.format(fn))
@@ -283,11 +314,11 @@ class BaseEmulatorEngine(BaseClass, metaclass=RegisteredEmulatorEngine):
             yaml.dump(self.yaml_data, file, default_flow_style=False)
 
     def __setstate__(self, state):
-        super(BaseEmulatorEngine, self).__setstate__(state)
+        super(BaseEmulator, self).__setstate__(state)
         self.params = ParameterCollection.from_state(state['params'])
 
 
-class PointEmulatorEngine(BaseEmulatorEngine):
+class PointEmulator(BaseEmulator):
 
     def get_default_samples(self):
         from cosmofit.samplers import GridSampler
@@ -307,46 +338,8 @@ class PointEmulatorEngine(BaseEmulatorEngine):
         return self.point
 
     def __getstate__(self):
-        state = super(PointEmulatorEngine, self).__getstate__()
+        state = super(PointEmulator, self).__getstate__()
         for name in ['point']:
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
-
-
-class BaseEmulator(BaseClass):
-
-    @classmethod
-    def from_state(cls, state):
-        state = dict(state)
-        EmulatorEngine = import_cls(*state['_emulator_cls'])
-        Calculator = import_cls(*state['_end_calculator_cls'])
-        new_name = Calculator.__name__
-
-        clsdict = {}
-
-        def new_set_params(self, params):
-            return params
-
-        def new_run(self, **params):
-            predict = EmulatorEngine.predict(self, **params)
-            Calculator.__setstate__(self, {**self.fixed, **predict})
-
-        def new_getstate(self):
-            return Calculator.__getstate__(self)
-
-        clsdict = {'set_params': new_set_params, 'run': new_run, '__getstate__': new_getstate, '__module__': Calculator.__module__}
-
-        new_meta = type('MetaEmulatorCalculator', (type(EmulatorEngine), type(Calculator)), {})
-        new_cls = new_meta(new_name, (EmulatorEngine, Calculator), clsdict)
-        try:
-            new_cls.config_fn = Calculator.config_fn
-        except AttributeError:
-            pass
-
-        def from_state(cls, *args, **kwargs):
-            new = cls.__new__(cls)
-            new.__dict__.update(EmulatorEngine.from_state(*args, **kwargs).__dict__)  # should update config_fn
-            return new
-
-        return from_state(new_cls, state)

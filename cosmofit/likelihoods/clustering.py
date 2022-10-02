@@ -2,7 +2,7 @@ import numpy as np
 from scipy import constants
 
 from .base import BaseGaussianLikelihood, BaseCalculator
-from cosmofit.samples import Chain, load_samples
+from cosmofit.samples import Chain, load_source
 from cosmofit.parameter import ParameterCollection
 from cosmofit.theories.base import EffectAP
 from cosmofit.theories.power_template import BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor, BandVelocityPowerSpectrumExtractor
@@ -39,7 +39,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
     def __init__(self, chains=None, select=None, burnin=None):
         self.chain = None
         if self.mpicomm.rank == 0:
-            self.chain = Chain.concatenate(load_samples(source='chain', fn=chains, burnin=burnin))
+            self.chain = Chain.concatenate(load_source(chains, burnin=burnin))
         self.params = self.mpicomm.bcast(self.chain.params() if self.mpicomm.rank == 0 else None, root=0)
         if select is not None:
             self.params = self.params.select(**select)

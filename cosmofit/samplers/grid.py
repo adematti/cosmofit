@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from cosmofit.samples import ParameterValues
+from cosmofit.samples import Samples
 from cosmofit.parameter import ParameterArray
 from cosmofit.utils import BaseClass
 from .base import RegisteredSampler
@@ -10,11 +10,11 @@ from .base import RegisteredSampler
 
 class GridSampler(BaseClass, metaclass=RegisteredSampler):
 
-    def __init__(self, pipeline, mpicomm=None, ngrid=3, scale=1., sphere=None):
+    def __init__(self, pipeline, mpicomm=None, ngrid=3, scale=1., sphere=None, save_fn=None):
         if mpicomm is None:
             mpicomm = pipeline.mpicomm
+        self.pipeline = BaseClass.copy(pipeline)
         self.mpicomm = mpicomm
-        self.pipeline = pipeline
         self.varied_params = self.pipeline.params.select(varied=True, derived=False)
         self.scale = float(scale)
         self.sphere = sphere
@@ -32,6 +32,15 @@ class GridSampler(BaseClass, metaclass=RegisteredSampler):
                     raise ValueError('{} is {:d} < 1 for parameter {}'.format(name, value, param))
             tmp = [tmp[str(param)] for param in self.varied_params]
             setattr(self, name, tmp)
+        self.save_fn = save_fn
+
+    @property
+    def mpicomm(self):
+        return self.pipeline.mpicomm
+
+    @mpicomm.setter
+    def mpicomm(self, mpicomm):
+        self.pipeline.mpicomm = mpicomm
 
     def run(self):
         if self.mpicomm.rank == 0:
@@ -64,22 +73,22 @@ class GridSampler(BaseClass, metaclass=RegisteredSampler):
                 samples = np.array(samples).T
             else:
                 samples = np.meshgrid(*grid, indexing='ij')
-            samples = ParameterValues(samples, params=self.varied_params)
+            samples = Samples(samples, params=self.varied_params)
             samples.attrs['ngrid'] = self.ngrid
-        mpicomm = self.pipeline.mpicomm
-        self.pipeline.mpicomm = self.mpicomm
+
         self.pipeline.mpirun(**(samples.to_dict() if self.mpicomm.rank == 0 else {}))
 
         #from mpi4py import MPI
         #self.pipeline.mpicomm = MPI.COMM_SELF
         #self.pipeline.mpirun(**self.mpicomm.bcast(samples.to_dict() if self.mpicomm.rank == 0 else {}, root=0))
 
-        self.pipeline.mpicomm = mpicomm
         if self.mpicomm.rank == 0:
             for param in self.pipeline.params.select(fixed=True, derived=False):
                 samples.set(ParameterArray(np.full(samples.shape, param.value, dtype='f8'), param))
             samples.update(self.pipeline.derived)
             self.samples = samples
+            if self.save_fn is not None:
+                self.samples.save(save_fn)
         else:
             self.samples = None
 

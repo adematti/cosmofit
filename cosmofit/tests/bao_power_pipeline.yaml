@@ -60,18 +60,16 @@ emulate:
     npcs: 10
 
 emulate:
-  class: TaylorEmulatorEngine
+  class: TaylorEmulator
   init:
     order: {'*': 2, 'al*': 1}
 
 do:
-  source:
-    profiles: f'{output_dir}/profiles.npy'
-    #chain: f'{output_dir}/chain_0.npy'
+  source: f'{output_dir}/profiles.npy'
   #do: plot
 
 summarize:
-  chain:
+  source:
     fn: f'{output_dir}/chain_0.npy'
     burnin: 0.3
   plot_triangle: f'{output_dir}/triangle.png'

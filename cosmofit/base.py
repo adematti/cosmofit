@@ -1,6 +1,5 @@
 import os
 import sys
-import importlib
 import inspect
 import copy
 
@@ -10,7 +9,7 @@ from mpytools import CurrentMPIComm
 from mpi4py.MPI import COMM_SELF
 
 from . import utils
-from .utils import BaseClass, OrderedSet, NamespaceDict, deep_eq, jax
+from .utils import BaseClass, serialize_class, import_class, OrderedSet, Monitor, NamespaceDict, deep_eq, jax
 from .parameter import Parameter, ParameterArray, ParameterCollectionConfig, ParameterCollection, find_names
 from .io import BaseConfig
 from .samples import ParameterValues
@@ -61,7 +60,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
 
     * :attr:`requires`: dictionary listing dependencies, in the format name: ``{'class': ..., 'init': {...}, 'params': ...}``:
 
-        * 'class' is the class name, or ``module.ClassName``, or the actual type instance (see :func:`import_cls`) of the calculator
+        * 'class' is the class name, or ``module.ClassName``, or the actual type instance (see :func:`import_class`) of the calculator
 
         * 'init' (optionally) is the dictionary of arguments to be passed to the calculator
 
@@ -120,6 +119,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             state = {}
             for name in ['requires', 'globals']:
                 state[name] = getattr(self, name)
+            state['__class__'] = serialize_class(self)
             np.save(filename, {**state, **self.__getstate__()}, allow_pickle=True)
 
     def run(self, **params):
@@ -139,43 +139,6 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
 class PipelineError(Exception):
 
     """Exception raised when issue with pipeline."""
-
-
-def import_cls(clsname, pythonpath=None, registry=BaseCalculator._registry):
-    """
-    Import class from class name.
-
-    Parameters
-    ----------
-    clsname : string, type
-        Class name, as ``module.ClassName`` w.r.t. ``pythonpath``, or directly class type;
-        in this case, other arguments are ignored.
-
-    pythonpath : string, default=None
-        Optionally, path where to find package/module where class is defined.
-
-    registry : set, default=BaseCalculator._registry
-        Optionally, a set of class types to look into.
-    """
-    if isinstance(clsname, type):
-        return clsname
-    tmp = clsname.rsplit('.', 1)
-    if len(tmp) == 1:
-        allcls = []
-        for cls in registry:
-            if cls.__name__ == tmp[0]: allcls.append(cls)
-        if len(allcls) == 1:
-            return allcls[0]
-        if len(allcls) > 1:
-            raise PipelineError('Multiple calculator classes are named {}'.format(clsname))
-        raise PipelineError('No calculator class {} found'.format(clsname))
-    modname, clsname = tmp
-    if pythonpath is not None:
-        sys.path.insert(0, pythonpath)
-    else:
-        sys.path.append(os.path.dirname(__file__))
-    module = importlib.import_module(modname)
-    return getattr(module, clsname)
 
 
 class Info(NamespaceDict):
@@ -217,7 +180,7 @@ class RuntimeInfo(BaseClass):
     derived : ParameterValues
         Actual values, for each :meth:`BaseCalculator.run` call, for each of :attr:`derived_params`.
     """
-    def __init__(self, calculator, namespace=None, basename=None, requires=None, required_by=None, config=None, full_params=None, derived_auto=None):
+    def __init__(self, calculator, namespace=None, basename=None, requires=None, required_by=None, config=None, full_params=None, speed=None, derived_auto=None):
         """
         initialize :class:`RuntimeInfo`.
 
@@ -261,6 +224,8 @@ class RuntimeInfo(BaseClass):
         self.torun = True
         self.calculator = calculator
         self.derived_auto = OrderedSet(derived_auto or [])
+        self.speed = speed
+        self.monitor = Monitor()
 
     @property
     def full_params(self):
@@ -323,7 +288,9 @@ class RuntimeInfo(BaseClass):
         for name, calc in self.requires.items():
             calc.runtime_info.run()
             setattr(self.calculator, name, calc)
+        self.monitor.start()
         self.calculator.run(**params)
+        self.monitor.stop()
 
     def run(self):
         if self.torun:
@@ -436,7 +403,7 @@ def _best_match_parameter(namespace, basename, params, choice='max'):
 class CalculatorConfig(SectionConfig):
 
     _sections = ['info', 'init', 'params']
-    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save', 'config_fn']
+    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save', 'config_fn', 'speed']
 
     def __init__(self, data, **kwargs):
         # cls, init kwargs
@@ -452,7 +419,7 @@ class CalculatorConfig(SectionConfig):
         else:
             data = dict(data)
         super(CalculatorConfig, self).__init__(data)
-        self['class'] = import_cls(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
+        self['class'] = import_class(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
         self['info'] = Info(**self['info'])
         self['params'] = ParameterCollectionConfig(self['params'])
         load_fn = data.get('load', None)
@@ -467,16 +434,12 @@ class CalculatorConfig(SectionConfig):
         self._drop_calculators = self.get('drop_calculators', []) or []
         if load_fn is not None:
             self['init'] = {}
-            self['class'].log_info('Loading {}.'.format(load_fn))
-            state = np.load(load_fn, allow_pickle=True)[()]
-            if '_emulator_cls' in state:  # TODO: better managment of cls names
-                from cosmofit.emulators import BaseEmulator
-                self._loaded = BaseEmulator.from_state(state)
+            self._loaded = BaseClass.load(load_fn, fallback_class=self['class'])
+            if hasattr(self._loaded, 'to_calculator'):
+                self._loaded = self._loaded.to_calculator()
                 self._drop_calculators = self.get('drop_calculators', True) or []
                 if isinstance(self._drop_calculators, bool) and self._drop_calculators:
-                    self._drop_calculators = getattr(self._loaded, '_calculators_cls', [])
-            else:
-                self._loaded = self['class'].from_state(state)
+                    self._drop_calculators = getattr(self._loaded, 'calculators__class__', [])
             self['class'] = type(self._loaded)
             cls_params = getattr(self._loaded, 'params', None)
             if self['config_fn'] is None: self['config_fn'] = getattr(self._loaded, 'config_fn', None)
@@ -486,7 +449,7 @@ class CalculatorConfig(SectionConfig):
         self._drop_calculators = list(self._drop_calculators)
         for icalc, calc in enumerate(self._drop_calculators):
             try:
-                self._drop_calculators[icalc] = import_cls(*calc)
+                self._drop_calculators[icalc] = import_class(*calc, registry=BaseCalculator._registry)
             except ImportError:
                 pass
         if cls_params is not None:
@@ -526,7 +489,8 @@ class CalculatorConfig(SectionConfig):
             self_params = new.set_params(self_params)
             if isinstance(self_params, ParameterCollectionConfig):
                 self_params = self_params.with_namespace(namespace=namespace)
-        new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=ParameterCollection(self_params), derived_auto=derived_auto, **kwargs)
+        new.runtime_info = RuntimeInfo(new, namespace=namespace, config=self, full_params=ParameterCollection(self_params),
+                                       derived_auto=derived_auto, speed=self.get('speed', None), **kwargs)
         save_fn = self['save']
         if save_fn is not None:
             new.save(save_fn)
@@ -731,9 +695,9 @@ class BasePipeline(BaseClass):
             self.log_info('Found end calculators {}.'.format(self.end_calculators))
 
         # Checks
-        for param in params:
-            if not any(param in calculator.runtime_info.full_params for calculator in self.calculators):
-                raise PipelineError('Parameter {} is not used by any calculator'.format(param))
+        #for param in params:
+        #    if not any(param in calculator.runtime_info.full_params for calculator in self.calculators):
+        #        raise PipelineError('Parameter {} is not used by any calculator'.format(param))
 
         def callback_dependency(calculator, required_by):
             for calc in required_by:
@@ -749,19 +713,22 @@ class BasePipeline(BaseClass):
         # Init run, e.g. for fixed parameters
         #for calculator in self.calculators:
         #    print(calculator, calculator.runtime_info.full_params.select(varied=True))
-        self.set_params(quiet=quiet)
+        self.set_params(params=params, quiet=quiet)
         for calculator in self.end_calculators:
             calculator.runtime_info.torun = True
             calculator.runtime_info.run()
         self._set_derived_auto()
-        self.set_params(quiet=quiet)
+        self.set_params(params=params, quiet=quiet)
 
-    def set_params(self, quiet=False):
+    def set_params(self, params=None, quiet=False):
         params_from_calculator = {}
         self.params = ParameterCollection()
+        ref_params = ParameterCollection(params)
         self._param_values = {}
         for calculator in self.calculators:
-            for param in calculator.runtime_info.full_params:
+            for iparam, param in enumerate(calculator.runtime_info.full_params):
+                if param in ref_params:
+                    calculator.runtime_info.full_params[iparam] = param = ref_params[param]
                 if not quiet and param in self.params:
                     if param.derived and param.fixed:
                         msg = 'Derived parameter {} of {} is already derived in {}.'.format(param, calculator, params_from_calculator[param.name])
@@ -774,6 +741,9 @@ class BasePipeline(BaseClass):
                 params_from_calculator[param.name] = calculator
                 self._param_values[param.name] = param.value
                 self.params.set(param)
+        for param in ref_params:
+            if param not in self.params:
+                raise PipelineError('Parameter {} is not used by any calculator'.format(param))
         self._derived = None
 
     def eval_params(self, params):
@@ -945,7 +915,7 @@ class BasePipeline(BaseClass):
         for calculator in self.calculators:
             calculator.runtime_info = calculator.runtime_info.clone(namespace=namespace, full_params=calculator.runtime_info.full_params.clone(namespace=namespace))
 
-    def _classify_derived_auto(self, calculators=None, niterations=3):
+    def _classify_derived_auto(self, calculators=None, niterations=3, seed=42):
         if calculators is None:
             calculators = []
             for calculator in self.calculators:
@@ -953,7 +923,7 @@ class BasePipeline(BaseClass):
                     calculators.append(calculator)
 
         states = [{} for i in range(len(calculators))]
-        rng = np.random.RandomState(seed=42)
+        rng = np.random.RandomState(seed=seed)
         if calculators:
             for ii in range(niterations):
                 params = {str(param): param.ref.sample(random_state=rng) for param in self.params.select(varied=True)}
@@ -999,6 +969,85 @@ class BasePipeline(BaseClass):
                     calculator.runtime_info.full_params.set(param)
                     calculator.runtime_info.full_params = calculator.runtime_info.full_params
         return calculators, fixed, varied
+
+    def _set_speed(self, niterations=5, override=False, seed=42):
+        seed = mpy.random.bcast_seed(seed=seed, mpicomm=self.mpicomm, size=10000)[self.mpicomm.rank]  # to get different seeds on each rank
+        rng = np.random.RandomState(seed=seed)
+        for ii in range(niterations):
+            params = {str(param): param.ref.sample(random_state=rng) for param in self.params.select(varied=True)}
+            BasePipeline.run(self, **params)
+        for calculator in self.calculators:
+            if calculator.runtime_info.speed is None or override:
+                times = self.mpicomm.gather(calculator.runtime_info.monitor.get('time', average=True), root=0)
+                calculator.runtime_info.speed = 1. / self.mpicomm.bcast(np.mean(times) + 1e-6 if self.mpicomm.rank == 0 else None, root=0)
+
+    def block_params(self, params=None, nblocks=None, oversample_power=0, **kwargs):
+        from itertools import permutations, chain
+        if params is None: params = self.params.select(varied=True)
+        else: params = [self.params[param] for param in params]
+        blocks = []
+        # Using same algorithm as Cobaya
+        speeds = [calculator.runtime_info.speed for calculator in self.calculators]
+        if any(speed is None for speed in speeds) or kwargs:
+            self._set_speed(**kwargs)
+            speeds = [calculator.runtime_info.speed for calculator in self.calculators]
+        footprints = [tuple(param in calculator.runtime_info.full_params for calculator in self.calculators) for param in params]
+        unique_footprints = list(set(row for row in footprints))
+        param_blocks = [[p for ip, p in enumerate(params) if footprints[ip] == uf] for uf in unique_footprints]
+        param_block_sizes = [len(b) for b in param_blocks]
+
+        def sort_parameter_blocks(footprints, block_sizes, speeds, oversample_power=oversample_power):
+            footprints = np.array(footprints, dtype='i4')
+            block_sizes = np.array(block_sizes, dtype='i4')
+            costs = 1. / np.array(speeds, dtype='f8')
+            tri_lower = np.tri(len(block_sizes))
+
+            def get_cost_per_param_per_block(ordering):
+                return np.minimum(1, tri_lower.T.dot(footprints[ordering])).dot(costs)
+
+            if oversample_power >= 1:
+                orderings = [sort_parameter_blocks(footprints, block_sizes, speeds, oversample_power=1 - 1e-3)[0]]
+            else:
+                orderings = list(permutations(np.arange(len(block_sizes))))
+
+            permuted_costs_per_param_per_block = np.array([get_cost_per_param_per_block(list(o)) for o in orderings])
+            permuted_oversample_factors = (permuted_costs_per_param_per_block[..., 0] / permuted_costs_per_param_per_block)**oversample_power
+            total_costs = np.array([(block_sizes[list(o)] * permuted_oversample_factors[i]).dot(permuted_costs_per_param_per_block[i]) for i, o in enumerate(orderings)])
+            argmin = np.argmin(total_costs)
+            optimal_ordering = orderings[argmin]
+            costs = permuted_costs_per_param_per_block[argmin]
+            return optimal_ordering, costs, permuted_oversample_factors[argmin].astype('i4')
+
+        # a) Multiple blocks
+        if nblocks is None:
+            i_optimal_ordering, costs, oversample_factors = sort_parameter_blocks(footprints, param_block_sizes, speeds, oversample_power=oversample_power)
+            sorted_blocks = [param_blocks[i] for i in i_optimal_ordering]
+        # b) 2-block slow-fast separation
+        else:
+            if len(param_blocks) < nblocks:
+                raise ValueError('Cannot build up {:d} parameter blocks, as we only have {:d}'.format(nblocks, len(param_blocks)))
+            # First sort them optimally (w/o oversampling)
+            i_optimal_ordering, costs, oversample_factors = sort_parameter_blocks(footprints, param_block_sizes, speeds, oversample_power=0)
+            sorted_blocks = [param_blocks[i] for i in i_optimal_ordering]
+            sorted_footprints = np.array(unique_footprints)[list(i_optimal_ordering)]
+            # Then, find the split that maxes cost LOG-differences.
+            # Since costs are already "accumulated down",
+            # we need to subtract those below each one
+            costs_per_block = costs - np.append(costs[1:], 0)
+            # Split them so that "adding the next block to the slow ones" has max cost
+            log_differences = np.log(costs_per_block[:-1]) - np.log(costs_per_block[1:])
+            split_block_indices = np.insert(np.sort(np.argsort(log_differences)[-nblocks:]) + 1, 0, 0)
+            split_block_slices = zip(split_block_indices[:-1], split_block_indices[1:])
+            split_blocks = [list(chain(*sorted_blocks[low:up])) for low, up in split_block_slices]
+            split_footprints = np.clip(np.array([np.array(sorted_footprints[low:up]).sum(axis=0) for low, up in split_block_slices]), 0, 1)  # type: ignore
+            # Recalculate oversampling factor with 2 blocks
+            oversample_factors = sort_parameter_blocks([len(block) for block in split_blocks], speeds,
+                                                        split_footprints, oversample_power=oversample_power)[2]
+            # Finally, unfold `oversampling_factors` to have the right number of elements,
+            # taking into account that that of the fast blocks should be interpreted as a
+            # global one for all of them.
+            oversample_factors = np.concatenate([np.full(size, factor) for factor, size in zip(oversample_factors, np.diff(split_block_slices))])
+        return sorted_blocks, oversample_factors
 
 
 class LikelihoodPipeline(BasePipeline):
@@ -1185,6 +1234,9 @@ class DoConfig(SectionConfig):
             self['do'] = {self['do']: None}
 
     def run(self, pipeline):
+        from .samples import SourceConfig
+        values = SourceConfig(self['source']).choice(params=pipeline.params)
+        pipeline.run(**dict(zip(pipeline.params.names(), values)))
         for calculator in pipeline.calculators:
             for name, value in calculator.runtime_info.config.other_items():
                 if self['do'] is None or (name in self['do']) and (self['do'][name] is None or calculator.runtime_info.name in self['do'][name]):

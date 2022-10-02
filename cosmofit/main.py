@@ -109,8 +109,6 @@ def do_from_config(config, mpicomm=None):
         raise ConfigError('Provide pipeline')
     pipeline = BasePipeline(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
 
-    params = SourceConfig(config_do['source']).choice(params=pipeline.params)
-    pipeline.run(**params)
     config_do.run(pipeline)
 
 
@@ -147,6 +145,4 @@ def emulate_from_config(config, mpicomm=None):
         raise ConfigError('Provide pipeline')
     pipeline = BasePipeline(config['pipeline'], params=config.get('params', None), mpicomm=mpicomm)
 
-    params = SourceConfig(config_emulator['source']).choice(params=pipeline.params)
-    pipeline.run(**params)
     return config_emulator.run(pipeline)

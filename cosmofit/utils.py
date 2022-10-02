@@ -3,13 +3,16 @@
 import os
 import sys
 import time
+import psutil
 import logging
 import traceback
 import warnings
 import collections
+import importlib
 
 import numpy as np
 from numpy.linalg import LinAlgError
+import scipy as sp
 from mpytools import CurrentMPIComm
 
 try:
@@ -45,6 +48,14 @@ def mkdir(dirname):
         os.makedirs(dirname)  # MPI...
     except OSError:
         return
+
+
+def evaluate(value, type=None, locals=None):
+    if isinstance(value, str):
+        value = eval(value, {'np': np, 'sp': sp}, locals)
+    if type is not None:
+        value = type(value)
+    return value
 
 
 def setup_logging(level=logging.INFO, stream=sys.stdout, filename=None, filemode='w', **kwargs):
@@ -128,6 +139,58 @@ class BaseMetaClass(type):
             setattr(cls, 'log_{}'.format(level), make_logger(level))
 
 
+def serialize_class(self):
+    clsname = '.'.join([self.__module__, self.__class__.__name__])
+    try:
+        pythonpath = os.path.dirname(sys.modules[self.__module__].__file__)
+    except AttributeError:
+        pythonpath = None
+    return (clsname, pythonpath)
+
+
+def import_class(clsname, pythonpath=None, registry=None):
+    """
+    Import class from class name.
+
+    Parameters
+    ----------
+    clsname : string, type
+        Class name, as ``module.ClassName`` w.r.t. ``pythonpath``, or directly class type;
+        in this case, other arguments are ignored.
+
+    pythonpath : string, default=None
+        Optionally, path where to find package/module where class is defined.
+
+    registry : set, default=None
+        Optionally, a set of class types to look into.
+    """
+    if isinstance(clsname, type):
+        return clsname
+    tmp = clsname.rsplit('.', 1)
+    if len(tmp) == 1:
+        clsname = tmp[0]
+        if registry is None:
+            try:
+                return globals()[clsname]
+            except KeyError:
+                raise ImportError('Unknown class {}, provide e.g. pythonpath or module name as module_name.ClassName'.format(clsname))
+        allcls = []
+        for cls in registry:
+            if cls.__name__ == clsname: allcls.append(cls)
+        if len(allcls) == 1:
+            return allcls[0]
+        if len(allcls) > 1:
+            raise ImportError('Multiple classes are named {} in registry'.format(clsname))
+        raise ImportError('No calculator class {} found in registry'.format(clsname))
+    modname, clsname = tmp
+    if pythonpath is not None:
+        sys.path.insert(0, pythonpath)
+    else:
+        sys.path.append(os.path.dirname(__file__))
+    module = importlib.import_module(modname)
+    return getattr(module, clsname)
+
+
 class BaseClass(object, metaclass=BaseMetaClass):
     """
     Base class that implements :meth:`copy`.
@@ -153,12 +216,22 @@ class BaseClass(object, metaclass=BaseMetaClass):
     def save(self, filename):
         self.log_info('Saving {}.'.format(filename))
         mkdir(os.path.dirname(filename))
-        np.save(filename, self.__getstate__(), allow_pickle=True)
+        np.save(filename, {'__class__': serialize_class(self), **self.__getstate__()}, allow_pickle=True)
 
     @classmethod
-    def load(cls, filename):
-        cls.log_info('Loading {}.'.format(filename))
+    def load(cls, filename, fallback_class=None):
         state = np.load(filename, allow_pickle=True)[()]
+        if (cls is BaseClass or fallback_class is not None) and '__class__' in state:
+            cls = state['__class__']
+            try:
+                cls = import_class(*cls)
+            except ImportError as exc:
+                if fallback_class is not None:
+                    cls = fallback_class
+                else:
+                    raise ImportError('Could not import file {} as {}'.format(filename, cls)) from exc
+        cls.log_info('Loading {}.'.format(filename))
+        state.pop('__class__', None)
         new = cls.from_state(state)
         return new
 
@@ -537,3 +610,39 @@ def TaskManager(mpicomm=None, **kwargs):
     self = cls.__new__(cls)
     self.__init__(mpicomm=mpicomm, **kwargs)
     return self
+
+
+class Monitor(BaseClass):
+
+    def __init__(self, quantities=('time', 'mem'), pid=None):
+        self.proc = psutil.Process(os.getpid() if pid is None else pid)
+        self.quantities = list(quantities)
+        self._diffs = {quantity: 0. for quantity in self.quantities}
+        self._counter = 0
+        self.start()
+
+    def time(self):
+        return time.time()
+
+    def mem(self):
+        return self.proc.memory_info().rss / 1e6
+
+    def start(self):
+        self._start = {quantity: getattr(self, quantity)() for quantity in self.quantities}
+
+    def stop(self):
+        stop = {quantity: getattr(self, quantity)() for quantity in self.quantities}
+        self._counter += 1
+        self._diffs = {quantity: stop[quantity] - self._start[quantity] + diff for quantity, diff in self._diffs.items()}
+        self._start = stop
+
+    def get(self, quantity, average=True):
+        return self._diffs[quantity] / (self._counter if average else 1)
+
+    def __enter__(self):
+        """Enter context."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        """Exit context."""
+        self()

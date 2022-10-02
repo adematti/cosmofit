@@ -3,7 +3,7 @@ import numpy as np
 from scipy.stats import qmc
 from scipy.stats.qmc import Sobol, Halton, LatinHypercube
 
-from cosmofit.samples import ParameterValues
+from cosmofit.samples import Samples
 from cosmofit.parameter import ParameterArray
 from cosmofit.utils import BaseClass
 from .base import RegisteredSampler
@@ -42,16 +42,25 @@ def get_qmc_engine(engine):
 
 class QMCSampler(BaseClass, metaclass=RegisteredSampler):
 
-    def __init__(self, pipeline, samples=None, mpicomm=None, engine='rqrs', **kwargs):
+    def __init__(self, pipeline, samples=None, mpicomm=None, engine='rqrs', save_fn=None, **kwargs):
         if mpicomm is None:
             mpicomm = pipeline.mpicomm
+        self.pipeline = BaseClass.copy(pipeline)
         self.mpicomm = mpicomm
-        self.pipeline = pipeline
         self.varied_params = self.pipeline.params.select(varied=True, derived=False)
         self.engine = get_qmc_engine(engine)(d=len(self.varied_params), **kwargs)
         self.samples = None
         if self.mpicomm.rank == 0 and samples is not None:
-            self.samples = samples if isinstance(samples, ParameterValues) else ParameterValues.load(samples)
+            self.samples = samples if isinstance(samples, Samples) else Samples.load(samples)
+        self.save_fn = save_fn
+
+    @property
+    def mpicomm(self):
+        return self.pipeline.mpicomm
+
+    @mpicomm.setter
+    def mpicomm(self, mpicomm):
+        self.pipeline.mpicomm = mpicomm
 
     def run(self, niterations=300):
         lower, upper = [], []
@@ -66,11 +75,10 @@ class QMCSampler(BaseClass, metaclass=RegisteredSampler):
             nsamples = len(self.samples) if self.samples is not None else 0
             self.engine.fast_forward(nsamples)
             samples = qmc.scale(self.engine.random(n=niterations), lower, upper)
-            samples = ParameterValues(samples.T, params=self.varied_params)
-        mpicomm = self.pipeline.mpicomm
-        self.pipeline.mpicomm = self.mpicomm
+            samples = Samples(samples.T, params=self.varied_params)
+
         self.pipeline.mpirun(**(samples.to_dict() if self.mpicomm.rank == 0 else {}))
-        self.pipeline.mpicomm = mpicomm
+
         if self.mpicomm.rank == 0:
             for param in self.pipeline.params.select(fixed=True, derived=False):
                 samples.set(ParameterArray(np.full(samples.shape, param.value, dtype='f8'), param))
@@ -78,7 +86,9 @@ class QMCSampler(BaseClass, metaclass=RegisteredSampler):
             if self.samples is None:
                 self.samples = samples
             else:
-                self.samples = ParameterValues.concatenate(self.samples, samples)
+                self.samples = Samples.concatenate(self.samples, samples)
+            if self.save_fn is not None:
+                self.samples.save(save_fn)
         else:
             self.samples = None
 

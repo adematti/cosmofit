@@ -21,7 +21,7 @@ def test_base():
     emulator.save(fn)
     emulator.to_calculator().run()
 
-    emulator = BaseEmulator.load(fn)
+    emulator = BaseClass.load(fn)
     assert isinstance(emulator, pipeline.end_calculators[0].__class__)
     emulator.run()
 

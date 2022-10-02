@@ -1,3 +1,3 @@
-from .base import BaseEmulatorEngine, PointEmulatorEngine, BaseEmulator, EmulatorConfig
-from .taylor import TaylorEmulatorEngine
-#from .mlp import MLPEmulatorEngine
+from .base import BaseEmulator, PointEmulator, BaseEmulator, EmulatorConfig
+from .taylor import TaylorEmulator
+#from .mlp import MLPEmulator
