@@ -86,9 +86,9 @@ class PolychordSampler(BasePosteriorSampler):
                 if self.resume_derived is not None:
                     self.derived = [ParameterValues.concatenate([self.resume_derived[0], self.derived[0]]), {name: np.concatenate([self.resume_derived[1][name], self.derived[1][name]], axis=0) for name in self.resume_derived[1]}]
                 chain = self._set_derived(chain)
-                chain.save(self.save_fn[self._ichain])
                 self.resume_chain = chain[:-nlive]
-                chain[-nlive].save(prefix + '.state.npy')
+                self.resume_chain.save(self.save_fn[self._ichain])
+                chain[-nlive:].save(prefix + '.state.npy')
 
             self.resume_derived = self.derived
             self.derived = None
@@ -119,6 +119,6 @@ class PolychordSampler(BasePosteriorSampler):
                                       **kwargs)
         except TypeError as exc:
             raise ImportError('To use polychord in parallel, please use version at https://github.com/adematti/PolyChordLite')
-        # derived is different on each process
+
         self.derived = self.resume_derived
         return self.resume_chain

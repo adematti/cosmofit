@@ -64,6 +64,19 @@ class SamplerConfig(SectionConfig):
         return sampler
 
 
+def iterate(func, min_iterations=0, max_iterations=sys.maxsize, check_every=200, **kwargs):
+    count_iterations = 0
+    is_converged = False
+    while not is_converged:
+        niter = min(max_iterations - count_iterations, check_every)
+        count_iterations += niter
+        is_converged = func(niterations=niter, **kwargs)
+        if count_iterations < min_iterations:
+            is_converged = False
+        if count_iterations >= max_iterations:
+            is_converged = True
+
+
 class RegisteredSampler(type(BaseClass)):
 
     _registry = set()

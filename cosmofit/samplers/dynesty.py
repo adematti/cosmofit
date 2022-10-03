@@ -1,10 +1,11 @@
 import os
+import sys
 
 import numpy as np
 
 from cosmofit.samples import Chain
 from cosmofit.parameter import ParameterError
-from .base import BasePosteriorSampler, load_source, ParameterValues
+from .base import BasePosteriorSampler, load_source, ParameterValues, iterate
 
 
 class FakePool(object):
@@ -38,7 +39,7 @@ class DynestySampler(BasePosteriorSampler):
     def _prepare(self):
         self.resume = self.mpicomm.bcast(self.chains[0] is not None, root=0)
 
-    def _run_one(self, start, max_iterations=100000, **kwargs):
+    def _run_one(self, start, min_iterations=0, max_iterations=sys.maxsize, check_every=300, **kwargs):
         import dynesty
         from dynesty import utils
 
@@ -52,35 +53,47 @@ class DynestySampler(BasePosteriorSampler):
             else:
                 self.sampler = dynesty.NestedSampler(self.loglikelihood, self.prior_transform, ndim, nlive=self.nlive, pool=pool, use_pool=use_pool, **self.attrs)
 
+        self.resume_derived, self.resume_chain = None, None
         if self.resume:
             sampler = utils.restore_sampler(self.state_fn[self._ichain])
             del sampler.loglikelihood, sampler.prior_transform, sampler.pool, sampler.M
             if type(sampler) is not type(self.sampler):
                 raise ValueError('Previous run used {}, not {}.'.format(type(sampler), type(self.sampler)))
             self.sampler.__dict__.update(sampler.__dict__)
+            source = load_source(self.save_fn[self._ichain])[0]
+            points = {}
+            for param in self.varied_params:
+                points[param.name] = source.pop(param)
+            self.resume_derived = [source.select(derived=True), points]
 
-        if self.mode == 'dynamic':
-            self.sampler.run_nested(nlive_init=self.nlive, maxiter=max_iterations, **kwargs)
-        else:
-            self.sampler.run_nested(maxiter=max_iterations, **kwargs)
+        def _run_one_batch(niterations):
+            it = self.sampler.it
+            if self.mode == 'dynamic':
+                self.sampler.run_nested(nlive_init=self.nlive, maxiter=niterations, **kwargs)
+            else:
+                self.sampler.run_nested(maxiter=niterations, **kwargs)
+            is_converged = self.sampler.it - it < niterations
+            results = self.sampler.results
+            chain = [results['samples'][..., iparam] for iparam, param in enumerate(self.varied_params)]
+            logprior = sum(param.prior(value) for param, value in zip(self.varied_params, chain))
+            chain.append(logprior)
+            chain.append(results['logl'] + logprior)
+            chain.append(results['logwt'])
+            chain.append(np.exp(results.logwt - results.logz[-1]))
+            chain = Chain(chain, params=self.varied_params + ['logprior', 'logposterior', 'logweight', 'aweight'])
 
-        results = self.sampler.results
-        chain = [results['samples'][..., iparam] for iparam, param in enumerate(self.varied_params)]
-        logprior = sum(param.prior(value) for param, value in zip(self.varied_params, chain))
-        chain.append(logprior)
-        chain.append(results['logl'] + logprior)
-        chain.append(results['logwt'])
-        chain.append(np.exp(results.logwt - results.logz[-1]))
-        if self.mpicomm.rank == 0:
-            utils.save_sampler(self.sampler, self.state_fn[self._ichain])
-            if self.resume:
-                derived = load_source(self.save_fn[self._ichain])[0]
-                points = {}
-                for param in self.varied_params:
-                    points[param.name] = derived.pop(param)
-                derived = derived.select(derived=True)
-                if self.derived is None:
-                    self.derived = [derived, points]
-                else:
-                    self.derived = [ParameterValues.concatenate([self.derived[0], derived]), {name: np.concatenate([self.derived[1][name], points[name]], axis=0) for name in points}]
-        return Chain(chain, params=self.varied_params + ['logprior', 'logposterior', 'logweight', 'aweight'])
+            if self.mpicomm.rank == 0:
+                if self.resume_derived is not None:
+                    self.derived = [ParameterValues.concatenate([self.resume_derived[0], self.derived[0]]), {name: np.concatenate([self.resume_derived[1][name], self.derived[1][name]], axis=0) for name in self.resume_derived[1]}]
+                chain = self._set_derived(chain)
+                self.resume_chain = chain = self._set_derived(chain)
+                self.resume_chain.save(self.save_fn[self._ichain])
+                utils.save_sampler(self.sampler, self.state_fn[self._ichain])
+
+            self.resume_derived = self.derived
+            self.derived = None
+
+        iterate(_run_one_batch, min_iterations=min_iterations, max_iterations=max_iterations, check_every=check_every)
+
+        self.derived = self.resume_derived
+        return self.resume_chain

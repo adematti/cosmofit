@@ -118,15 +118,6 @@ sample:
   save: f'{output_dir}/chain_*.npy'
 
 sample:
-  class: cosmofit.samplers.DynestySampler
-  init:
-    chains: 1 #f'{output_dir}/chain_0.npy'
-    mode: static
-  run:
-    dlogz: 1
-  save: f'{output_dir}/chain_*.npy'
-
-sample:
   class: cosmofit.samplers.PocoMCSampler
   init:
     #nwalkers: 40
@@ -150,6 +141,15 @@ sample:
   init:
     chains: f'{output_dir}/chain_0.npy'
   run:
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.DynestySampler
+  init:
+    chains: 1
+    mode: static
+  run:
+    dlogz: 1
   save: f'{output_dir}/chain_*.npy'
 
 profile:
