@@ -127,13 +127,6 @@ sample:
   save: f'{output_dir}/chain_*.npy'
 
 sample:
-  class: cosmofit.samplers.PolychordSampler
-  init:
-    chains: 1 #f'{output_dir}/chain_0.npy'
-  run:
-  save: f'{output_dir}/chain_*.npy'
-
-sample:
   class: cosmofit.samplers.PocoMCSampler
   init:
     #nwalkers: 40
@@ -150,6 +143,13 @@ sample:
     chains: 1 #f'{output_dir}/chain_0.npy'
   run:
   check: True
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.PolychordSampler
+  init:
+    chains: f'{output_dir}/chain_0.npy'
+  run:
   save: f'{output_dir}/chain_*.npy'
 
 profile:

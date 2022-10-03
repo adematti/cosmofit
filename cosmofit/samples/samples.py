@@ -180,10 +180,12 @@ class ParameterValues(BaseParameterCollection):
         if isinstance(name, (Parameter, str)):
             return self.get(name)
         new = self.copy()
+        params = self.params()
         try:
             new.data = [column[name] for column in self.data]
         except IndexError as exc:
             raise IndexError('Unrecognized indices {}'.format(name)) from exc
+        new.data = [ParameterArray(array, param=param) for array, param in zip(new.data, params)]
         return new
 
     def __repr__(self):

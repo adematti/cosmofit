@@ -13,6 +13,7 @@ Example notebooks are provided in directory nb/.
 
 - reparametrization (in process)
 - dimensionality reduction (in process)
+- benefit (a bit) from MPI in MCMCSampler
 - jax.jit
 - use Jacobian, if available, in Taylor emulator?
 - finish documentation

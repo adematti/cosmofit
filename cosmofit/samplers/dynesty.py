@@ -27,7 +27,7 @@ class DynestySampler(BasePosteriorSampler):
         super(DynestySampler, self).__init__(*args, **kwargs)
         if self.save_fn is None:
             raise ValueError('save_fn must be provided to save dynesty state')
-        self.state_fn = [os.path.splitext(fn)[0] + 'dynesty.state' for fn in self.save_fn]
+        self.state_fn = [os.path.splitext(fn)[0] + '.dynesty.state' for fn in self.save_fn]
 
     def prior_transform(self, values):
         toret = np.empty_like(values)

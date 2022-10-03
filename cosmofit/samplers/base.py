@@ -216,11 +216,21 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
 
     @property
     def mpicomm(self):
-        return self.likelihood.mpicomm
+        return self._mpicomm
 
     @mpicomm.setter
     def mpicomm(self, mpicomm):
-        self.likelihood.mpicomm = mpicomm
+        self._mpicomm = self.likelihood.mpicomm = mpicomm
+
+    def _set_derived(self, chain):
+        for param in self.likelihood.params.select(fixed=True, derived=False):
+            chain.set(ParameterArray(np.full(chain.shape, param.value, dtype='f8'), param))
+        values = ParameterValues(self.derived[1])
+        indices_in_chain, indices = values.match(chain, params=self.varied_params)
+        assert indices_in_chain[0].size == chain.size
+        for array in self.derived[0]:
+            chain.set(array[indices].reshape(chain.shape + array.shape[1:]), output=True)
+        return chain
 
     def run(self, **kwargs):
         #self.derived = None
@@ -241,14 +251,8 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
                 self._ichain = ichain
                 chain = self._run_one(start[ichain], **kwargs)
                 if self.mpicomm.rank == 0:
-                    for param in self.likelihood.params.select(fixed=True, derived=False):
-                        chain.set(ParameterArray(np.full(chain.shape, param.value, dtype='f8'), param))
-                    values = ParameterValues(self.derived[1])
-                    indices_in_chain, indices = values.match(chain, params=self.varied_params)
-                    assert indices_in_chain[0].size == chain.size
-                    ncall = (values.size, chain.size)
-                    for array in self.derived[0]:
-                        chain.set(array[indices].reshape(chain.shape + array.shape[1:]), output=True)
+                    ncall = (self.derived[0]['loglikelihood'].size, chain.size)
+                    chain = self._set_derived(chain)
                 else:
                     chain = ncall = None
                 chains[ichain] = chain

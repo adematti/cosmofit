@@ -23,7 +23,7 @@ class PocoMCSampler(BasePosteriorSampler):
                                       output_dir=None, output_label=None)
         if self.save_fn is None:
             raise ValueError('save_fn must be provided to save pocomc state')
-        self.state_fn = [os.path.splitext(fn)[0] + 'pocomc.state' for fn in self.save_fn]
+        self.state_fn = [os.path.splitext(fn)[0] + '.pocomc.state' for fn in self.save_fn]
 
     def logprior(self, params, bounds=None):
         return super(PocoMCSampler, self).logprior(params)

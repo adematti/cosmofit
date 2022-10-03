@@ -5,7 +5,7 @@ import itertools
 import numpy as np
 from mpi4py import MPI
 
-from cosmofit.samples import Chain, load_source
+from cosmofit.samples import Chain, ParameterValues, load_source
 from cosmofit import utils
 from .base import BasePosteriorSampler
 
@@ -71,13 +71,44 @@ class PolychordSampler(BasePosteriorSampler):
             return (max(self.logposterior(values), self.settings.logzero), [])
 
         def dumper(live, dead, logweights, logZ, logZerr):
-            pass
+            # Periodically save samples
+            nlive = len(live)
+            samples = list(np.loadtxt(prefix + '.txt', unpack=True))
+            aweight, logposterior = [np.concatenate([sample, np.full(nlive, value, dtype='f8')]) for sample, value in zip(samples[:2], [0., np.nan])]
+            points = [np.concatenate([sample, live[:, iparam]]) for iparam, sample in enumerate(samples[2: 2 + ndim])]
+            logposterior[logposterior <= self.settings.logzero] = -np.inf
+            chain = Chain(points + [aweight, logposterior], params=self.varied_params + ['aweight', 'logposterior'])
+            # derived is different on each process
+            derived = self.mpicomm.gather(self.derived, root=0)
+            if self.mpicomm.rank == 0:
+                self.derived = [ParameterValues.concatenate([dd[0] for dd in derived]),
+                                {name: np.concatenate([dd[1][name] for dd in derived], axis=0) for name in derived[0][1]}]
+                if self.resume_derived is not None:
+                    self.derived = [ParameterValues.concatenate([self.resume_derived[0], self.derived[0]]), {name: np.concatenate([self.resume_derived[1][name], self.derived[1][name]], axis=0) for name in self.resume_derived[1]}]
+                chain = self._set_derived(chain)
+                chain.save(self.save_fn[self._ichain])
+                self.resume_chain = chain[:-nlive]
+                chain[-nlive].save(prefix + '.state.npy')
+
+            self.resume_derived = self.derived
+            self.derived = None
 
         self.likelihood.mpicomm = MPI.COMM_SELF
         self.settings.base_dir = self.base_dirs[self._ichain]
         self.settings.file_root = self.file_roots[self._ichain]
+        prefix = os.path.join(self.settings.base_dir, self.settings.file_root)
         if precision_criterion is not None:
             self.settings.precision_criterion = float(precision_criterion)
+
+        self.resume_derived, self.resume_chain = None, None
+        if self.settings.read_resume:
+            source = load_source([self.save_fn[self._ichain], prefix + '.state.npy'])
+            source = source[0].concatenate(source)
+            points = {}
+            for param in self.varied_params:
+                points[param.name] = source.pop(param)
+            self.resume_derived = [source.select(derived=True), points]
+
         ndim = len(self.varied_params)
         kwargs = {}
         if self.mpicomm is not MPI.COMM_WORLD:
@@ -89,25 +120,5 @@ class PolychordSampler(BasePosteriorSampler):
         except TypeError as exc:
             raise ImportError('To use polychord in parallel, please use version at https://github.com/adematti/PolyChordLite')
         # derived is different on each process
-        derived = self.mpicomm.gather(self.derived, root=0)
-        chain = None
-        if self.mpicomm.rank == 0:
-            self.derived = [ParameterValues.concatenate([dd[0] for dd in derived]),
-                            {name: np.concatenate([dd[1][0][name] for dd in derived], axis=0) for name in derived[0][1]}]
-            prefix = os.path.join(self.settings.base_dir, self.settings.file_root)
-            samples = np.atleast_2d(np.loadtxt(prefix + '.txt'), unpack=True)
-            aweight, logposterior = samples[:2]
-            logposterior[logposterior <= self.settings.logzero] = -np.inf
-            if self.resume:
-                derived = load_source(self.save_fn[self._ichain])[0]
-                points = {}
-                for param in self.varied_params:
-                    points[param.name] = derived.pop(param)
-                derived = derived.select(derived=True)
-                if self.derived is None:
-                    self.derived = [derived, points]
-                else:
-                    self.derived = [ParameterValues.concatenate([self.derived[0], derived]), {name: np.concatenate([self.derived[1][name], points[name]], axis=0) for name in points}]
-            chain = Chain(samples[2: 2 + ndim] + [aweight, logposterior], params=self.varied_params + ['aweight', 'logposterior'])
-
-        return chain
+        self.derived = self.resume_derived
+        return self.resume_chain
