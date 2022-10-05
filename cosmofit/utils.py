@@ -617,9 +617,7 @@ class Monitor(BaseClass):
     def __init__(self, quantities=('time', 'mem'), pid=None):
         self.proc = psutil.Process(os.getpid() if pid is None else pid)
         self.quantities = list(quantities)
-        self._diffs = {quantity: 0. for quantity in self.quantities}
-        self._counter = 0
-        self.start()
+        self.reset()
 
     def time(self):
         return time.time()
@@ -636,8 +634,21 @@ class Monitor(BaseClass):
         self._diffs = {quantity: stop[quantity] - self._start[quantity] + diff for quantity, diff in self._diffs.items()}
         self._start = stop
 
+    @property
+    def counter(self):
+        return self._counter
+
     def get(self, quantity, average=True):
-        return self._diffs[quantity] / (self._counter if average else 1)
+        if average:
+            if self._counter == 0:
+                return np.nan
+            return self._diffs[quantity] / self._counter
+        return self._diffs[quantity]
+
+    def reset(self):
+        self._diffs = {quantity: 0. for quantity in self.quantities}
+        self._counter = 0
+        self.start()
 
     def __enter__(self):
         """Enter context."""
@@ -646,3 +657,38 @@ class Monitor(BaseClass):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         """Exit context."""
         self()
+
+
+# Taken from https://stackoverflow.com/questions/44313620/converting-to-and-from-numpys-np-random-randomstate-and-pythons-random-random
+PY_VERSION = 3
+NP_VERSION = 'MT19937'
+
+def numpy_to_python_random_state(npstate):
+    """
+    Convert state of a NumPy RandomState object to a state
+    that can be used by Python's Random.
+    """
+    version, keys, pos, has_gauss, cached_gaussian = npstate
+    pystate = (
+        PY_VERSION,
+        tuple(map(int, keys)) + (int(pos),),
+        cached_gaussian if has_gauss else None,
+    )
+    return pystate
+
+
+def python_to_numpy_random_state(pystate):
+    """
+    Convert state of a Python Random object to state usable
+    by NumPy RandomState.
+    """
+    version, (*keys, pos), cached_gaussian = pystate
+    has_gauss = cached_gaussian is not None
+    npstate = (
+        NP_VERSION,
+        keys,
+        pos,
+        has_gauss,
+        cached_gaussian if has_gauss else 0.0
+    )
+    return npstate

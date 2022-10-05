@@ -1,12 +1,13 @@
 import itertools
+import functools
 
 import numpy as np
 from numpy import linalg
 from numpy.linalg import LinAlgError
 from scipy.stats import special_ortho_group
 
-from cosmofit.samples import Chain, load_source
-from .base import BasePosteriorSampler
+from cosmofit.samples import Chain, SourceConfig
+from .base import BaseBatchPosteriorSampler
 
 
 class State(object):
@@ -23,7 +24,7 @@ class MHSampler(object):
 
     """We follow emcee interface."""
 
-    def __init__(self, ndim, log_prob_fn, propose, nsteps_drag=None, max_tries=1000, rng=None):
+    def __init__(self, ndim, log_prob_fn, propose, nsteps_drag=None, max_tries=1000, vectorize=1, rng=None):
         self.ndim = ndim
         self.log_prob_fn = log_prob_fn
         self.propose = propose
@@ -36,55 +37,164 @@ class MHSampler(object):
                 raise ValueError('With dragging give list of two propose methods, slow and fast')
         self.max_tries = int(max_tries)
         self.rng = rng or np.random.RandomState()
+        self.vectorize = int(vectorize)
         self.states = []
 
     def sample(self, start, iterations=1, thin_by=1):
         self.state = State(start, self.log_prob_fn(start), 1.)
-        for i in range(iterations):
+        for iter in range(iterations):
             accept = False
             for itry in range(self.max_tries):
                 coords = self.state.coords.copy()
                 if self.nsteps_drag:  # dragging
-                    current_coords_start = coords
-                    sum_log_prob_start = current_log_prob_start = self.state.log_prob
-                    current_coords_end = current_coords_start + self.propose[0]()  # slow
-                    sum_log_prob_end = current_log_prob_end = self.log_prob_fn(trial_end)
-                    if current_log_prob_end == -np.inf:
-                        self.state.weight += 1
+                    current_coords_start = np.repeat(coords[:, None], self.vectorize, axis=0)
+                    current_log_prob_start = self.state.log_prob
+                    current_coords_end = current_coords_start + self.propose[0](self.vectorize)  # slow
+                    current_log_prob_end = self.log_prob_fn(trial_end)
+                    mask_current = current_log_prob_end > -np.inf
+                    if not mask_current.any():
+                        self.state.weight += mask_current.size
                         continue
-                    n_average = 1 + self.nsteps_drag
-                    for i in range(1, n_average):
-                        proposal_coords_start = current_coords_start + self.propose[1]()  # fast
+                    sum_log_prob_start = current_log_prob_start.copy()
+                    sum_log_prob_end = current_log_prob_end.copy()
+                    naverage = 1 + self.nsteps_drag
+                    for istep in range(1, naverage):
+                        proposal_coords_start = current_coords_start + self.propose[1](self.vectorize)  # fast
                         proposal_log_prob_start = self.log_prob_fn(proposal_coords_start)
-                        if proposal_log_prob_start != -np.inf:
-                            proposal_coords_end = current_coords_end + self.propose[1]()  # fast
+                        mask_proposal = mask_current & (proposal_log_prob_start > -np.inf)
+                        if mask_proposal.any():
+                            proposal_coords_end = current_coords_end + self.propose[1](self.vectorize)  # fast
                             proposal_log_prob_end = self.log_prob_fn(proposal_coords_end)
-                            if log_prob_end != -np.inf:
+                            mask_proposal &= proposal_log_prob_end > -np.inf
+                            if mask_proposal.any():
                                 # Create the interpolated probability and perform a Metropolis test
-                                frac = i_step / n_average
+                                frac = istep / naverage
                                 proposal_log_prob_interp = (1 - frac) * proposal_log_prob_start + frac * proposal_log_prob_end
                                 current_log_prob_interp = (1 - frac) * current_log_prob_start + frac * current_log_prob_end
-                                if self._mh_accept(proposal_log_prob_interp, current_log_prob_interp):
-                                    # The dragging step was accepted, do the drag
-                                    current_coords_start = proposal_coords_start
-                                    current_log_prob_start = proposal_log_prob_start
-                                    current_coords_end = proposal_coords_end
-                                    current_log_prob_end = proposal_log_prob_end
+                                mask_accept = mask_proposal & [self._mh_accept(plogprob, clogprob) for plogprob, clogprob in zip(proposal_log_prob_interp, current_log_prob_interp)]
+                                # The dragging step was accepted, do the drag
+                                current_coords_start[mask_accept] = proposal_coords_start[mask_accept]
+                                current_log_prob_start[mask_accept] = proposal_log_prob_start[mask_accept]
+                                current_coords_end[mask_accept] = proposal_coords_end[mask_accept]
+                                current_log_prob_end[mask_accept] = proposal_log_prob_end[mask_accept]
                         sum_log_prob_start += current_log_prob_start
                         sum_log_prob_end += current_log_prob_end
-                    accept = self._mh_accept(sum_log_prob_end / n_average, sum_log_prob_start / n_average)
-                    coords, log_prob = current_coords_end, current_log_prob_end
+                    mh_proposal_log_prob, mh_current_log_prob = sum_log_prob_end / naverage, sum_log_prob_start / naverage
+                    proposal_coords, proposal_log_prob = current_coords_end, current_log_prob_end
                 else:  # standard MH
-                    coords += self.propose()
-                    log_prob = self.log_prob_fn(coords)
-                    accept = self._mh_accept(log_prob, self.state.log_prob)
+                    proposal_coords = coords + self.propose(size=self.vectorize)
+                    mh_current_log_prob = np.full(self.vectorize, self.state.log_prob, dtype='f8')
+                    mh_proposal_log_prob = proposal_log_prob = self.log_prob_fn(proposal_coords)
+                for i in range(self.vectorize):
+                    accept = self._mh_accept(mh_proposal_log_prob[i], mh_current_log_prob[i])
+                    if accept:
+                        if iter % thin_by == 0:
+                            self.states.append(self.state)
+                        self.state = State(proposal_coords[i], proposal_log_prob[i], 1.)
+                        break
+                    self.state.weight += 1
+            if not accept:
+                raise ValueError('Could not find finite log posterior after {:d} tries'.format(self.max_tries))
+            yield self.state
+
+    def _mh_accept(self, log_prob_trial, log_prob_current):
+        if log_prob_trial == -np.inf:
+            return False
+        if log_prob_trial > log_prob_current:
+            return True
+        return self.rng.standard_exponential() > (log_prob_current - log_prob_trial)
+
+    def get_chain(self):
+        return np.array([state.coords for state in self.states])
+
+    def get_weight(self):
+        return np.array([state.weight for state in self.states])
+
+    def get_log_prob(self):
+        return np.array([state.log_prob for state in self.states])
+
+    def get_acceptance_rate(self):
+        return len(states) / self.get_weight().sum()
+
+    def reset(self):
+        self.states = []
+
+
+class MHSampler(object):
+
+    """We follow emcee interface."""
+
+    def __init__(self, ndim, log_prob_fn, propose, nsteps_drag=None, max_tries=1000, vectorize=1, rng=None):
+        self.ndim = ndim
+        self.log_prob_fn = log_prob_fn
+        self.propose = propose
+        self.nsteps_drag = nsteps_drag
+        if nsteps_drag is not None:
+            self.nsteps_drag = int(nsteps_drag)
+            if self.nsteps_drag < 2:
+                raise ValueError('With dragging nsteps_drag must be >= 2')
+            if len(self.propose) != 2:
+                raise ValueError('With dragging give list of two propose methods, slow and fast')
+        self.max_tries = int(max_tries)
+        self.rng = rng or np.random.RandomState()
+        self.vectorize = int(vectorize)
+        self.states = []
+
+    def sample(self, start, iterations=1, thin_by=1):
+        self.state = State(start, self.log_prob_fn(start), 1.)
+        for iter in range(iterations + 1):  # we skip start
+            accept = False
+            for itry in range(self.max_tries):
+                if self.nsteps_drag:  # dragging
+                    current_coords_start = np.repeat(self.state.coords[None, :], self.vectorize, axis=0)
+                    current_log_prob_start = np.repeat(self.state.log_prob, self.vectorize, axis=0)
+                    current_coords_end = current_coords_start + self.propose[0](self.vectorize)  # slow
+                    current_log_prob_end = self.log_prob_fn(current_coords_end)
+                    mask_current = current_log_prob_end > -np.inf
+                    if not mask_current.any():
+                        self.state.weight += mask_current.size
+                        continue
+                    sum_log_prob_start = current_log_prob_start.copy()
+                    sum_log_prob_end = current_log_prob_end.copy()
+                    naverage = 1 + self.nsteps_drag
+                    for istep in range(1, naverage):
+                        proposal_coords_start = current_coords_start + self.propose[1](self.vectorize)  # fast
+                        proposal_log_prob_start = self.log_prob_fn(proposal_coords_start)
+                        mask_proposal = mask_current & (proposal_log_prob_start > -np.inf)
+                        if mask_proposal.any():
+                            proposal_coords_end = current_coords_end + self.propose[1](self.vectorize)  # fast
+                            proposal_log_prob_end = self.log_prob_fn(proposal_coords_end)
+                            mask_proposal &= proposal_log_prob_end > -np.inf
+                            if mask_proposal.any():
+                                # Create the interpolated probability and perform a Metropolis test
+                                frac = istep / naverage
+                                proposal_log_prob_interp = (1 - frac) * proposal_log_prob_start + frac * proposal_log_prob_end
+                                current_log_prob_interp = (1 - frac) * current_log_prob_start + frac * current_log_prob_end
+                                mask_accept = mask_proposal & np.array([self._mh_accept(plogprob, clogprob) for plogprob, clogprob in zip(proposal_log_prob_interp, current_log_prob_interp)])
+                                # The dragging step was accepted, do the drag
+                                current_coords_start[mask_accept] = proposal_coords_start[mask_accept]
+                                current_log_prob_start[mask_accept] = proposal_log_prob_start[mask_accept]
+                                current_coords_end[mask_accept] = proposal_coords_end[mask_accept]
+                                current_log_prob_end[mask_accept] = proposal_log_prob_end[mask_accept]
+                        sum_log_prob_start += current_log_prob_start
+                        sum_log_prob_end += current_log_prob_end
+                    mh_proposal_log_prob, mh_current_log_prob = sum_log_prob_end / naverage, sum_log_prob_start / naverage
+                    proposal_coords, proposal_log_prob = current_coords_end, current_log_prob_end
+                else:  # standard MH
+                    proposal_coords = self.state.coords + self.propose(size=self.vectorize)
+                    mh_current_log_prob = np.full(self.vectorize, self.state.log_prob, dtype='f8')
+                    mh_proposal_log_prob = proposal_log_prob = self.log_prob_fn(proposal_coords)
+                for i in range(self.vectorize):
+                    accept = self._mh_accept(mh_proposal_log_prob[i], mh_current_log_prob[i])
+                    if accept:
+                        break
+                    else:
+                        self.state.weight += 1
                 if accept:
-                    if i % thin_by == 0:
+                    if iter > 0 and iter % thin_by == 0:
                         self.states.append(self.state)
-                    self.state = State(coords, log_prob, 1.)
+                    self.state = State(proposal_coords[i], proposal_log_prob[i], 1.)
                     break
-                else:
-                     self.state.weight += 1
             if not accept:
                 raise ValueError('Could not find finite log posterior after {:d} tries'.format(self.max_tries))
             yield self.state
@@ -165,6 +275,22 @@ class SOSampler(IndexCycler):
         return np.sqrt(self.rng.chisquare(min(self.ndim, 2)))
 
 
+def vectorize(func):
+
+    @functools.wraps(func)
+    def wrapper(self, size=None, **kwargs):
+        if size is None:
+            return func(self, **kwargs)
+        shape = size
+        if np.ndim(size) == 0:
+            shape = (size, )
+        size = np.prod(size)
+        tmp = [func(self, **kwargs) for i in range(size)]
+        return np.array(tmp).reshape(shape + tmp[0].shape)
+
+    return wrapper
+
+
 class BlockProposer(object):
 
     def __init__(self, blocks, oversample_factors=None,
@@ -232,6 +358,7 @@ class BlockProposer(object):
     def ndim(self):
         return len(self.param_block_indices)
 
+    @vectorize
     def __call__(self, params=None):
         current_iblock = self.param_block_indices[self.param_cycler.next()]
         if current_iblock <= self.last_slow_block_index:
@@ -240,11 +367,13 @@ class BlockProposer(object):
             self.nsamples_fast += 1
         return self._get_block_proposal(current_iblock, params)
 
+    @vectorize
     def slow(self, params=None):
         current_iblock_slow = self.param_block_indices[self.param_cycler_slow.next()]
         self.nsamples_slow += 1
-        return self.get_block_proposal(current_iblock_slow, params)
+        return self._get_block_proposal(current_iblock_slow, params)
 
+    @vectorize
     def fast(self, params=None):
         current_iblock_fast = self.param_block_indices[self.param_cycler_slow.ndim + self.param_cycler_fast.next()]
         self.nsamples_fast += 1
@@ -291,12 +420,12 @@ def _format_blocks(blocks, params):
     return [b[i] for i in argsort], [oversample_factors[i] for i in argsort]
 
 
-class MCMCSampler(BasePosteriorSampler):
+class MCMCSampler(BaseBatchPosteriorSampler):
 
-    def __init__(self, *args, blocks=None, covariance=None, proposal_scale=2.4, learn=True, drag=False, **kwargs):
+    def __init__(self, *args, blocks=None, oversample_power=0.4, covariance=None, proposal_scale=2.4, learn=True, drag=False, **kwargs):
         super(MCMCSampler, self).__init__(*args, **kwargs)
         if blocks is None:
-            blocks, oversample_factors = self.likelihood.block_params(params=self.varied_params, nblocks=2 if drag else None)
+            blocks, oversample_factors = self.likelihood.block_params(params=self.varied_params, nblocks=2 if drag else None, oversample_power=oversample_power)
         else:
             blocks, oversample_factors = _format_blocks(blocks, self.varied_params)
         last_slow_block_index = nsteps_drag = None
@@ -309,16 +438,17 @@ class MCMCSampler(BasePosteriorSampler):
                 drag = False
                 if self.mpicomm.rank == 0:
                     self.log_warning('Dragging disabled: speed ratios between blocks < 2.')
-            for first_fast_block_index, speed in enumerate(oversample_factors):
-                if speed != 1: break
-            last_slow_block_index = first_fast_block_index - 1
-            n_slow = sum(len(b) for b in blocks[:first_fast_block_index])
-            n_fast = len(self.varied_params) - n_slow
-            nsteps_drag = int(oversample_factors[first_fast_block_index] * n_fast / n_slow + 0.5)
-            if self.mpicomm.rank == 0:
-                self.log_info('Dragging:')
-                self.log_info('1 step: {}'.format(blocks[:first_fast_block_index]))
-                self.log_info('{:d} steps: {}'.format(nsteps_drag, blocks[first_fast_block_index:]))
+            if drag:
+                for first_fast_block_index, speed in enumerate(oversample_factors):
+                    if speed != 1: break
+                last_slow_block_index = first_fast_block_index - 1
+                n_slow = sum(len(b) for b in blocks[:first_fast_block_index])
+                n_fast = len(self.varied_params) - n_slow
+                nsteps_drag = int(oversample_factors[first_fast_block_index] * n_fast / n_slow + 0.5)
+                if self.mpicomm.rank == 0:
+                    self.log_info('Dragging:')
+                    self.log_info('1 step: {}'.format(blocks[:first_fast_block_index]))
+                    self.log_info('{:d} steps: {}'.format(nsteps_drag, blocks[first_fast_block_index:]))
         elif np.any(oversample_factors > 1):
             if self.mpicomm.rank == 0:
                 self.log_info('Oversampling with factors:')
@@ -334,38 +464,55 @@ class MCMCSampler(BasePosteriorSampler):
             self.learn = True
             self.learn_check = dict(learn)
             burnin = self.learn_check['burnin'] = self.learn_check.get('burnin', burnin)
-        covariance = load_source(covariance, cov=True, params=self.varied_params, burnin=burnin)
+        if isinstance(covariance, dict):
+            covariance['burnin'] = covariance.get('burnin', burnin)
+        else:
+            covariance = {'source': covariance, 'burnin': burnin}
+        covariance = SourceConfig(covariance).cov(params=self.varied_params)
         self.proposer.set_covariance(covariance)
         self.learn_diagnostics = {}
         propose = [self.proposer.slow, self.proposer.fast] if drag else self.proposer
         self.sampler = MHSampler(len(self.varied_params), self.logposterior, propose=propose, nsteps_drag=nsteps_drag, max_tries=self.max_tries, rng=self.rng)
 
+    def _set_rng(self, *args, **kwargs):
+        super(MCMCSampler, self)._set_rng(*args, **kwargs)
+        for name in ['proposer', 'sampler']:
+            if hasattr(self, name):
+                getattr(self, name).rng = self.rng
+
     def _prepare(self):
         covariance = None
-        if self.learn and self.mpicomm.bcast(self.chains[0] is not None, root=0):
+        if self.learn and self.mpicomm.bcast(all(chain is not None for chain in self.chains), root=0):
             learn = self.learn_check is None
             burnin = 0.5
             if not learn:
-                burnin = self.learn_check.get('burnin', burnin)
+                burnin = self.learn_check['burnin']
                 learn = self.check(**self.learn_check, diagnostics=self.learn_diagnostics, quiet=True)
             if learn and self.mpicomm.rank == 0:
                 chain = Chain.concatenate([chain.remove_burnin(burnin) for chain in self.chains])
-                covariance = chain.cov(params=self.varied_params)
+                if chain.size > 1:
+                    covariance = chain.cov(params=self.varied_params)
         covariance = self.mpicomm.bcast(covariance, root=0)
         if covariance is not None:
             try:
                 self.proposer.set_covariance(covariance)
             except LinAlgError:
-                self.log_info('New proposal covariance is ill-conditioned, skipping update.')
+                if self.mpicomm.rank == 0:
+                    self.log_info('New proposal covariance is ill-conditioned, skipping update.')
             else:
-                self.log_info('Updating proposal covariance.')
+                if self.mpicomm.rank == 0:
+                    self.log_info('Updating proposal covariance.')
 
     def _run_one(self, start, niterations=300, thin_by=1):
+        self.sampler.vectorize = self.mpicomm.size
+        self.sampler.mpicomm = self.mpicomm
         if thin_by == 'auto':
             thin_by = int(sum(b * s for b, s in zip(self.proposer.blocks, self.proposer.oversample_factors)) / len(self.varied_params))
         for _ in self.sampler.sample(start=np.ravel(start), iterations=niterations, thin_by=thin_by):
             pass
         chain = self.sampler.get_chain()
-        data = [chain[..., iparam] for iparam, param in enumerate(self.varied_params)] + [self.sampler.get_log_prob()]
         self.sampler.reset()
-        return Chain(data=data, params=self.varied_params + ['logposterior'])
+        if chain.size:
+            data = [chain[..., iparam] for iparam, param in enumerate(self.varied_params)] + [self.sampler.get_log_prob()]
+            return Chain(data=data, params=self.varied_params + ['logposterior'])
+        return None

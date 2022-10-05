@@ -1,7 +1,7 @@
 pipeline:
   LRG:
     like:
-      class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
+      class: cosmofit.likelihoods.clustering.PowerSpectrumMultipolesLikelihood
       init:
         data: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/AbacusSummit/CubicBox/LRG/Pk/Pre/jmena/nmesh_512/pypower_format/Pk_AbacusSummit_base_*.npy'
         covariance: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/EZmock/CubicBox/LRG/Pk/jmena/nmesh_512/pypower_format/Pk_EZmock_B2000G512Z0.8N8015724_b0.385d4r169c0.3_seed*.npy'
@@ -19,12 +19,12 @@ pipeline:
       save: f'{tmp_dir}/bao_like.npy'
       #load: True
     wm:
-      class: cosmofit.theories.base.WindowedPowerSpectrumMultipoles
+      class: cosmofit.theories.clustering.WindowedPowerSpectrumMultipoles
       init:
         #ellsin: [0, 2]
     theory:
-      class: cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.bao.ResummedBAOWigglesTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.clustering.DampedBAOWigglesTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.clustering.ResummedBAOWigglesTracerPowerSpectrumMultipoles
       init:
         nowiggle: False
       params:
@@ -53,7 +53,7 @@ pipeline:
         qp*r:
           ref:
             limits: [0.99, 1.01]
-    
+
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 
@@ -63,7 +63,7 @@ emulate:
     order: 1
 
 summarize:
-  chain:
+  source:
     fn: f'{output_dir}/chain_*.npy'
     burnin: 0.3
   plot_triangle: f'{output_dir}/triangle.png'
@@ -75,7 +75,7 @@ summarize:
   plot_geweke: f'{output_dir}/geweke.png'
 
 summarize:
-   profiles:
+   source:
      - f'{output_dir}/profiles_qiso.npy'
      - f'{output_dir}/profiles_qiso_nowiggle.npy'
    stats:
@@ -85,15 +85,14 @@ summarize:
    plot_profile_comparison: f'{output_dir}/profile_comparison.png'
 
 summarize:
-   profiles:
+   source:
      - f'{output_dir}/profiles.npy'
    stats:
      - f'{tmp_dir}/stats.tex'
    plot_aligned_stacked: f'{tmp_dir}/aligned_stacked.png'
 
 do:
-  source:
-    profiles: f'{output_dir}/profiles.npy'
+  source: f'{output_dir}/profiles.npy'
 
 sample:
   class: cosmofit.samplers.EmceeSampler
@@ -103,7 +102,7 @@ sample:
   run:
     max_iterations: 10000
     check_every: 100
-  check: True
+    check: True
   save: f'{output_dir}/chain_*.npy'
 
 profile:

@@ -3,6 +3,7 @@ from scipy import special
 
 from cosmofit.utils import jnp
 from cosmofit.base import BaseCalculator
+from cosmofit.theories.primordial_cosmology import get_cosmo
 from cosmofit import plotting
 from . import utils
 
@@ -117,16 +118,7 @@ class TrapzTheoryPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
         return np.sum(pkmu * self.muweights[:, None, :], axis=-1)
 
 
-def get_cosmo(cosmo):
-    import cosmoprimo
-    if isinstance(cosmo, str):
-        cosmo = (cosmo, {})
-    if isinstance(cosmo, tuple):
-        return getattr(cosmoprimo.fiducial, cosmo[0])(**cosmo[1])
-    return cosmoprimo.Cosmology(**cosmo)
-
-
-class EffectAP(BaseCalculator):
+class APEffect(BaseCalculator):
 
     def __init__(self, zeff=1., fiducial=None, mode=None, eta=1./3.):
         self.zeff = float(zeff)
@@ -137,7 +129,7 @@ class EffectAP(BaseCalculator):
         self.comoving_angular_distance_fid = self.fiducial.comoving_angular_distance(self.zeff)
         self.mode = mode
         self.eta = float(eta)
-        from .primordial_cosmology import BasePrimordialCosmology
+        from cosmofit.theories.primordial_cosmology import BasePrimordialCosmology
         self.requires = {'cosmo': (BasePrimordialCosmology, {})}
 
     @classmethod

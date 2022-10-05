@@ -1,7 +1,7 @@
 pipeline:
   QSO:
     like:
-      class: cosmofit.likelihoods.CorrelationFunctionMultipolesLikelihood
+      class: cosmofit.likelihoods.clustering.CorrelationFunctionMultipolesLikelihood
       init:
         data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
@@ -15,20 +15,20 @@ pipeline:
       load: True
       plot: f'{output_dir}/corr.png'
     theory:
-      class: cosmofit.theories.full_shape.LPTTracerCorrelationFunctionMultipoles
+      class: cosmofit.theories.clustering.LPTTracerCorrelationFunctionMultipoles
     #lpt:
-    #  class: cosmofit.theories.full_shape.LPTPowerSpectrumMultipoles
+    #  class: cosmofit.theories.clustering.LPTPowerSpectrumMultipoles
       #load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
     #shapefit:
-    #  class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
+    #  class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
     pthetap:
-      class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
+      class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
       init:
         kptt: e'np.linspace(0.02, 0.2, 4)'
     #ptheta:
-    #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumTemplate
+    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumTemplate
     #  params:
     #    rptt*:
     #      value: 0.
@@ -73,7 +73,7 @@ sample:
   run:
     max_iterations: 10000
     check_every: 100
-  check: True
+    check: True
   save: f'{output_dir}/chain_*.npy'
 
 sample:
@@ -83,7 +83,7 @@ sample:
   run:
     max_iterations: 10000
     check_every: 100
-  check: True
+    check: True
   save: f'{output_dir}/chain_*.npy'
 
 profile:

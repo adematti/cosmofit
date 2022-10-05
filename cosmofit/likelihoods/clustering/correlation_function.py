@@ -2,7 +2,7 @@ import glob
 
 import numpy as np
 
-from .base import BaseGaussianLikelihood
+from cosmofit.likelihoods.base import BaseGaussianLikelihood
 from cosmofit import plotting, utils
 
 
@@ -78,9 +78,8 @@ class CorrelationFunctionMultipolesLikelihood(BaseGaussianLikelihood):
 
         self.s, self.ells, flatdata, nobs = self.mpicomm.bcast((self.s, self.ells, flatdata, nobs) if self.mpicomm.rank == 0 else None, root=0)
         super(CorrelationFunctionMultipolesLikelihood, self).__init__(covariance=covariance, data=flatdata, nobs=nobs)
-        self.requires['theory'] = ('cosmofit.theories.base.WindowedCorrelationFunctionMultipoles',
-                                   {'s': self.s, 'ells': self.ells,
-                                    'theory': {'init': {'zeff': zeff, 'fiducial': fiducial}}})
+        self.requires['theory'] = ('cosmofit.theories.clustering.WindowedCorrelationFunctionMultipoles',
+                                   {'s': self.s, 'ells': self.ells, 'theory': {'init': {'zeff': zeff, 'fiducial': fiducial}}})
         self.globals['sdata'] = self.s
 
     def plot(self, fn=None, kw_save=None):

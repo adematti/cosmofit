@@ -1,11 +1,10 @@
 import numpy as np
 from scipy import constants
 
-from .base import BaseGaussianLikelihood, BaseCalculator
-from cosmofit.samples import Chain, load_source
+from cosmofit.likelihoods.base import BaseGaussianLikelihood, BaseCalculator
+from cosmofit.samples import ParameterValues, SourceConfig
 from cosmofit.parameter import ParameterCollection
-from cosmofit.theories.base import EffectAP
-from cosmofit.theories.power_template import BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor, BandVelocityPowerSpectrumExtractor
+from cosmofit.theories.clustering import APEffect, BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor, BandVelocityPowerSpectrumExtractor
 from cosmofit import utils
 
 
@@ -36,17 +35,27 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
 
     _parambasenames = None
 
-    def __init__(self, chains=None, select=None, burnin=None):
-        self.chain = None
+    def __init__(self, source=None, select=None):
+        params, mean, covariance = None, None, None
         if self.mpicomm.rank == 0:
-            self.chain = Chain.concatenate(load_source(chains, burnin=burnin))
-        self.params = self.mpicomm.bcast(self.chain.params() if self.mpicomm.rank == 0 else None, root=0)
+            source = SourceConfig(source)
+            covariance = source.cov()
+            params = covariance.params()
+            if hasattr(source.source, 'bestfit'):
+                mean = source.choice(index=source.get('index', 'argmax'))
+            else:
+                mean = source.choice(index=source.get('index', 'mean'))
+            params = params.select(name=list(mean.keys()))
+            mean = ParameterValues([mean[str(param)] for param in params], params=params)
+        self.params = self.mpicomm.bcast(params, root=0)
+        self.source_mean = self.mpicomm.bcast(mean, root=0)
+        self.source_covariance = self.mpicomm.bcast(covariance, root=0)
         if select is not None:
             self.params = self.params.select(**select)
-            self._select_params()
+        self._select_params()
         if self._parambasenames is not None:
             self.params = self.params.select(basename=self._parambasenames)
-            self.params.sort([self._parambasenames.index(param.basename) for param in self.params if param.basename in self._parambasenames])
+            self.params.sort(np.argsort([self._parambasenames.index(param.basename) for param in self.params if param.basename in self._parambasenames]))
         self.requires = {'theory': {'class': self.__class__.__name__.replace('ParameterizationLikelihood', 'Model'),
                                     'init': {'quantities': self.params.basenames()}}}
 
@@ -56,7 +65,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
                 # if self.mpicomm.rank == 0:
                 #     self.log_info('Parameter {} is found to be fixed, ignoring.'.format(param))
                 del self.params[param]
-            elif self.mpicomm.bcast(np.allclose(self.chain[param], np.mean(self.chain[param]), equal_nan=True) if self.mpicomm.rank == 0 else None, root=0):
+            elif self.source_covariance.cov(param) == 0.:
                 del self.params[param]
 
     def _prepare(self):
@@ -64,18 +73,17 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
         params = [params[quantity] for quantity in self.theory.quantities]
         if self.mpicomm.rank == 0:
             self.log_info('Fitting input samples {}.'.format(params))
-        mean = self.mpicomm.bcast(np.concatenate([self.chain.mean(param).ravel() for param in params]) if self.mpicomm.rank == 0 else None, root=0)
-        covariance = self.mpicomm.bcast(self.chain.cov(params) if self.mpicomm.rank == 0 else None, root=0)
+        mean = [self.source_mean[param] for param in params]
+        covariance = self.source_covariance.cov(params)
         super(BaseParameterizationLikelihood, self).__init__(covariance=covariance, data=mean)
-        del self.chain
 
     def _set_meta(self, **kwargs):
         for name, value in kwargs.items():
             if value is None:
-                param = self.mpicomm.bcast(self.chain.params(basename=[name]) if self.mpicomm.rank == 0 else None, root=0)
+                param = self.source_mean.params(basename=[name])
                 if not param:
                     raise ValueError('{} must be provided either as arguments or input samples'.format(name))
-                value = self.mpicomm.bcast(self.chain.mean(param[0]) if self.mpicomm.rank == 0 else None, root=0)
+                value = self.source_mean[param[0]]
             elif not isinstance(value, str):
                 value = np.array(value, dtype='f8')
             setattr(self, name, value)
@@ -116,7 +124,7 @@ class BAOParameterizationLikelihood(BaseParameterizationLikelihood):
     @property
     def _parambasenames(self):
         params = self.params.basenames()
-        options = [['DM_over_rd', 'DH_over_rd'], ['DV_over_rd', 'DH_over_DM'], ['DV_over_rd'], ['DH_over_DM']]
+        options = [('DM_over_rd', 'DH_over_rd'), ('DV_over_rd', 'DH_over_DM'), ('DV_over_rd',), ('DH_over_DM',)]
         for ps in options:
             if all(p in params for p in ps):
                 return ps
@@ -167,11 +175,11 @@ class WiggleSplitModel(BaseModel):
         self.kp_fid = self.kp
         WiggleSplitPowerSpectrumExtractor.__init__(self, zeff=self.zeff, kp=self.kp_fid)
         requires = self.requires
-        EffectAP.__init__(self, zeff=self.zeff, fiducial=self.fiducial, mode='distances', eta=self.eta)
+        APEffect.__init__(self, zeff=self.zeff, fiducial=self.fiducial, mode='distances', eta=self.eta)
         self.requires = {**requires, **self.requires}
 
     def run(self):
-        EffectAP.run(self)
+        APEffect.run(self)
         self.theory = []
         for quantity in self.quantities:
             if quantity == 'fsigmar':
@@ -205,10 +213,10 @@ class BandVelocityPowerSpectrumModel(BaseModel):
         super(BandVelocityPowerSpectrumModel, self).__init__(*args, **kwargs)
         self.kptt_fid = self.kptt
         BandVelocityPowerSpectrumExtractor.__init__(self, zeff=self.zeff, kptt=self.kptt_fid)
-        EffectAP.__init__(self, zeff=self.zeff, fiducial=self.fiducial, mode='distances', eta=self.eta)
+        APEffect.__init__(self, zeff=self.zeff, fiducial=self.fiducial, mode='distances', eta=self.eta)
 
     def run(self):
-        EffectAP.run(self)
+        APEffect.run(self)
         self.kptt = self.kptt_fid / self.qiso
         BandVelocityPowerSpectrumExtractor.run(self)
         self.theory = []

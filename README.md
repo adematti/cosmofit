@@ -11,14 +11,11 @@ Example notebooks are provided in directory nb/.
 
 ## TODOs
 
-- reparametrization (in process)
 - dimensionality reduction (in process)
-- benefit (a bit) from MPI in MCMCSampler
 - jax.jit
 - use Jacobian, if available, in Taylor emulator?
 - finish documentation
 - proper example with cross-covariance (e.g. many redshift slices), potential changes to the infrastructure
-- allow emulators to use result of previous calculators as input (not only parameters)
 - implement external likelihoods (Planck, Pantheon, DES, etc.)
 - more PT theory models
 - real science work...

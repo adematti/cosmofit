@@ -8,6 +8,15 @@ class BasePrimordialCosmology(BaseCalculator):
     pass
 
 
+def get_cosmo(cosmo):
+    import cosmoprimo
+    if isinstance(cosmo, str):
+        cosmo = (cosmo, {})
+    if isinstance(cosmo, tuple):
+        return getattr(cosmoprimo.fiducial, cosmo[0])(**cosmo[1])
+    return cosmoprimo.Cosmology(**cosmo)
+
+
 def get_from_cosmo(cosmo, name):
     if name.lower().startswith('omega_'):
         name = name[:5] + '0' + name[5:]
@@ -26,7 +35,6 @@ class Cosmoprimo(BasePrimordialCosmology):
         self.engine = engine
         self.extra_params = extra_params or {}
         if fiducial is not None:
-            from .base import get_cosmo
             fiducial = get_cosmo(fiducial)
         else:
             fiducial = Cosmology()
@@ -36,8 +44,9 @@ class Cosmoprimo(BasePrimordialCosmology):
     def set_params(self, params):
         if self.fiducial is not None:
             for param in params:
-                param.value = get_from_cosmo(self.fiducial, param.basename)
-                param.fixed = param.get('fixed', True)
+                if not param.get('drop', False):
+                    param.value = get_from_cosmo(self.fiducial, param.basename)
+                    param.fixed = param.get('fixed', True)
         return params
 
     def run(self, **params):

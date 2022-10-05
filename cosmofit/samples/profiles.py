@@ -72,11 +72,11 @@ class ParameterCovariance(BaseClass):
     def cov(self, params=None):
         """Return covariance matrix for input parameters ``params``."""
         if params is None:
-            params = self.params
+            params = self._params
         isscalar = not utils.is_sequence(params)
         if isscalar:
             params = [params]
-        idx = np.array([self.params.index(param) for param in params])
+        idx = np.array([self._params.index(param) for param in params])
         toret = self._value[np.ix_(idx, idx)]
         if isscalar:
             toret = toret[0, 0]

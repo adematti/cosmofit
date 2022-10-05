@@ -1,7 +1,7 @@
 pipeline:
   NGC:
     like:
-      class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
+      class: cosmofit.likelihoods.clustering.PowerSpectrumMultipolesLikelihood
       init:
         #data: f'{data_dir}/data.npy'
         data: mean
@@ -18,7 +18,7 @@ pipeline:
       plot: f'{output_dir}/power_NGC.png'
   SGC:
     like:
-      class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
+      class: cosmofit.likelihoods.clustering.PowerSpectrumMultipolesLikelihood
       init:
         #data: f'{data_dir}/data.npy'
         data: mean
@@ -33,7 +33,7 @@ pipeline:
       save: f'{output_dir}/pnglike_QSO_SGC.npy'
       #load: True
   theory:
-    class: cosmofit.theories.primordial_non_gaussianity.PrimordialNonGaussianityPowerSpectrumMultipoles
+    class: cosmofit.theories.clustering.PrimordialNonGaussianityPowerSpectrumMultipoles
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
     init:
@@ -68,7 +68,7 @@ sample:
   run:
     max_iterations: 10000
     check_every: 100
-  check: True
+    check: True
   save: f'{output_dir}/chain_*.npy'
 
 profile:

@@ -3,7 +3,7 @@ import mpytools as mpy
 
 from cosmofit.base import SectionConfig, import_class
 from cosmofit.utils import BaseClass, TaskManager
-from cosmofit.samples import load_source
+from cosmofit.samples import SourceConfig
 from cosmofit.samples.profiles import Profiles, ParameterValues, ParameterBestFit
 from cosmofit.parameter import ParameterArray, ParameterCollection
 
@@ -53,6 +53,8 @@ class RegisteredProfiler(type(BaseClass)):
 
 class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
+    _check_same_input = False
+
     def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, profiles=None, covariance=None, rescale=False, save_fn=None, mpicomm=None):
         if mpicomm is None:
             mpicomm = likelihood.mpicomm
@@ -69,13 +71,13 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         if profiles is not None and not isinstance(profiles, Profiles):
             self.profiles = Profiles.load(profiles)
         self._set_rng(rng=rng, seed=seed)
-        covariance = load_source(covariance, cov=True)
-        if covariance is not None:
+        covariance = SourceConfig(covariance)
+        if covariance.source is not None:
             for param in self.varied_params:
-                if param in covariance.params():
+                if param in covariance.source.params():
                     param.ref = ParameterPrior(loc=param.value, scale=np.sqrt(covariance.cov(params=param)), dist='norm')
         # Get the covariance for all parameters
-        covariance = load_source(covariance, cov=True, params=self.varied_params)
+        covariance = covariance.cov(params=self.varied_params)
         self._original_params = self.varied_params
 
         if rescale:
@@ -115,22 +117,33 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
         self.save_fn = save_fn
 
+    def _bcast_values(self, values):
+        values = np.asarray(values)
+        if self._check_same_input:
+            all_values = self.likelihood.mpicomm.allgather(values)
+            if not all(np.allclose(values, all_values[0], atol=0., rtol=1e-7) for values in all_values if values is not None):
+                raise ValueError('Input values different on all ranks: {}'.format(all_values))
+        return self.likelihood.mpicomm.bcast(values, root=0)
+
     def loglikelihood(self, values):
-        values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
+        values = self._bcast_values(values)
         if not values.size:
             return -np.inf
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
         values = self._params_forward_transform(values)
-        points = {str(param): values[:, iparam] for iparam, param in enumerate(self.varied_params)}
-        self.likelihood.mpirun(**points)
+        points = ParameterValues(values.T, params=self.varied_params)
+        self.likelihood.mpirun(**points.to_dict())
         toret = None
         if self.likelihood.mpicomm.rank == 0:
             if self.derived is None:
-                self.derived = [self.likelihood.derived, points]
+                self.derived = [points, self.likelihood.derived]
             else:
-                self.derived = [ParameterValues.concatenate([self.derived[0], self.likelihood.derived]), {name: np.concatenate([self.derived[1][name], points[name]], axis=0) for name in points}]
+                self.derived = [ParameterValues.concatenate([self.derived[0], points]),
+                                ParameterValues.concatenate([self.derived[1], self.likelihood.derived])]
             toret = self.likelihood.loglikelihood + self.likelihood.logprior
+        else:
+            self.derived = None
         toret = self.likelihood.mpicomm.bcast(toret, root=0)
         mask = np.isnan(toret)
         toret[mask] = -np.inf
@@ -140,6 +153,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         return toret
 
     def logprior(self, values):
+        values = self._bcast_values(values)
         logprior = 0.
         values = self._params_forward_transform(values)
         for param, value in zip(self.varied_params, values.T):
@@ -147,7 +161,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         return logprior
 
     def logposterior(self, values):
-        values = self.likelihood.mpicomm.bcast(np.asarray(values), root=0)
+        values = self._bcast_values(values)
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
         toret = self.logprior(values)
@@ -206,11 +220,11 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
     @property
     def mpicomm(self):
-        return self.likelihood.mpicomm
+        return self._mpicomm
 
     @mpicomm.setter
     def mpicomm(self, mpicomm):
-        self.likelihood.mpicomm = mpicomm
+        self._mpicomm = self.likelihood.mpicomm = mpicomm
 
     def _profiles_transform(self, profiles):
         toret = profiles.deepcopy()
@@ -244,7 +258,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         list_profiles = [None] * niterations
         mpicomm_bak = self.mpicomm
         with TaskManager(nprocs_per_task=nprocs_per_iteration, use_all_nprocs=True, mpicomm=self.mpicomm) as tm:
-            self.likelihood.mpicomm = self.mpicomm = tm.mpicomm
+            self.mpicomm = tm.mpicomm
             for ii in tm.iterate(range(niterations)):
                 start, logposterior = self._get_start()
                 p = self._maximize_one(start, **kwargs)
@@ -255,9 +269,9 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
                     profiles = self._profiles_transform(profiles)
                     for param in self.likelihood.params.select(fixed=True, derived=False):
                         profiles.bestfit.set(ParameterArray(np.array(param.value, dtype='f8'), param))
-                    index_in_profile, index = ParameterValues(self.derived[1]).match(profiles.bestfit, params=profiles.start.params())
+                    index_in_profile, index = self.derived[0].match(profiles.bestfit, params=profiles.start.params())
                     assert index_in_profile[0].size == 1
-                    for array in self.derived[0]:
+                    for array in self.derived[1]:
                         profiles.bestfit.set(array[index], output=True)
                 else:
                     profiles = None

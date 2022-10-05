@@ -5,7 +5,7 @@ import numpy as np
 
 from cosmofit.samples import Chain
 from cosmofit.parameter import ParameterError
-from .base import BasePosteriorSampler, load_source, ParameterValues, iterate
+from .base import BasePosteriorSampler, load_source, ParameterValues, batch_iterate
 
 
 class FakePool(object):
@@ -37,11 +37,15 @@ class DynestySampler(BasePosteriorSampler):
         return toret
 
     def _prepare(self):
-        self.resume = self.mpicomm.bcast(self.chains[0] is not None, root=0)
+        self.resume = self.mpicomm.bcast(any(chain is not None for chain in self.chains), root=0)
 
-    def _run_one(self, start, min_iterations=0, max_iterations=sys.maxsize, check_every=300, **kwargs):
+    def _run_one(self, start, min_iterations=0, max_iterations=sys.maxsize, check_every=300, check=None, **kwargs):
         import dynesty
         from dynesty import utils
+
+        if check is not None: kwargs.update(check)
+
+        rstate = np.random.Generator(np.random.PCG64(self.rng.randint(0, high=0xffffffff)))
 
         # Instantiation already runs somes samples
         if not hasattr(self, 'sampler'):
@@ -49,9 +53,9 @@ class DynestySampler(BasePosteriorSampler):
             use_pool = {'prior_transform': True, 'loglikelihood': True, 'propose_point': False, 'update_bound': False}
             pool = FakePool(size=self.mpicomm.size)
             if self.mode == 'dynamic':
-                self.sampler = dynesty.DynamicNestedSampler(self.loglikelihood, self.prior_transform, ndim, pool=pool, use_pool=use_pool, **self.attrs)
+                self.sampler = dynesty.DynamicNestedSampler(self.loglikelihood, self.prior_transform, ndim, pool=pool, use_pool=use_pool, rstate=rstate, **self.attrs)
             else:
-                self.sampler = dynesty.NestedSampler(self.loglikelihood, self.prior_transform, ndim, nlive=self.nlive, pool=pool, use_pool=use_pool, **self.attrs)
+                self.sampler = dynesty.NestedSampler(self.loglikelihood, self.prior_transform, ndim, nlive=self.nlive, pool=pool, use_pool=use_pool, rstate=rstate, **self.attrs)
 
         self.resume_derived, self.resume_chain = None, None
         if self.resume:
@@ -66,10 +70,12 @@ class DynestySampler(BasePosteriorSampler):
                 points[param.name] = source.pop(param)
             self.resume_derived = [source.select(derived=True), points]
 
+        self.sampler.rstate = rstate
+
         def _run_one_batch(niterations):
             it = self.sampler.it
             if self.mode == 'dynamic':
-                self.sampler.run_nested(nlive_init=self.nlive, maxiter=niterations, **kwargs)
+                self.sampler.run_nested(nlive_init=self.nlive, maxiter=niterations + it, **kwargs)
             else:
                 self.sampler.run_nested(maxiter=niterations, **kwargs)
             is_converged = self.sampler.it - it < niterations
@@ -84,7 +90,10 @@ class DynestySampler(BasePosteriorSampler):
 
             if self.mpicomm.rank == 0:
                 if self.resume_derived is not None:
-                    self.derived = [ParameterValues.concatenate([self.resume_derived[0], self.derived[0]]), {name: np.concatenate([self.resume_derived[1][name], self.derived[1][name]], axis=0) for name in self.resume_derived[1]}]
+                    if self.derived is not None:
+                        self.derived = [ParameterValues.concatenate([resume_derived, derived]) for resume_derived, derived in zip(self.resume_derived, self.derived)]
+                    else:
+                        self.derived = self.resume_derived
                 chain = self._set_derived(chain)
                 self.resume_chain = chain = self._set_derived(chain)
                 self.resume_chain.save(self.save_fn[self._ichain])
@@ -92,8 +101,9 @@ class DynestySampler(BasePosteriorSampler):
 
             self.resume_derived = self.derived
             self.derived = None
+            return is_converged
 
-        iterate(_run_one_batch, min_iterations=min_iterations, max_iterations=max_iterations, check_every=check_every)
+        batch_iterate(_run_one_batch, min_iterations=min_iterations, max_iterations=max_iterations, check_every=check_every)
 
         self.derived = self.resume_derived
         return self.resume_chain

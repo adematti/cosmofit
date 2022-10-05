@@ -79,7 +79,8 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
         if len(self.pipeline.end_calculators) > 1:
             raise PipelineError('For emulator, pipeline must have a single end calculator; use pipeline.select()')
 
-        self.params = self.pipeline.params
+        self.params = self.pipeline.params.deepcopy()
+        for param in self.params: param.drop = False  # dropped params become actual params
         self.varied_params = self.params.names(varied=True, derived=False)
 
         calculators = []
@@ -275,6 +276,7 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
             return new
 
         calculator = from_state(new_cls, state)
+        calculator.runtime_info.full_params = self.params
 
         if derived is not None:
             for name in derived:

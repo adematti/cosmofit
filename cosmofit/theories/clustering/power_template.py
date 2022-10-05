@@ -2,8 +2,8 @@ import numpy as np
 from scipy import constants
 
 from cosmofit.base import BaseCalculator
-from .primordial_cosmology import BasePrimordialCosmology
-from .base import EffectAP
+from cosmofit.theories.primordial_cosmology import BasePrimordialCosmology
+from .base import APEffect
 
 
 class BasePowerSpectrumWiggles(BaseCalculator):
@@ -300,19 +300,19 @@ class BasePowerSpectrumParameterization(BaseCalculator):
         self.zeff = float(zeff)
         self.requires = {'template': {'class': self.__class__.__name__.replace('Parameterization', 'Template'),
                          'init': {'k': k, 'zeff': zeff, 'fiducial': fiducial, **kwargs}},
-                         'effectap': {'class': EffectAP, 'init': {'zeff': zeff, 'fiducial': fiducial}}}
+                         'apeffect': {'class': APEffect, 'init': {'zeff': zeff, 'fiducial': fiducial}}}
 
     def set_params(self, params):
         self_params = params.select(basename=self._parambasenames)
         effectap_params = params.select(basename=['qpar', 'qper', 'qiso', 'qap'])
-        self.requires['effectap']['params'] = effectap_params
+        self.requires['apeffect']['params'] = effectap_params
         template_params = params.copy()
         for param in self_params: del template_params[param]
         for param in effectap_params: del template_params[param]
         self.requires['template']['params'] = template_params
-        mode = self.requires['effectap']['init'].get('mode', None)
+        mode = self.requires['apeffect']['init'].get('mode', None)
         if mode is None:
-            mode = self.requires['effectap']['init']['mode'] = EffectAP.guess_mode(effectap_params, default='qparqper')
+            mode = self.requires['apeffect']['init']['mode'] = APEffect.guess_mode(effectap_params, default='qparqper')
         if mode == 'qiso':
             for param in self_params:
                 if param.basename in ['DM_over_rd', 'DH_over_rd', 'DH_over_DM']: del self_params[param]
@@ -325,17 +325,17 @@ class BasePowerSpectrumParameterization(BaseCalculator):
         self.power_dd = self.template.power_dd
         if self.template.with_now:
             self.power_dd_now = self.template.power_dd_now
-        self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
+        self.qpar, self.qper = self.apeffect.qpar, self.apeffect.qper
 
     def ap_k_mu(self, k, mu):
-        return self.effectap.ap_k_mu(k, mu)
+        return self.apeffect.ap_k_mu(k, mu)
 
 
 class FullPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
     def __init__(self, *args, **kwargs):
         super(FullPowerSpectrumParameterization, self).__init__(*args, **kwargs)
-        self.requires['effectap']['init']['mode'] = 'distances'
+        self.requires['apeffect']['init']['mode'] = 'distances'
 
     def run(self):
         super(FullPowerSpectrumParameterization, self).run()
@@ -348,8 +348,8 @@ class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
 
     def __init__(self, *args, mode=None, **kwargs):
         super(ShapeFitPowerSpectrumParameterization, self).__init__(*args, **kwargs)
-        #self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
-        self.requires['effectap']['init']['mode'] = mode
+        #self.requires['template']['init']['fiducial'] = self.requires['apeffect']['init']['fiducial']
+        self.requires['apeffect']['init']['mode'] = mode
 
     def run(self, f=None):
         super(ShapeFitPowerSpectrumParameterization, self).run()
@@ -357,7 +357,7 @@ class ShapeFitPowerSpectrumParameterization(BasePowerSpectrumParameterization):
         for name in ['Ap', 'n', 'm', 'kp_rs']:
             setattr(self, name, getattr(self.template, name))
         self.f_sqrt_Ap = self.f * self.Ap**0.5
-        self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
+        self.qpar, self.qper = self.apeffect.qpar, self.apeffect.qper
         self.cosmo = self.template.cosmo
         BAOExtractor.run(self, qpar=self.qpar, qper=self.qper)
 
@@ -368,8 +368,8 @@ class WiggleSplitPowerSpectrumParameterization(BasePowerSpectrumParameterization
 
     def __init__(self, *args, **kwargs):
         super(WiggleSplitPowerSpectrumParameterization, self).__init__(*args, **kwargs)
-        #self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
-        self.requires['effectap']['init']['mode'] = 'qap'
+        #self.requires['template']['init']['fiducial'] = self.requires['apeffect']['init']['fiducial']
+        self.requires['apeffect']['init']['mode'] = 'qap'
 
     def run(self, fsigmar):
         self.fsigmar = fsigmar
@@ -377,7 +377,7 @@ class WiggleSplitPowerSpectrumParameterization(BasePowerSpectrumParameterization
         self.power_dd = self.template.power_tt / self.template.f**2
         if self.template.with_now:
             self.power_dd_now = self.template.power_tt_now / self.template.f**2
-        self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
+        self.qpar, self.qper = self.apeffect.qpar, self.apeffect.qper
 
 
 class BandVelocityPowerSpectrumParameterization(BasePowerSpectrumParameterization):
@@ -386,8 +386,8 @@ class BandVelocityPowerSpectrumParameterization(BasePowerSpectrumParameterizatio
 
     def __init__(self, *args, **kwargs):
         super(BandVelocityPowerSpectrumParameterization, self).__init__(*args, **kwargs)
-        #self.requires['template']['init']['fiducial'] = self.requires['effectap']['init']['fiducial']
-        self.requires['effectap']['init']['mode'] = 'qap'
+        #self.requires['template']['init']['fiducial'] = self.requires['apeffect']['init']['fiducial']
+        self.requires['apeffect']['init']['mode'] = 'qap'
 
     def run(self, f=None):
         self.f = f
@@ -396,7 +396,7 @@ class BandVelocityPowerSpectrumParameterization(BasePowerSpectrumParameterizatio
         if self.template.with_now:
             self.power_dd_now = self.template.power_tt_now / self.template.f**2
         self.ptt = self.template.ptt
-        self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
+        self.qpar, self.qper = self.apeffect.qpar, self.apeffect.qper
 
 
 class BAOPowerSpectrumParameterization(BasePowerSpectrumParameterization):
@@ -409,13 +409,13 @@ class BAOPowerSpectrumParameterization(BasePowerSpectrumParameterization):
             wiggles = {'class': wiggles}
         wiggles['init'] = {'zeff': zeff, 'fiducial': fiducial, **wiggles.get('init', {})}
         self.requires = {'template': wiggles,
-                         'effectap': {'class': EffectAP, 'init': {'zeff': zeff, 'fiducial': fiducial, 'mode': mode}}}
+                         'apeffect': {'class': APEffect, 'init': {'zeff': zeff, 'fiducial': fiducial, 'mode': mode}}}
 
     def run(self, f=None):
         for name in ['power', 'power_now', 'wiggles']:
             setattr(self, name, getattr(self.template, name))
         self.f = f
         if f is None: self.f = self.template.fsigma8 / self.template.sigma8
-        self.qpar, self.qper = self.effectap.qpar, self.effectap.qper
+        self.qpar, self.qper = self.apeffect.qpar, self.apeffect.qper
         self.cosmo = self.template.cosmo
         BAOExtractor.run(self, qpar=self.qpar, qper=self.qper)

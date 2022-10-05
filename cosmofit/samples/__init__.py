@@ -69,7 +69,7 @@ def load_source(source, choice=None, cov=None, burnin=None, params=None):
             indices = [params.index(param) for param in params_not_in_source]
             cov[indices, indices] = [param.proposal**2 for param in params_not_in_source]
         elif source:
-            cov = ParameterCovariance(source.cov(), params=source.params)
+            cov = ParameterCovariance(source.cov(), params=source.params())
         toret.append(cov)
 
     if len(toret) == 0:
@@ -82,15 +82,15 @@ def load_source(source, choice=None, cov=None, burnin=None, params=None):
 class SourceConfig(BaseConfig):
 
     def __init__(self, data=None, **kwargs):
-        if isinstance(data, str):
+        if not isinstance(data, dict):
             data = {'fn': data}
         super(SourceConfig, self).__init__(data=data, **kwargs)
         self.source = None
         if 'fn' in self:
-            self.source = load_source(self.pop('fn'), **self.data)
+            self.source = load_source(self.pop('fn'), **{k: v for k, v in self.items() if k not in ['choice', 'cov']})
 
-    def choice(self, params=None):
-        return load_source(self.source, choice=self.get('choice', {}), params=params)
+    def choice(self, params=None, **choice):
+        return load_source(self.source, choice={**self.get('choice', {}), **choice}, params=params)
 
     def cov(self, params=None):
         return load_source(self.source, cov=True, params=params)

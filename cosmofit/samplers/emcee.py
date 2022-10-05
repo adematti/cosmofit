@@ -1,9 +1,9 @@
 from cosmofit.samples import Chain
 from cosmofit import utils
-from .base import BasePosteriorSampler
+from .base import BaseBatchPosteriorSampler
 
 
-class EmceeSampler(BasePosteriorSampler):
+class EmceeSampler(BaseBatchPosteriorSampler):
 
     def __init__(self, *args, nwalkers=None, **kwargs):
         super(EmceeSampler, self).__init__(*args, **kwargs)
@@ -15,9 +15,13 @@ class EmceeSampler(BasePosteriorSampler):
         self.sampler = emcee.EnsembleSampler(self.nwalkers, ndim, self.logposterior, vectorize=True)
 
     def _run_one(self, start, niterations=300, thin_by=1, progress=False):
+        self.sampler._random = self.rng
         for _ in self.sampler.sample(initial_state=start, iterations=niterations, progress=progress, store=True, thin_by=thin_by, skip_initial_state_check=False):
             pass
-        chain = self.sampler.get_chain()
+        try:
+            chain = self.sampler.get_chain()
+        except AttributeError:
+            return None
         data = [chain[..., iparam] for iparam, param in enumerate(self.varied_params)] + [self.sampler.get_log_prob()]
         self.sampler.reset()
         return Chain(data=data, params=self.varied_params + ['logposterior'])

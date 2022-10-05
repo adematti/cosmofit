@@ -46,6 +46,9 @@ def gelman_rubin(chains, params=None, nsplits=None, statistic='mean', method='ei
         if nsplits is None or nchains * nsplits < 2:
             raise ValueError('Provide a list of at least 2 chains to estimate Gelman-Rubin, or specify nsplits >= {:d}'.format(int(2. / nchains + 0.5)))
         chains = [chain[islab * len(chain) // nsplits:(islab + 1) * len(chain) // nsplits] for islab in range(nsplits) for chain in chains]
+    sizes = [chain.size for chain in chains]
+    if any(size < 2 for size in sizes):
+        raise ValueError('Not enough samples ({}) to estimate Gelman-Rubin'.format(sizes))
     if params is None: params = chains[0].params(varied=True)
     isscalar = not utils.is_sequence(params)
     if isscalar: params = [params]
@@ -73,7 +76,10 @@ def gelman_rubin(chains, params=None, nsplits=None, statistic='mean', method='ei
         stddev = np.sqrt(np.diag(V).real)
         V = V / stddev[:, None] / stddev[None, :]
         invWn1 = utils.inv(Wn1 / stddev[:, None] / stddev[None, :], check_valid=check_valid)
-        toret = np.linalg.eigvalsh(invWn1.dot(V))
+        try:
+            toret = np.linalg.eigvalsh(invWn1.dot(V))
+        except np.linalg.LinAlgError as exc:
+            raise ValueError from exc
     else:
         toret = np.diag(V) / np.diag(Wn1)
     if isscalar:
@@ -160,10 +166,13 @@ def integrated_autocorrelation_time(chains, params=None, min_corr=None, c=5, rel
             return np.argmin(m)
         return len(taus) - 1
 
+    sizes = [chain.size for chain in chains]
+    if not all(size == sizes[0] for size in sizes):
+        raise ValueError('Input chains must have same length, found {}'.format(sizes))
+    if any(size < 2 for size in sizes):
+        raise ValueError('Not enough samples ({}) to estimate autocorrelation time'.format(sizes))
+
     size = chains[0].size
-    for chain in chains:
-        if chain.size != size:
-            raise ValueError('Input chains must have same length')
     corr = autocorrelation(chains, params)
     toret = None
     if min_corr is not None:
@@ -204,8 +213,10 @@ def _autocorrelation_1d(x):
     """
     from numpy import fft
     x = np.atleast_1d(x)
-    if len(x.shape) != 1:
-        raise ValueError('invalid dimensions for 1D autocorrelation function')
+    if x.ndim != 1:
+        raise ValueError('Invalid dimensions for 1D autocorrelation function, found {:d}'.format(x.ndim))
+    if x.size < 2:
+        raise ValueError('Not enough samples to estimate autocorrelation, found {:d}'.format(x.size))
 
     n = 2**(2 * len(x) - 1).bit_length()
 
@@ -232,6 +243,8 @@ def geweke(chains, params=None, first=0.1, last=0.5):
         value, aweight, fweight = chain[params].ravel(), chain.aweight.ravel(), chain.fweight.ravel()
         ifirst, ilast = int(first * value.size + 0.5), int(last * value.size + 0.5)
         value_first, value_last = value[:ifirst], value[ilast:]
+        if value_first.size < 2 or value_last.size < 2:
+            raise ValueError('Not enough samples ({:d}) to estimate geweke'.format(value.size))
         aweight_first, aweight_last = aweight[:ifirst], aweight[ilast:]
         fweight_first, fweight_last = fweight[:ifirst], fweight[ilast:]
         diff = np.abs(np.average(value_first, weights=aweight_first * fweight_first) - np.average(value_last, weights=aweight_last * fweight_last))

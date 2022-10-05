@@ -389,10 +389,10 @@ class Parameter(BaseClass):
                 placeholders = re.finditer(r'\{.*?\}', derived)
                 for placeholder in placeholders:
                     placeholder = placeholder.group()
-                    key = '_' * len(derived) + '{:d}_'.format(len(di) + 1)
+                    key = '_' * len(derived) + '{:d}_'.format(len(self.depends) + 1)
                     assert key not in derived
                     derived = derived.replace(placeholder, key)
-                    self.depends[key] = placeholder
+                    self.depends[key] = placeholder[1:-1]
                 self._derived = derived
         else:
             self._derived = bool(self._derived)
@@ -416,7 +416,7 @@ class Parameter(BaseClass):
         if isinstance(self._derived, str) and not self.solved:
             toret = self._derived
             for k, v in self.depends.items():
-                toret.replace(k, '{{{}}}'.format(v))
+                toret = toret.replace(k, '{{{}}}'.format(v))
             return toret
         return self._derived
 
@@ -432,15 +432,12 @@ class Parameter(BaseClass):
 
     def update(self, *args, **kwargs):
         """Update parameter attributes with new arguments ``kwargs``."""
-        state = {key: getattr(self, key) for key in self._attrs}
+        state = self.__getstate__()
         if len(args) == 1 and isinstance(args[0], self.__class__):
-            state.update({key: getattr(args[0], key) for key in args[0]._attrs})
+            state.update(args[0].__getstate__())
         elif len(args):
             raise ValueError('Unrecognized arguments {}'.format(args))
-        for name in ['derived', 'latex']:
-            state[name] = state.pop('_{}'.format(name))
         state.update(kwargs)
-        state.pop('depends', None)
         self.__init__(**state)
 
     def clone(self, *args, **kwargs):
@@ -470,9 +467,10 @@ class Parameter(BaseClass):
             state[key] = getattr(self, key)
             if hasattr(state[key], '__getstate__'):
                 state[key] = state[key].__getstate__()
-        for name in ['derived', 'latex']:
-            state[name] = state.pop('_{}'.format(name))
-        state.pop('depends', None)
+        state['latex'] = state.pop('_latex')
+        state.pop('_derived')
+        state['derived'] = self.derived
+        state.pop('depends')
         return state
 
     def __setstate__(self, state):
@@ -561,7 +559,7 @@ class BaseParameterCollection(BaseClass):
 
     def __init__(self, data=None, attrs=None):
         """
-        Initialize :class:`ParameterCollection`.
+        Initialize :class:`BaseParameterCollection`.
 
         Parameters
         ----------
@@ -596,7 +594,7 @@ class BaseParameterCollection(BaseClass):
 
     def __setitem__(self, name, item):
         """
-        Update parameter in collection (a parameter with same name must already exist).
+        Update parameter in collection.
         See :meth:`set` to set a new parameter.
 
         Parameters

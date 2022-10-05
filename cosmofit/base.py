@@ -253,7 +253,7 @@ class RuntimeInfo(BaseClass):
     @property
     def derived_params(self):
         if getattr(self, '_derived_params', None) is None:
-            self._derived_params = self.full_params.select(derived=True, fixed=True, solved=False)
+            self._derived_params = self.full_params.select(derived=True, solved=False, depends={})
         return self._derived_params
 
     @property
@@ -970,16 +970,23 @@ class BasePipeline(BaseClass):
                     calculator.runtime_info.full_params = calculator.runtime_info.full_params
         return calculators, fixed, varied
 
-    def _set_speed(self, niterations=5, override=False, seed=42):
+    def _set_speed(self, niterations=10, override=False, seed=42):
         seed = mpy.random.bcast_seed(seed=seed, mpicomm=self.mpicomm, size=10000)[self.mpicomm.rank]  # to get different seeds on each rank
         rng = np.random.RandomState(seed=seed)
+        BasePipeline.run(self)  # to set _derived
+        for calculator in self.calculators:
+            calculator.runtime_info.monitor.reset()
         for ii in range(niterations):
             params = {str(param): param.ref.sample(random_state=rng) for param in self.params.select(varied=True)}
             BasePipeline.run(self, **params)
         for calculator in self.calculators:
             if calculator.runtime_info.speed is None or override:
-                times = self.mpicomm.gather(calculator.runtime_info.monitor.get('time', average=True), root=0)
-                calculator.runtime_info.speed = 1. / self.mpicomm.bcast(np.mean(times) + 1e-6 if self.mpicomm.rank == 0 else None, root=0)
+                total_time = self.mpicomm.allreduce(calculator.runtime_info.monitor.get('time', average=False))
+                counter = self.mpicomm.allreduce(calculator.runtime_info.monitor.counter)
+                if counter == 0:
+                    calculator.runtime_info.speed = 1e6
+                else:
+                    calculator.runtime_info.speed = counter / total_time
 
     def block_params(self, params=None, nblocks=None, oversample_power=0, **kwargs):
         from itertools import permutations, chain
@@ -991,9 +998,14 @@ class BasePipeline(BaseClass):
         if any(speed is None for speed in speeds) or kwargs:
             self._set_speed(**kwargs)
             speeds = [calculator.runtime_info.speed for calculator in self.calculators]
+
         footprints = [tuple(param in calculator.runtime_info.full_params for calculator in self.calculators) for param in params]
+        #print(self.calculators)
+        #print(params)
+        #print(footprints)
         unique_footprints = list(set(row for row in footprints))
         param_blocks = [[p for ip, p in enumerate(params) if footprints[ip] == uf] for uf in unique_footprints]
+        #print(param_blocks)
         param_block_sizes = [len(b) for b in param_blocks]
 
         def sort_parameter_blocks(footprints, block_sizes, speeds, oversample_power=oversample_power):
@@ -1001,6 +1013,7 @@ class BasePipeline(BaseClass):
             block_sizes = np.array(block_sizes, dtype='i4')
             costs = 1. / np.array(speeds, dtype='f8')
             tri_lower = np.tri(len(block_sizes))
+            assert footprints.shape[0] == block_sizes.size
 
             def get_cost_per_param_per_block(ordering):
                 return np.minimum(1, tri_lower.T.dot(footprints[ordering])).dot(costs)
@@ -1011,7 +1024,7 @@ class BasePipeline(BaseClass):
                 orderings = list(permutations(np.arange(len(block_sizes))))
 
             permuted_costs_per_param_per_block = np.array([get_cost_per_param_per_block(list(o)) for o in orderings])
-            permuted_oversample_factors = (permuted_costs_per_param_per_block[..., 0] / permuted_costs_per_param_per_block)**oversample_power
+            permuted_oversample_factors = (permuted_costs_per_param_per_block[..., [0]] / permuted_costs_per_param_per_block)**oversample_power
             total_costs = np.array([(block_sizes[list(o)] * permuted_oversample_factors[i]).dot(permuted_costs_per_param_per_block[i]) for i, o in enumerate(orderings)])
             argmin = np.argmin(total_costs)
             optimal_ordering = orderings[argmin]
@@ -1020,14 +1033,14 @@ class BasePipeline(BaseClass):
 
         # a) Multiple blocks
         if nblocks is None:
-            i_optimal_ordering, costs, oversample_factors = sort_parameter_blocks(footprints, param_block_sizes, speeds, oversample_power=oversample_power)
+            i_optimal_ordering, costs, oversample_factors = sort_parameter_blocks(unique_footprints, param_block_sizes, speeds, oversample_power=oversample_power)
             sorted_blocks = [param_blocks[i] for i in i_optimal_ordering]
         # b) 2-block slow-fast separation
         else:
             if len(param_blocks) < nblocks:
                 raise ValueError('Cannot build up {:d} parameter blocks, as we only have {:d}'.format(nblocks, len(param_blocks)))
             # First sort them optimally (w/o oversampling)
-            i_optimal_ordering, costs, oversample_factors = sort_parameter_blocks(footprints, param_block_sizes, speeds, oversample_power=0)
+            i_optimal_ordering, costs, oversample_factors = sort_parameter_blocks(unique_footprints, param_block_sizes, speeds, oversample_power=0)
             sorted_blocks = [param_blocks[i] for i in i_optimal_ordering]
             sorted_footprints = np.array(unique_footprints)[list(i_optimal_ordering)]
             # Then, find the split that maxes cost LOG-differences.
@@ -1035,18 +1048,20 @@ class BasePipeline(BaseClass):
             # we need to subtract those below each one
             costs_per_block = costs - np.append(costs[1:], 0)
             # Split them so that "adding the next block to the slow ones" has max cost
-            log_differences = np.log(costs_per_block[:-1]) - np.log(costs_per_block[1:])
-            split_block_indices = np.insert(np.sort(np.argsort(log_differences)[-nblocks:]) + 1, 0, 0)
-            split_block_slices = zip(split_block_indices[:-1], split_block_indices[1:])
+            log_differences = np.zeros(len(costs_per_block) - 1, dtype='f8')  # some blocks are costless (no more parameters)
+            nonzero = (costs_per_block[:-1] != 0.) & (costs_per_block[1:] != 0.)
+            log_differences[nonzero] = np.log(costs_per_block[:-1][nonzero]) - np.log(costs_per_block[1:][nonzero])
+            split_block_indices = np.pad(np.sort(np.argsort(log_differences)[-(nblocks - 1):]) + 1, (1, 1), mode='constant', constant_values=(0, len(param_block_sizes)))
+            split_block_slices = list(zip(split_block_indices[:-1], split_block_indices[1:]))
             split_blocks = [list(chain(*sorted_blocks[low:up])) for low, up in split_block_slices]
             split_footprints = np.clip(np.array([np.array(sorted_footprints[low:up]).sum(axis=0) for low, up in split_block_slices]), 0, 1)  # type: ignore
             # Recalculate oversampling factor with 2 blocks
-            oversample_factors = sort_parameter_blocks([len(block) for block in split_blocks], speeds,
-                                                        split_footprints, oversample_power=oversample_power)[2]
+            oversample_factors = sort_parameter_blocks(split_footprints, [len(block) for block in split_blocks], speeds,
+                                                       oversample_power=oversample_power)[2]
             # Finally, unfold `oversampling_factors` to have the right number of elements,
             # taking into account that that of the fast blocks should be interpreted as a
             # global one for all of them.
-            oversample_factors = np.concatenate([np.full(size, factor) for factor, size in zip(oversample_factors, np.diff(split_block_slices))])
+            oversample_factors = np.concatenate([np.full(size, factor, dtype='f8') for factor, size in zip(oversample_factors, np.diff(split_block_slices, axis=-1))])
         return sorted_blocks, oversample_factors
 
 
@@ -1114,7 +1129,7 @@ class LikelihoodPipeline(BasePipeline):
         sum_logprior = 0.
         for param in self.params:
             if param.varied and not param.solved:
-                if param.derived:
+                if param.derived and not param.depends:
                     array = self.derived[param]
                     sum_logprior += array.param.prior(array)
                 else:

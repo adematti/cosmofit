@@ -1,7 +1,7 @@
 pipeline:
   ELG:
     like:
-      class: cosmofit.likelihoods.CorrelationFunctionMultipolesLikelihood
+      class: cosmofit.likelihoods.clustering.CorrelationFunctionMultipolesLikelihood
       init:
         data: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/AbacusSummit/CubicBox/ELG/Xi/Pre/lhior/npy/Xi_AbacusSummit_base_c000_ph*.npy'
         covariance: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/EZmock/CubicBox/ELG/Xi/lhior/npy/Xi_CubicBox_ELG_z1.100_EZmock_B2000G512Z1.1N24000470_b0.345d1.45r40c0.05_seed*.npy'
@@ -17,8 +17,8 @@ pipeline:
       save: f'{tmp_dir}/bao_like.npy'
       #load: True
     theory:
-      class: cosmofit.theories.bao.DampedBAOWigglesTracerCorrelationFunctionMultipoles
-      #class: cosmofit.theories.bao.ResummedBAOWigglesTracerCorrelationFunctionMultipoles
+      class: cosmofit.theories.clustering.DampedBAOWigglesTracerCorrelationFunctionMultipoles
+      #class: cosmofit.theories.clustering.ResummedBAOWigglesTracerCorrelationFunctionMultipoles
       init:
         nowiggle: False
       params:
@@ -34,7 +34,7 @@ pipeline:
       emulator:
         save: f'{tmp_dir}/emulator.npy'
     param:
-      class: cosmofit.theories.power_template.BAOPowerSpectrumParameterization
+      class: cosmofit.theories.clustering.BAOPowerSpectrumParameterization
       init:
         #mode: qiso
       params:
@@ -54,7 +54,7 @@ emulate:
     order: 1
 
 summarize:
-  chain:
+  source:
     fn: f'{output_dir}/chain_*.npy'
     burnin: 0.3
   plot_triangle: f'{output_dir}/triangle.png'
@@ -66,7 +66,7 @@ summarize:
   plot_geweke: f'{output_dir}/geweke.png'
 
 summarize:
-   profiles:
+   source:
      - f'{output_dir}/profiles_qiso.npy'
      - f'{output_dir}/profiles_qiso_nowiggle.npy'
    stats:
@@ -76,15 +76,14 @@ summarize:
    plot_profile_comparison: f'{output_dir}/profile_comparison.png'
 
 summarize:
-   profiles:
+   source:
      - f'{output_dir}/profiles.npy'
    stats:
      - f'{tmp_dir}/stats.tex'
    plot_aligned_stacked: f'{tmp_dir}/aligned_stacked.png'
 
 do:
-  source:
-    profiles: f'{output_dir}/profiles.npy'
+  source: f'{output_dir}/profiles.npy'
 
 sample:
   class: cosmofit.samplers.EmceeSampler
@@ -94,7 +93,7 @@ sample:
   run:
     max_iterations: 10000
     check_every: 100
-  check: True
+    check: True
   save: f'{output_dir}/chain_*.npy'
 
 profile:

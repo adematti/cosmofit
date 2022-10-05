@@ -1,13 +1,14 @@
 import os
 
 import numpy as np
+import mpytools as mpy
 
 from cosmofit.samples import Chain
 from cosmofit import utils
-from .base import BasePosteriorSampler
+from .base import BaseBatchPosteriorSampler
 
 
-class PocoMCSampler(BasePosteriorSampler):
+class PocoMCSampler(BaseBatchPosteriorSampler):
 
     def __init__(self, *args, nwalkers=None, threshold=1.0, scale=True, rescale=False, diagonal=True, flow_config=None, train_config=None, **kwargs):
         super(PocoMCSampler, self).__init__(*args, **kwargs)
@@ -20,7 +21,7 @@ class PocoMCSampler(BasePosteriorSampler):
         self.sampler = pocomc.Sampler(self.nwalkers, ndim, self.loglikelihood, self.logprior, bounds=bounds, threshold=threshold, scale=scale,
                                       rescale=rescale, diagonal=diagonal, flow_config=flow_config, train_config=train_config,
                                       vectorize_likelihood=True, vectorize_prior=True, infer_vectorization=False,
-                                      output_dir=None, output_label=None)
+                                      output_dir=None, output_label=None, random_state=self.rng.randint(0, high=0xffffffff))
         if self.save_fn is None:
             raise ValueError('save_fn must be provided to save pocomc state')
         self.state_fn = [os.path.splitext(fn)[0] + '.pocomc.state' for fn in self.save_fn]
@@ -29,7 +30,7 @@ class PocoMCSampler(BasePosteriorSampler):
         return super(PocoMCSampler, self).logprior(params)
 
     def _prepare(self):
-        self.resume = self.mpicomm.bcast(self.chains[0] is not None, root=0)
+        self.resume = self.mpicomm.bcast(any(chain is not None for chain in self.chains), root=0)
 
     def _run_one(self, start, niterations=300, progress=False, **kwargs):
         if self.resume:
@@ -41,18 +42,31 @@ class PocoMCSampler(BasePosteriorSampler):
             self.sampler.log_likelihood = FunctionWrapper(self.loglikelihood, args=None, kwargs=None)
             self.sampler.log_prior = FunctionWrapper(self.logprior, args=None, kwargs=None)
             self.sampler.log_likelihood(self.sampler.x)  # to set derived parameters
-        else:
+
+        import torch
+        np_random_state_bak, torch_random_state_bak = np.random.get_state(), torch.get_rng_state()
+        self.sampler.random_state = self.rng.randint(0, high=0xffffffff)
+        np.random.set_state(self.rng.get_state())  # self.rng is same for all ranks
+        torch.set_rng_state(self.mpicomm.bcast(torch_random_state_bak, root=0))
+
+        if not self.resume:
             self.sampler.run(prior_samples=start, progress=progress, **kwargs)
+
         self.sampler.add_samples(n=niterations)
-        result = self.sampler.results
-        data = [result['samples'][..., iparam] for iparam, param in enumerate(self.varied_params)] + [result['logprior'], result['loglikelihood']]
+        np.random.set_state(np_random_state_bak)
+        torch.set_rng_state(torch_random_state_bak)
+        try:
+            result = self.sampler.results
+        except ValueError:
+            return None
         # This is not picklable
         del self.sampler.log_likelihood, self.sampler.log_prior
         # Clear saved quantities to save space
         for name in self.sampler.__dict__:
             if name.startswith('saved_'): setattr(self.sampler, name, [])
         # Save last parameters, which be reused in the next run
-        #self.sampler.derived = [self.derived[0][:-1], {name: self.derived[1][name][:-1] for name in self.derived[1]}]
+        #self.sampler.derived = [d[:-1] for d in self.derived]
         if self.mpicomm.rank == 0:
             self.sampler.save_state(self.state_fn[self._ichain])
+        data = [result['samples'][..., iparam] for iparam, param in enumerate(self.varied_params)] + [result['logprior'], result['loglikelihood']]
         return Chain(data=data, params=self.varied_params + ['logprior', 'loglikelihood'])

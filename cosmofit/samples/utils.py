@@ -73,6 +73,8 @@ def interval(samples, weights=None, nsigmas=1.):
     cdfpq = cdf + nquantile
     ixmaxup = np.searchsorted(cdf, cdfpq, side='left')
     mask = ixmaxup < len(x)
+    if not mask.any():
+        raise ValueError('Not enough samples ({:d}) for interval estimation'.format(x.size))
     indices = np.array([np.flatnonzero(mask), ixmaxup[mask]])
     xmin, xmax = x[indices]
     argmin = np.argmin(xmax - xmin)

@@ -3,6 +3,7 @@ import logging
 import itertools
 
 import numpy as np
+import mpytools as mpy
 from mpi4py import MPI
 
 from cosmofit.samples import Chain, ParameterValues, load_source
@@ -14,7 +15,7 @@ class PolychordSampler(BasePosteriorSampler):
 
     check = None
 
-    def __init__(self, *args, blocks=None, nlive='25*ndim', max_ndead=None, nprior='10*nlive', nfail='1*nlive',
+    def __init__(self, *args, blocks=None, oversample_power=0.4, nlive='25*ndim', max_ndead=None, nprior='10*nlive', nfail='1*nlive',
                  nrepeats='2*ndim', nlives=None, do_clustering=True, boost_posterior=0, compression_factor=np.exp(-1),
                  synchronous=True, seed=None, **kwargs):
 
@@ -29,7 +30,7 @@ class PolychordSampler(BasePosteriorSampler):
                     logging.INFO: 1, logging.DEBUG: 2}[logging.root.level]
         from .mcmc import _format_blocks
         if blocks is None:
-            blocks, oversample_factors = self.likelihood.block_params(params=self.varied_params)
+            blocks, oversample_factors = self.likelihood.block_params(params=self.varied_params, oversample_power=oversample_power)
         else:
             blocks, oversample_factors = _format_blocks(blocks, self.varied_params)
         self.varied_params.sort(itertools.chain(*blocks))
@@ -55,70 +56,103 @@ class PolychordSampler(BasePosteriorSampler):
         from pypolychord import settings
         self.settings = settings.PolyChordSettings(di['ndim'], 0, seed=(seed if seed is not None else -1), **kwargs)
 
-    def prior_transform(self, values):
-        toret = np.empty_like(values)
-        for iparam, (value, param) in enumerate(zip(values, self.varied_params)):
-            toret[iparam] = param.prior.ppf(value)
-        return toret
-
     def _prepare(self):
-        self.settings.read_resume = self.mpicomm.bcast(self.chains[0] is not None, root=0)
+        self.settings.read_resume = self.mpicomm.bcast(any(chain is not None for chain in self.chains), root=0)
 
-    def _run_one(self, start, precision_criterion=None):
+    def _run_one(self, start, check=None, **kwargs):
+
         import pypolychord
 
-        def logposterior(values):
-            return (max(self.logposterior(values), self.settings.logzero), [])
+        if check is not None: kwargs.update(check)
+        for name, value in kwargs:
+            setattr(self.settings, name, value)
 
         def dumper(live, dead, logweights, logZ, logZerr):
-            # Periodically save samples
-            nlive = len(live)
-            samples = list(np.loadtxt(prefix + '.txt', unpack=True))
-            aweight, logposterior = [np.concatenate([sample, np.full(nlive, value, dtype='f8')]) for sample, value in zip(samples[:2], [0., np.nan])]
-            points = [np.concatenate([sample, live[:, iparam]]) for iparam, sample in enumerate(samples[2: 2 + ndim])]
-            logposterior[logposterior <= self.settings.logzero] = -np.inf
-            chain = Chain(points + [aweight, logposterior], params=self.varied_params + ['aweight', 'logposterior'])
-            # derived is different on each process
-            derived = self.mpicomm.gather(self.derived, root=0)
-            if self.mpicomm.rank == 0:
-                self.derived = [ParameterValues.concatenate([dd[0] for dd in derived]),
-                                {name: np.concatenate([dd[1][name] for dd in derived], axis=0) for name in derived[0][1]}]
-                if self.resume_derived is not None:
-                    self.derived = [ParameterValues.concatenate([self.resume_derived[0], self.derived[0]]), {name: np.concatenate([self.resume_derived[1][name], self.derived[1][name]], axis=0) for name in self.resume_derived[1]}]
-                chain = self._set_derived(chain)
-                self.resume_chain = chain[:-nlive]
-                self.resume_chain.save(self.save_fn[self._ichain])
-                chain[-nlive:].save(prefix + '.state.npy')
+            # Called only by rank = 0
+            # When dumper() is called, save samples
+            # BUT: we need derived parameters, which are on rank > 0 (if mpicomm.size > 1)
+            # HACK: tell loglikelihood to save samples
+            for rank in range(self.mpicomm.size):
+                if _req.get(rank, None) is not None: _req[rank].Free()
+                _req[rank] = self.mpicomm.isend((self._it_send, live) if rank == loglikelihood_rank else (self._it_send, None), dest=rank, tag=_tag)
 
-            self.resume_derived = self.derived
-            self.derived = None
+        def my_dumper():
+            # Called by rank > 0 if mpicomm.size > 1 else rank == 0
+            if self.mpicomm.iprobe(source=0, tag=_tag):
+                self._it_rec, live = self.mpicomm.recv(source=0, tag=_tag)
+                if self.mpicomm.rank != loglikelihood_rank:
+                    self.mpicomm.send(self.derived, dest=loglikelihood_rank, tag=_tag + 1)
+                else:
+                    derived = [self.derived] + [self.mpicomm.recv(source=rank, tag=_tag + 1) for rank in range(2, self.mpicomm.size)]
+                    self.derived = [ParameterValues.concatenate([dd[i] for dd in derived if dd is not None]) for i in range(2)]
+                    try:
+                        samples = list(np.loadtxt(prefix + '.txt', unpack=True))
+                    except IOError:
+                        pass
+                    else:
+                        nlive = len(live)
+                        aweight, loglikelihood = [np.concatenate([sample, np.full(nlive, value, dtype='f8')]) for sample, value in zip(samples[:2], [0., np.nan])]
+                        points = [np.concatenate([sample, live[:, iparam]]) for iparam, sample in enumerate(samples[2: 2 + ndim])]
+                        loglikelihood[loglikelihood <= self.settings.logzero] = -np.inf
+                        chain = Chain(points + [aweight, loglikelihood], params=self.varied_params + ['aweight', 'loglikelihood'])
+                        if self.resume_derived is not None:
+                            self.derived = [ParameterValues.concatenate([resume_derived, derived]) for resume_derived, derived in zip(self.resume_derived, self.derived)]
+                        chain = self._set_derived(chain)
+                        self.resume_chain = chain[:-nlive]
+                        self.resume_chain.save(self.save_fn[self._ichain])
+                        chain[-nlive:].save(prefix + '.state.npy')
+                self.resume_derived = self.derived
+                self.derived = None
+
+        def prior_transform(values):
+            toret = np.empty_like(values)
+            for iparam, (value, param) in enumerate(zip(values, self.varied_params)):
+                toret[iparam] = param.prior.ppf(value)
+            return toret
+
+        def loglikelihood(values):
+            # Called by ranks > 0
+            my_dumper()
+            return (max(self.loglikelihood(values), self.settings.logzero), [])
 
         self.likelihood.mpicomm = MPI.COMM_SELF
+        loglikelihood_rank = 0 if self.mpicomm.size == 1 else 1
+        _tag, _req = 1000, {}
+        self._it_send, self._it_rec = 0, 0
+
+        #if self.mpicomm.size > 1:
+        #    raise ValueError('Cannot run polychord on multiple processes; one should implement a callback function called by processes in polychord')
         self.settings.base_dir = self.base_dirs[self._ichain]
         self.settings.file_root = self.file_roots[self._ichain]
         prefix = os.path.join(self.settings.base_dir, self.settings.file_root)
-        if precision_criterion is not None:
-            self.settings.precision_criterion = float(precision_criterion)
 
         self.resume_derived, self.resume_chain = None, None
         if self.settings.read_resume:
-            source = load_source([self.save_fn[self._ichain], prefix + '.state.npy'])
-            source = source[0].concatenate(source)
-            points = {}
-            for param in self.varied_params:
-                points[param.name] = source.pop(param)
-            self.resume_derived = [source.select(derived=True), points]
+            if self.mpicomm.rank == loglikelihood_rank:
+                source = load_source([self.save_fn[self._ichain], prefix + '.state.npy'])
+                source = source[0].concatenate(source)
+                self.resume_derived = [source.select(name=self.varied_params.names()), source.select(derived=True)]
 
         ndim = len(self.varied_params)
         kwargs = {}
         if self.mpicomm is not MPI.COMM_WORLD:
             kwargs['comm'] = self.mpicomm
         try:
-            pypolychord.run_polychord(logposterior, ndim, 0, self.settings,
-                                      prior=self.prior_transform, dumper=dumper,
+            pypolychord.run_polychord(loglikelihood, ndim, 0, self.settings,
+                                      prior=prior_transform, dumper=dumper,
                                       **kwargs)
         except TypeError as exc:
-            raise ImportError('To use polychord in parallel, please use version at https://github.com/adematti/PolyChordLite')
+            raise ImportError('To use polychord in parallel, please use version at https://github.com/adematti/PolyChordLite@mpi4py')
+
+        # Final dump, in case we did not write the last points
+        self._it_send = self.mpicomm.bcast(self._it_send, root=0)
+        self._it_rec = self.mpicomm.bcast(self._it_rec, root=loglikelihood_rank)
+        while self._it_rec != self._it_send:
+            my_dumper()
+            self._it_rec = self.mpicomm.bcast(self._it_rec, root=loglikelihood_rank)
 
         self.derived = self.resume_derived
-        return self.resume_chain
+        if self.derived is None: self.derived = [None] * 2
+        self.derived = [ParameterValues.sendrecv(derived, source=loglikelihood_rank, dest=0, mpicomm=self.mpicomm) for derived in self.derived]
+        chain = ParameterValues.sendrecv(self.resume_chain, source=loglikelihood_rank, dest=0, mpicomm=self.mpicomm)
+        return chain

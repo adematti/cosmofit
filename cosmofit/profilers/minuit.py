@@ -55,21 +55,21 @@ class MinuitProfiler(BaseProfiler):
 
         return profiles
 
-    def _profile_one(self, start, param, max_iterations=int(1e5), **kwargs):
+    def _profile_one(self, start, param, **kwargs):
         self._set_start(start)
         profiles = Profiles()
         if 'cl' in kwargs:
             kwargs['bound'] = kwargs.pop('cl')
         if not np.isinf(param.prior.limits).any():
             kwargs.setdefault('bound', param.prior.limits)
-        x, chi2 = self.minuit.mnprofile(param.name, ncall=max_iterations, **kwargs)[:2]
+        x, chi2 = self.minuit.mnprofile(param.name, **kwargs)[:2]
         profiles.set(profile=ParameterValues([(x, chi2)], params=[param]))
 
         return profiles
 
-    def _contour_one(self, start, param1, param2, max_iterations=int(1e5), **contour):
+    def _contour_one(self, start, param1, param2, **contour):
         self._set_start(start)
         profiles = Profiles()
-        x1, x2 = self.minuit.mncontour(str(param1), str(param2), ncall=max_iterations, **contour)
+        x1, x2 = self.minuit.mncontour(str(param1), str(param2), **contour)
         profiles.set(profile=ParameterContours([(ParameterArray(x1, param1), ParameterArray(x2, param2))]))
         return profiles

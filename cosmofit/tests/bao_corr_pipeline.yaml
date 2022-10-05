@@ -1,7 +1,7 @@
 pipeline:
   QSO:
     like:
-      class: cosmofit.likelihoods.CorrelationFunctionMultipolesLikelihood
+      class: cosmofit.likelihoods.clustering.CorrelationFunctionMultipolesLikelihood
       init:
         data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
@@ -15,12 +15,12 @@ pipeline:
       load: True
       plot: f'{output_dir}/corr.png'
     theory:
-      class: cosmofit.theories.bao.DampedBAOWigglesTracerCorrelationFunctionMultipoles
+      class: cosmofit.theories.clustering.DampedBAOWigglesTracerCorrelationFunctionMultipoles
       params:
         .fixed: ['al*']
         .derived: [.varied]
     wiggles:
-      class: cosmofit.theories.bao.DampedBAOWigglesCorrelationFunctionMultipoles
+      class: cosmofit.theories.clustering.DampedBAOWigglesCorrelationFunctionMultipoles
       plot: f'{output_dir}/dcorr.png'
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
@@ -66,7 +66,7 @@ sample:
   run:
     max_iterations: 100000
     check_every: 100
-  check: True
+    check: True
   save: f'{output_dir}/chain_*.npy'
 
 sample:
@@ -82,8 +82,8 @@ sample:
   run:
     max_iterations: 10000
     check_every: 100
-  check:
-    eigen_gr_stop: 0.01
+    check:
+      max_eigen_gr: 0.01
   save: f'{output_dir}/chain_*.npy'
 
 profile:

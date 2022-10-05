@@ -1,7 +1,7 @@
 pipeline:
   QSO:
     like:
-      class: cosmofit.likelihoods.PowerSpectrumMultipolesLikelihood
+      class: cosmofit.likelihoods.clustering.PowerSpectrumMultipolesLikelihood
       init:
         data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
@@ -17,8 +17,8 @@ pipeline:
       load: True
       plot: f'{output_dir}/power.png'
     theory:
-      #class: cosmofit.theories.full_shape.LPTTracerPowerSpectrumMultipoles
-      class: cosmofit.theories.full_shape.KaiserTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.clustering.LPTTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.clustering.KaiserTracerPowerSpectrumMultipoles
       params:
       #  .derived: [.varied]
       #  .fixed: '*'
@@ -26,7 +26,7 @@ pipeline:
           derived: '.auto'
         #sn*:
         #  derived: '.auto'
-      load: f'{output_dir}/fs_emulator.npy'
+      #load: f'{output_dir}/fs_emulator.npy'
       emulator:
         init:
           #order: {'*': 1, 'q*': 2, 'b1': 2}
@@ -39,25 +39,36 @@ pipeline:
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
     shapefit:
-      class: cosmofit.theories.power_template.ShapeFitPowerSpectrumParameterization
+      class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
     #full:
-    #  class: cosmofit.theories.power_template.FullPowerSpectrumParameterization
+    #  class: cosmofit.theories.clustering.FullPowerSpectrumParameterization
     #  init:
     #    fiducial: DESI
     #  params:
     #    .fixed: n_s
+    #    logA:
+    #      prior:
+    #        limits: [1.61, 3.91]
+    #      ref:
+    #        dist: norm
+    #        loc: 2.84
+    #        scale: 0.01
+    #      drop: True
+    #      latex: \log(10^{10} A_{\mathrm{s}})
+    #    A_s:
+    #      derived: '1e-10 * np.exp({logA})'
     #wiggle:
-    #  class: cosmofit.theories.power_template.WiggleSplitPowerSpectrumParameterization
+    #  class: cosmofit.theories.clustering.WiggleSplitPowerSpectrumParameterization
     #pthetap:
-    #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumParameterization
+    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
     #  init:
     #    kptt: e'np.linspace(0.03, 0.18, 2)'
     #  params:
-        #.fixed: [f, qap]
-        #.fixed: [f]
+    #    #.fixed: [f, qap]
+    #    .fixed: [f]
     #    .fixed: '*'
     #ptheta:
-    #  class: cosmofit.theories.power_template.BandVelocityPowerSpectrumTemplate
+    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumTemplate
     #  params:
     #    rptt*:
     #      value: 0.
@@ -96,17 +107,6 @@ sample:
   save: f'{output_dir}/grid.npy'
 
 sample:
-  class: cosmofit.samplers.EmceeSampler
-  init:
-    #nwalkers: 40
-    chains: 1
-  run:
-    max_iterations: 10000
-    check_every: 100
-  check: True
-  save: f'{output_dir}/chain_*.npy'
-
-sample:
   class: cosmofit.samplers.ZeusSampler
   init:
     #nwalkers: 40
@@ -114,43 +114,59 @@ sample:
   run:
     max_iterations: 10000
     check_every: 100
-  check: True
+    check: True
   save: f'{output_dir}/chain_*.npy'
 
 sample:
   class: cosmofit.samplers.PocoMCSampler
   init:
     #nwalkers: 40
-    chains: 1
-  run:
-    max_iterations: 10000
-    check_every: 100
-  check: True
-  save: f'{output_dir}/chain_*.npy'
-
-sample:
-  class: cosmofit.samplers.MCMCSampler
-  init:
     chains: 1 #f'{output_dir}/chain_0.npy'
   run:
-  check: True
-  save: f'{output_dir}/chain_*.npy'
-
-sample:
-  class: cosmofit.samplers.PolychordSampler
-  init:
-    chains: f'{output_dir}/chain_0.npy'
-  run:
+    max_iterations: 10000
+    check: True
   save: f'{output_dir}/chain_*.npy'
 
 sample:
   class: cosmofit.samplers.DynestySampler
   init:
-    chains: 1
-    mode: static
+    chains: 1 #f'{output_dir}/chain_0.npy'
+    mode: dynamic
   run:
-    dlogz: 1
+    check:
+      dlogz: 1
   save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.EmceeSampler
+  init:
+    #nwalkers: 40
+    chains: 1
+  run:
+    max_iterations: 10000
+    check_every: 10
+    check: True
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.MCMCSampler
+  init:
+    covariance: f'{output_dir}/chain_0.npy'
+    chains: 1 #f'{output_dir}/chain_0.npy'
+    drag: True
+    oversample_power: 0.4
+  run:
+    check: True
+    check_every: 10
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.PolychordSampler
+  init:
+    chains: 1 #f'{output_dir}/chain_0.npy'
+  run:
+  save: f'{output_dir}/chain_*.npy'
+
 
 profile:
   class: cosmofit.profilers.MinuitProfiler

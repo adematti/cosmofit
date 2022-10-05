@@ -1,13 +1,13 @@
 pipeline:
   like:
-    class: cosmofit.likelihoods.BAOParameterizationLikelihood
+    class: cosmofit.likelihoods.clustering.BAOParameterizationLikelihood
     init:
       chains: f'{data_dir}/chain_0.npy'
       burnin: 0.5
     save: f'{output_dir}/bao_like.npy'
     #load: True
   cosmo:
-    class: cosmofit.theories.primordial_cosmology.Cosmoprimo
+    class: cosmofit.theories.clustering.Cosmoprimo
     init:
       fiducial: DESI
     params:
@@ -38,8 +38,8 @@ sample:
   run:
     max_iterations: 10000
     check_every: 100
-  check:
-    eigen_gr_stop: 0.01
+    check:
+      max_eigen_gr: 0.01
   save: f'{output_dir}/chain_*.npy'
 
 profile:

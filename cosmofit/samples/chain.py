@@ -294,10 +294,14 @@ class Chain(Samples):
         return toret
 
     def choice(self, index='argmax', params=None, **kwargs):
-        if params is None: params = self.params(**kwargs)
+        if params is None:
+            params = self.params(**kwargs)
         if index == 'argmax':
             index = np.unravel_index(self.logposterior.argmax(), shape=self.shape)
-        return {str(param): self[param][index] for param in params}
+            return {str(param): self[param][index] for param in params}
+        elif index == 'mean':
+            return {str(param): self.mean(param) for param in params}
+        raise ValueError('Unknown "index" argument {}'.format(index))
 
     def cov(self, params=None, ddof=1):
         """
