@@ -20,6 +20,7 @@ doc/_build/
 **/_chains
 **/_profiles
 **/_*
+!**/__init__.py
 
 # Unit test / coverage reports
 **/.coverage

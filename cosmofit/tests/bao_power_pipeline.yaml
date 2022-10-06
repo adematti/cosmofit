@@ -50,7 +50,7 @@ pipeline:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 
 emulate:
-  class: MLPEmulatorEngine
+  class: MLPEmulator
   sample: #f'{output_dir}/samples.npy'
     niterations: 1000
     save: f'{output_dir}/samples.npy'

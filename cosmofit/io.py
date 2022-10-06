@@ -5,7 +5,7 @@ from collections import UserDict
 import numpy as np
 import yaml
 
-from .utils import BaseClass, deep_eq
+from .utils import BaseClass, deep_eq, evaluate
 
 
 class YamlLoader(yaml.SafeLoader):
@@ -162,7 +162,7 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
                         assert key not in word
                         di[key] = freplace
                         word = word.replace(placeholder, key)
-                return utils.evaluate(word, locals=di)
+                return evaluate(word, locals=di)
             return None
 
         def decode_format(word):
