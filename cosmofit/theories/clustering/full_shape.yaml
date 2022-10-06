@@ -63,7 +63,7 @@ params:
     prior:
       dist: norm
       loc: 0.
-      scale: 1e6
+      scale: 100
     ref:
       dist: norm
       loc: 0.
