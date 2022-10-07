@@ -158,18 +158,14 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
             samples = self.samples.ravel()[rng.choice(nsamples, size=size, replace=False)]
         return samples
 
-    def check(self, mse_stop=None, **kwargs):
+    def check(self, mse_stop=None, diagnostics=None, **kwargs):
 
-        def add_diagnostics(name, value):
-            if name not in self.diagnostics:
-                self.diagnostics[name] = [value]
-            else:
-                self.diagnostics[name].append(value)
-            return value
+        if diagnostics is None:
+            diagnostics = self.diagnostics
 
         if self.mpicomm.rank == 0:
             self.log_info('Diagnostics:')
-        item = '- '
+
         toret = True
         samples = self.subsamples(**kwargs)
         pipeline = self.to_pipeline(derived=self.varied)
@@ -187,9 +183,18 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
         #derived = calculator.mpirun(**{name: self.mpicomm.bcast(samples[name] if self.mpicomm.rank == 0 else None, root=0) for name in self.varied_params})
 
         if self.mpicomm.rank == 0:
+
+            def add_diagnostics(name, value):
+                if name not in diagnostics:
+                    diagnostics[name] = [value]
+                else:
+                    diagnostics[name].append(value)
+                return value
+
+            item = '- '
             mse = {}
             for name in self.varied:
-                mse[name] = np.mean((derived[name] - samples[name]) ** 2)
+                mse[name] = np.mean((derived[name] - samples[name])**2)
                 msg = '{}mse of {} is {:.3g} (square root = {:.3g})'.format(item, name, mse[name], np.sqrt(mse[name]))
                 if mse_stop is not None:
                     test = mse[name] < mse_stop
@@ -200,7 +205,7 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
                     self.log_info('{}.'.format(msg))
             add_diagnostics('mse', mse)
 
-        self.diagnostics = self.mpicomm.bcast(self.diagnostics, root=0)
+        diagnostics.update(self.mpicomm.bcast(diagnostics, root=0))
 
         return self.mpicomm.bcast(toret, root=0)
 
@@ -276,7 +281,7 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
             return new
 
         calculator = from_state(new_cls, state)
-        calculator.runtime_info.full_params = self.params
+        calculator.runtime_info.full_params = self.params.deepcopy()
 
         if derived is not None:
             for name in derived:

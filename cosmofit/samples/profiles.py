@@ -90,6 +90,10 @@ class ParameterCovariance(BaseClass):
         """Return correlation matrix for input parameters ``params``."""
         return utils.cov_to_corrcoef(self.cov(params=params))
 
+    def __contains__(self, name):
+        """Has this parameter?"""
+        return name in self._params
+
     def __getstate__(self):
         """Return this class state dictionary."""
         return {'value': self._value, 'params': self._params.__getstate__()}

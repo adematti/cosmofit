@@ -1416,9 +1416,18 @@ class ParameterPrior(BaseClass):
 
     def affine_transform(self, loc=0., scale=1.):
         state = self.__getstate__()
+        try:
+            center = self.loc
+        except AttributeError:
+            if self.is_limited():
+                center = np.mean([lim for lim in self.limits if not np.isinf(lim)])
+            else:
+                center = 0.
         for name, value in state.items():
-            if name in ['loc', 'limits']:
-                state[name] = (value + loc) * scale
+            if name in ['loc']:
+                state[name] = value + loc
+            elif name in ['limits']:
+                state[name] = tuple((lim - center) * scale + loc for lim in value)
             elif name in ['scale']:
                 state[name] = value * scale
         return self.__class__(**state)

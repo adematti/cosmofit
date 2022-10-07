@@ -17,19 +17,25 @@ class ProfilerConfig(SectionConfig):
         super(ProfilerConfig, self).__init__(*args, **kwargs)
         self['class'] = import_class(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseProfiler._registry)
 
-    def run(self, likelihood):
+    def run(self, pipeline):
+        pipeline = pipeline.copy()
+        params = pipeline.params.deepcopy()
         from cosmofit.samples import SourceConfig
-        values = SourceConfig(self['source']).choice(params=likelihood.params)
-        likelihood = likelihood.copy()
-        params = likelihood.params.deepcopy()
-        for param, value in zip(params, values): param.value = value
-        likelihood.set_params(params)
+        source = SourceConfig(self['source'])
+        if any(source.source):
+            from cosmofit.parameter import ParameterPrior
+            locs = source.choice(params=params)
+            scales = np.diag(source.cov(params=params))**0.5
+            for param, loc, scale in zip(params, locs, scales):
+                if not np.isnan(scale):
+                    param.ref = ParameterPrior(dist='norm', loc=loc, scale=scale)
+        pipeline.set_params(params)
 
         save_fn = self.get('save', None)
         if 'save_fn' in self['init'] and 'save' in self:
             raise ConfigError('Provide either init: save_fn or save, not both')
 
-        profiler = self['class'](likelihood, **{'save_fn': save_fn, **self['init']})
+        profiler = self['class'](pipeline, **{'save_fn': save_fn, **self['init']})
         save_fn = self.get('save', None)
 
         for name in ['maximize', 'interval', 'profile', 'contour']:
@@ -55,13 +61,14 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
     _check_same_input = False
 
-    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, profiles=None, covariance=None, rescale=False, save_fn=None, mpicomm=None):
+    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, profiles=None, covariance=None, transform=False, scale=1., save_fn=None, mpicomm=None):
         if mpicomm is None:
             mpicomm = likelihood.mpicomm
         self.likelihood = BaseClass.copy(likelihood)
         self.mpicomm = mpicomm
         self.likelihood.solved_default = '.best'
-        self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False)
+        self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False).deepcopy()
+        for param in self.varied_params: param.ref = param.ref.affine_transform(scale=scale)
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
         if not self.varied_params:
@@ -71,16 +78,14 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         if profiles is not None and not isinstance(profiles, Profiles):
             self.profiles = Profiles.load(profiles)
         self._set_rng(rng=rng, seed=seed)
-        covariance = SourceConfig(covariance)
-        if covariance.source is not None:
-            for param in self.varied_params:
-                if param in covariance.source.params():
-                    param.ref = ParameterPrior(loc=param.value, scale=np.sqrt(covariance.cov(params=param)), dist='norm')
-        # Get the covariance for all parameters
-        covariance = covariance.cov(params=self.varied_params)
-        self._original_params = self.varied_params
+        if self.mpicomm.rank == 0:
+            covariance = SourceConfig(covariance)
+            # Get the covariance for all parameters
+            covariance = covariance.cov(params=self.varied_params)
+        covariance = self.mpicomm.bcast(covariance, root=0)
+        self._original_params = self.mpicomm.bcast(self.varied_params, root=0)
 
-        if rescale:
+        if transform:
 
             self._params_transform_loc = np.array([param.value for param in self.varied_params], dtype='f8')
             self._params_transform_scale = np.diag(covariance)**0.5
@@ -247,7 +252,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
             elif name == 'contour':
                 item.data = [tuple(transform_array(array) for array in arrays) for arrays in item.data]
             else: # 'start', 'bestfit', 'error', 'interval', 'profile'
-                item.data = [transform_array(array, scale_only= name == 'error') for array in item.data]
+                item.data = [transform_array(array, scale_only=(name == 'error')) for array in item.data]
             toret.set(name=item)
         return toret
 

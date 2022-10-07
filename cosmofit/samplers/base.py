@@ -28,11 +28,17 @@ class SamplerConfig(SectionConfig):
         if 'save_fn' in self['init'] and 'save' in self:
             raise ConfigError('Provide either init: save_fn or save, not both')
 
-        from cosmofit.samples import SourceConfig
-        values = SourceConfig(self['source']).choice(params=pipeline.params)
         pipeline = pipeline.copy()
         params = pipeline.params.deepcopy()
-        for param, value in zip(params, values): param.value = value
+        from cosmofit.samples import SourceConfig
+        source = SourceConfig(self['source'])
+        if any(source.source):
+            from cosmofit.parameter import ParameterPrior
+            locs = source.choice(params=params, default=np.nan)
+            scales = np.diag(source.cov(params=params, default=np.nan))**0.5
+            for param, loc, scale in zip(params, locs, scales):
+                if not np.isnan(loc) and not np.isnan(scale):
+                    param.ref = ParameterPrior(dist='norm', loc=loc, scale=scale)
         pipeline.set_params(params)
 
         sampler = self['class'](pipeline, **{'save_fn': save_fn, **self['init']})
@@ -71,13 +77,14 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
     nwalkers = 1
     _check_same_input = False
 
-    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, chains=None, save_fn=None, mpicomm=None):
+    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, chains=None, scale=1., save_fn=None, mpicomm=None):
         if mpicomm is None:
             mpicomm = likelihood.mpicomm
         self.likelihood = BaseClass.copy(likelihood)
         self.mpicomm = mpicomm
         self.likelihood.solved_default = '.marg'
-        self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False)
+        self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False).deepcopy()
+        for param in self.varied_params: param.ref = param.ref.affine_transform(scale=scale)
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
         if not self.varied_params:
@@ -400,7 +407,7 @@ class BaseBatchPosteriorSampler(BasePosteriorSampler):
                     return is_stable(key)
                 if verbose:
                     self.log_info('{}.'.format(msg))
-                    return True
+                return True
 
             if 0 < burnin < 1:
                 burnin = int(burnin * self.chains[0].shape[0] + 0.5)
@@ -451,7 +458,7 @@ class BaseBatchPosteriorSampler(BasePosteriorSampler):
 
                 from scipy import stats
                 try:
-                    geweke_pvalue = stats.normaltest(all_geweke).pvalue
+                    geweke_pvalue = stats.normaltest(all_geweke, axis=None).pvalue
                 except ValueError:
                     geweke_pvalue = np.nan
                 toret &= full_test('geweke_pvalue', 'Geweke p-value', geweke_pvalue, min_geweke_pvalue, max_geweke_pvalue)

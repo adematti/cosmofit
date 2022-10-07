@@ -3,7 +3,7 @@ from .bao import (DampedBAOWigglesPowerSpectrumMultipoles, ResummedBAOWigglesPow
                   DampedBAOWigglesTracerPowerSpectrumMultipoles, ResummedBAOWigglesTracerPowerSpectrumMultipoles,
                   DampedBAOWigglesTracerCorrelationFunctionMultipoles, ResummedBAOWigglesCorrelationFunctionMultipoles)
 from .full_shape import (KaiserTracerPowerSpectrumMultipoles, KaiserTracerCorrelationFunctionMultipoles,
-                         LPTTracerPowerSpectrumMultipoles, LPTTracerCorrelationFunctionMultipoles)
+                         LPTPowerSpectrumMultipoles, LPTTracerPowerSpectrumMultipoles, LPTTracerPowerSpectrumMultipoles)
 from .power_template import (BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor, BandVelocityPowerSpectrumExtractor,
                              FullPowerSpectrumTemplate, ShapeFitPowerSpectrumTemplate, WiggleSplitPowerSpectrumTemplate, BandVelocityPowerSpectrumTemplate,
                              BAOPowerSpectrumParameterization, FullPowerSpectrumParameterization, ShapeFitPowerSpectrumParameterization, WiggleSplitPowerSpectrumParameterization, BandVelocityPowerSpectrumParameterization)

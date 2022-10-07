@@ -37,7 +37,7 @@ class Chain(Samples):
     @property
     def fweight(self):
         if self._fweight not in self:
-            self[self._fweight] = np.ones(self.shape, dtype='f8')
+            self[self._fweight] = np.ones(self.shape, dtype='i8')
         return self[self._fweight]
 
     @property
@@ -51,12 +51,12 @@ class Chain(Samples):
         self[self._aweight] = item
 
     @fweight.setter
-    def aweight(self, item):
-        self[self._aweight] = item
+    def fweight(self, item):
+        self[self._fweight] = item
 
     @logposterior.setter
     def logposterior(self, item):
-        self[self._aweight] = item
+        self[self._logposterior] = item
 
     @property
     def weight(self):
