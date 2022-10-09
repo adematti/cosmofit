@@ -1,0 +1,43 @@
+class: TT
+
+info:
+  version: 0.0.1
+  date: 10/09/2022
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Planck 2018 release: high-ell, TT+TE+EE power spectrum likelihood (plik)
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description: See https://wiki.cosmos.esa.int/planck-legacy-archive/index.php/CMB_spectrum_%26_Likelihood_Code
+
+init:
+  clik_fn: baseline/plc_3.0/hi_l/plik/plik_rd12_HM_v22b_TTTEEE.clik
+  product_id: '151902'
+
+params:
+  .import: params.yaml::[calib, calib_temp, TT, prior_SZ]
+
+---
+
+class: TTTEEE
+
+info:
+  version: 0.0.1
+  date: 10/09/2022
+  author: Arnaud de Mattia
+  maintainer: Arnaud de Mattia
+  description: Planck 2018 release: high-ell, TT+TE+EE power spectrum likelihood (plik)
+  url:
+  licence:
+  bibtex: []
+  requirements: []
+  long_description: See https://wiki.cosmos.esa.int/planck-legacy-archive/index.php/CMB_spectrum_%26_Likelihood_Code
+
+init:
+  clik_fn: baseline/plc_3.0/hi_l/plik/plik_rd12_HM_v22b_TTTEEE.clik
+  product_id: '151902'
+
+params:
+  from params.yaml import (calib, calib_temp, calib_pol, TT, TE, EE, prior_SZ)

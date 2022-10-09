@@ -39,6 +39,7 @@ pipeline:
 sampler:
   class: EmceeSampler
   chains_fn: 'chains'
+  .import: test_config2.yaml
 
 filesystem:
   answer_str: '42'

@@ -44,7 +44,6 @@ def read_args(args=None, mpicomm=None, parser=None, section='sample'):
             raise ValueError('Provide updates as namespace1....name.key=value format')
         config.update_from_namespace(keyvalue[0], keyvalue[1], inherit_type=True)
     config.decode()
-    config['output'] = config.get('output', './')
     return config, args.config_fn
 
 

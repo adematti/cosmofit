@@ -31,14 +31,14 @@ def get_from_cosmo(cosmo, name):
 
 class Cosmoprimo(BasePrimordialCosmology):
 
-    def __init__(self, fiducial=None, engine='class', extra_params=None):
+    def __init__(self, fiducial=None, engine='class', params=None, extra_params=None):
         self.engine = engine
         self.extra_params = extra_params or {}
         if fiducial is not None:
             fiducial = get_cosmo(fiducial)
         else:
             fiducial = Cosmology()
-        self.fiducial = fiducial.clone(extra_params=self.extra_params, engine=self.engine)
+        self.fiducial = fiducial.clone(**(params or {}), extra_params=self.extra_params, engine=self.engine)
         self.requires = {}
 
     def set_params(self, params):

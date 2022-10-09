@@ -5,7 +5,7 @@ from collections import UserDict
 import numpy as np
 import yaml
 
-from .utils import BaseClass, deep_eq
+from .utils import BaseClass, deep_eq, evaluate
 
 
 class YamlLoader(yaml.SafeLoader):
@@ -84,6 +84,7 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         *yaml* parser.
     """
     _attrs = []
+    _key_import = '.import'
 
     def __init__(self, data=None, string=None, parser=None, decode=True, **kwargs):
         """
@@ -162,7 +163,9 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
                         assert key not in word
                         di[key] = freplace
                         word = word.replace(placeholder, key)
-                return utils.evaluate(word, locals=di)
+                print(word)
+                print(di)
+                return evaluate(word, locals=di)
             return None
 
         def decode_format(word):
@@ -199,6 +202,54 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         callback(self.data, decode_eval)
         callback(self.data, decode_format)
 
+        def insert_dict(di, key, obj):
+            toret = {}
+            for k, v in di.items():
+                if k == key:
+                    toret.update(obj)
+                else:
+                    toret[k] = v
+            return toret
+
+        def insert_list(li, ind, obj):
+            return li[:ind] + obj + li[ind:]
+
+        def walk(di):
+            for key, value in list(di.items() if isinstance(di, dict) else enumerate(di)):
+                yield key, value
+
+        def callback_import(di):
+
+            def add_colon(tmp):
+                if '::' not in tmp:
+                    return tmp + '::'
+                return tmp
+
+            for key, value in walk(di):
+                if key == self._key_import:  # dictionary
+                    imports = self.search(add_colon(value))
+                    if not isinstance(imports, list): imports = [imports]
+                    add = {}
+                    for imp in imports:
+                        if not isinstance(imp, dict):
+                            raise ValueError('Imported {} must be dictionaries'.format(value))
+                        add.update(imp)
+                    di = insert_dict(di, key, add)
+                elif not isinstance(di, dict) and isinstance(value, dict) and set(value.keys()) == {self._key_import}:
+                    imports = self.search(add_colon(value[self._key_import]))
+                    if not isinstance(imports[0], list): imports = [imports]
+                    add = []
+                    for imp in imports:
+                        if not isinstance(imp, list):
+                            raise ValueError('Imported {} must be lists'.format(value))
+                        add += imp
+                    di = insert_list(di, key, add)
+                if isinstance(value, (dict, list)):
+                    di[key] = callback_import(value)
+            return di
+
+        self.data = callback_import(self.data)
+
     def search(self, namespaces, delimiter=None, fn=None):
         if isinstance(namespaces, str):
             if fn is None:
@@ -208,14 +259,26 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
                     pass
             if delimiter is None:
                 from .base import namespace_delimiter as delimiter
-            namespaces = namespaces.split(delimiter)
+            isscalar = ',' not in namespaces
+            namespaces = [namespace.split(delimiter) for namespace in namespaces.split(',')]
+        else:
+            isscalar = np.ndim(namespaces[0]) == 0
+            if isscalar:
+                namespaces = [namespaces]
         if fn is None:
             d = self
         else:
             d = BaseConfig(fn)
-        for namespace in namespaces:
-            d = d[namespace]
-        return d
+
+        def search(d, namespaces):
+            for namespace in namespaces:
+                d = d[namespace]
+            return d
+
+        toret = [search(d, ns) for ns in namespaces]
+        if isscalar:
+            return toret[0]
+        return toret
 
     def update_from_namespace(self, string, value, inherit_type=True, delimiter=None):
         if delimiter is None:

@@ -27,7 +27,7 @@ pipeline:
     params:
       .delete: ['al*-3', 'al*-2', 'al*-1', 'al*1']
       al*:
-        derived: '.marg'
+        derived: '.auto'
         prior:
           dist: 'norm'
           loc: 0.
@@ -125,7 +125,7 @@ profile:
   maximize:
     niterations: 1
   #interval:
-  #profile:
+  profile:
 
 data_dir: _pk
 output_dir: _bao
