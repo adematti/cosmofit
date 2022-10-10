@@ -18,7 +18,7 @@ from cosmofit.parameter import ParameterCollection
 from cosmofit.io import BaseConfig, ConfigError
 
 
-def load_source(source, choice=None, cov=None, burnin=None, params=None):
+def load_source(source, choice=None, cov=None, burnin=None, params=None, default=False):
     if not utils.is_sequence(source): fns = [source]
     else: fns = source
 
@@ -36,41 +36,45 @@ def load_source(source, choice=None, cov=None, burnin=None, params=None):
         if not all(type(source) == type(sources[0]) for source in sources):
             raise ValueError('Sources must be of same type for "choice / cov"')
         source = sources[0].concatenate(sources) if sources[0] is not None else {}
-        if params is None:
-            params_in_source = params
-            params_not_in_source = []
-        else:
-            params_in_source = [param for param in params if param in source]
-            params_not_in_source = [param for param in params if param not in params_in_source]
 
     toret = []
     if choice is not None:
         if not isinstance(choice, dict):
             choice = {}
         if hasattr(source, 'bestfit'):
-            choice = source.bestfit.choice(params=params_in_source, **choice)
-        elif source:
-            choice = source.choice(params=params_in_source, **choice)
-        for param in params_not_in_source:
-            choice[str(param)] = param.value
+            source = source.bestfit
+        tmp = {}
         if params is not None:
-            choice = list(choice.values())
-        toret.append(choice)
+            params_in_source = [param for param in params if param in source]
+            if params_in_source:
+                tmp = source.choice(params=params_in_source, **choice)
+            params_not_in_source = [param for param in params if param not in params_in_source]
+            for param in params_not_in_source:
+                tmp[str(param)] = (param.value if default is False else default)
+            tmp = [tmp[str(param)] for param in params]
+        elif source:
+            tmp = source.choice(params=source.params(), **choice)
+        toret.append(tmp)
 
     if cov is not None:
         if hasattr(source, 'covariance'):
             source = source.covariance
-        cov = None
+        tmp = None
         if params is not None:
-            cov = np.zeros((len(params),) * 2, dtype='f8')
+            tmp = np.zeros((len(params),) * 2, dtype='f8')
+            params_in_source = [param for param in params if param in source]
             indices = [params.index(param) for param in params_in_source]
             if indices:
-                cov[np.ix_(indices, indices)] = source.cov(params=params_in_source)
+                tmp[np.ix_(indices, indices)] = source.cov(params=params_in_source)
+            params_not_in_source = [param for param in params if param not in params_in_source]
             indices = [params.index(param) for param in params_not_in_source]
-            cov[indices, indices] = [param.proposal**2 for param in params_not_in_source]
+            if default is False:
+                tmp[indices, indices] = default
+            else:
+                tmp[indices, indices] = [param.proposal**2 if param.proposal is not None else np.nan for param in params_not_in_source]
         elif source:
-            cov = ParameterCovariance(source.cov(), params=source.params())
-        toret.append(cov)
+            tmp = ParameterCovariance(source.cov(params=source.params()), params=source.params())
+        toret.append(tmp)
 
     if len(toret) == 0:
         return sources
@@ -85,15 +89,14 @@ class SourceConfig(BaseConfig):
         if not isinstance(data, dict):
             data = {'fn': data}
         super(SourceConfig, self).__init__(data=data, **kwargs)
-        self.source = None
-        if 'fn' in self:
-            self.source = load_source(self.pop('fn'), **{k: v for k, v in self.items() if k not in ['choice', 'cov']})
+        fn = self.pop('fn', self.pop('source', None))
+        self.source = load_source(fn, **{k: v for k, v in self.items() if k not in ['choice', 'cov']})
 
-    def choice(self, params=None, **choice):
-        return load_source(self.source, choice={**self.get('choice', {}), **choice}, params=params)
+    def choice(self, params=None, default=False, **choice):
+        return load_source(self.source, choice={**self.get('choice', {}), **choice}, params=params, default=default)
 
-    def cov(self, params=None):
-        return load_source(self.source, cov=True, params=params)
+    def cov(self, params=None, default=False):
+        return load_source(self.source, cov=True, params=params, default=default)
 
 
 class SummaryConfig(BaseConfig):

@@ -41,107 +41,7 @@ class MHSampler(object):
         self.states = []
 
     def sample(self, start, iterations=1, thin_by=1):
-        self.state = State(start, self.log_prob_fn(start), 1.)
-        for iter in range(iterations):
-            accept = False
-            for itry in range(self.max_tries):
-                coords = self.state.coords.copy()
-                if self.nsteps_drag:  # dragging
-                    current_coords_start = np.repeat(coords[:, None], self.vectorize, axis=0)
-                    current_log_prob_start = self.state.log_prob
-                    current_coords_end = current_coords_start + self.propose[0](self.vectorize)  # slow
-                    current_log_prob_end = self.log_prob_fn(trial_end)
-                    mask_current = current_log_prob_end > -np.inf
-                    if not mask_current.any():
-                        self.state.weight += mask_current.size
-                        continue
-                    sum_log_prob_start = current_log_prob_start.copy()
-                    sum_log_prob_end = current_log_prob_end.copy()
-                    naverage = 1 + self.nsteps_drag
-                    for istep in range(1, naverage):
-                        proposal_coords_start = current_coords_start + self.propose[1](self.vectorize)  # fast
-                        proposal_log_prob_start = self.log_prob_fn(proposal_coords_start)
-                        mask_proposal = mask_current & (proposal_log_prob_start > -np.inf)
-                        if mask_proposal.any():
-                            proposal_coords_end = current_coords_end + self.propose[1](self.vectorize)  # fast
-                            proposal_log_prob_end = self.log_prob_fn(proposal_coords_end)
-                            mask_proposal &= proposal_log_prob_end > -np.inf
-                            if mask_proposal.any():
-                                # Create the interpolated probability and perform a Metropolis test
-                                frac = istep / naverage
-                                proposal_log_prob_interp = (1 - frac) * proposal_log_prob_start + frac * proposal_log_prob_end
-                                current_log_prob_interp = (1 - frac) * current_log_prob_start + frac * current_log_prob_end
-                                mask_accept = mask_proposal & [self._mh_accept(plogprob, clogprob) for plogprob, clogprob in zip(proposal_log_prob_interp, current_log_prob_interp)]
-                                # The dragging step was accepted, do the drag
-                                current_coords_start[mask_accept] = proposal_coords_start[mask_accept]
-                                current_log_prob_start[mask_accept] = proposal_log_prob_start[mask_accept]
-                                current_coords_end[mask_accept] = proposal_coords_end[mask_accept]
-                                current_log_prob_end[mask_accept] = proposal_log_prob_end[mask_accept]
-                        sum_log_prob_start += current_log_prob_start
-                        sum_log_prob_end += current_log_prob_end
-                    mh_proposal_log_prob, mh_current_log_prob = sum_log_prob_end / naverage, sum_log_prob_start / naverage
-                    proposal_coords, proposal_log_prob = current_coords_end, current_log_prob_end
-                else:  # standard MH
-                    proposal_coords = coords + self.propose(size=self.vectorize)
-                    mh_current_log_prob = np.full(self.vectorize, self.state.log_prob, dtype='f8')
-                    mh_proposal_log_prob = proposal_log_prob = self.log_prob_fn(proposal_coords)
-                for i in range(self.vectorize):
-                    accept = self._mh_accept(mh_proposal_log_prob[i], mh_current_log_prob[i])
-                    if accept:
-                        if iter % thin_by == 0:
-                            self.states.append(self.state)
-                        self.state = State(proposal_coords[i], proposal_log_prob[i], 1.)
-                        break
-                    self.state.weight += 1
-            if not accept:
-                raise ValueError('Could not find finite log posterior after {:d} tries'.format(self.max_tries))
-            yield self.state
-
-    def _mh_accept(self, log_prob_trial, log_prob_current):
-        if log_prob_trial == -np.inf:
-            return False
-        if log_prob_trial > log_prob_current:
-            return True
-        return self.rng.standard_exponential() > (log_prob_current - log_prob_trial)
-
-    def get_chain(self):
-        return np.array([state.coords for state in self.states])
-
-    def get_weight(self):
-        return np.array([state.weight for state in self.states])
-
-    def get_log_prob(self):
-        return np.array([state.log_prob for state in self.states])
-
-    def get_acceptance_rate(self):
-        return len(states) / self.get_weight().sum()
-
-    def reset(self):
-        self.states = []
-
-
-class MHSampler(object):
-
-    """We follow emcee interface."""
-
-    def __init__(self, ndim, log_prob_fn, propose, nsteps_drag=None, max_tries=1000, vectorize=1, rng=None):
-        self.ndim = ndim
-        self.log_prob_fn = log_prob_fn
-        self.propose = propose
-        self.nsteps_drag = nsteps_drag
-        if nsteps_drag is not None:
-            self.nsteps_drag = int(nsteps_drag)
-            if self.nsteps_drag < 2:
-                raise ValueError('With dragging nsteps_drag must be >= 2')
-            if len(self.propose) != 2:
-                raise ValueError('With dragging give list of two propose methods, slow and fast')
-        self.max_tries = int(max_tries)
-        self.rng = rng or np.random.RandomState()
-        self.vectorize = int(vectorize)
-        self.states = []
-
-    def sample(self, start, iterations=1, thin_by=1):
-        self.state = State(start, self.log_prob_fn(start), 1.)
+        self.state = State(start, self.log_prob_fn(start), 1)
         for iter in range(iterations + 1):  # we skip start
             accept = False
             for itry in range(self.max_tries):
@@ -183,6 +83,7 @@ class MHSampler(object):
                 else:  # standard MH
                     proposal_coords = self.state.coords + self.propose(size=self.vectorize)
                     mh_current_log_prob = np.full(self.vectorize, self.state.log_prob, dtype='f8')
+                    #mh_proposal_log_prob = proposal_log_prob = np.full(self.vectorize, -np.inf, dtype='f8')
                     mh_proposal_log_prob = proposal_log_prob = self.log_prob_fn(proposal_coords)
                 for i in range(self.vectorize):
                     accept = self._mh_accept(mh_proposal_log_prob[i], mh_current_log_prob[i])
@@ -193,24 +94,26 @@ class MHSampler(object):
                 if accept:
                     if iter > 0 and iter % thin_by == 0:
                         self.states.append(self.state)
-                    self.state = State(proposal_coords[i], proposal_log_prob[i], 1.)
+                    self.state = State(proposal_coords[i], proposal_log_prob[i], 1)
+                    #print(proposal_log_prob, accept)
+                    #print(self.mpicomm.rank, iter, itry, flush=True)
                     break
             if not accept:
                 raise ValueError('Could not find finite log posterior after {:d} tries'.format(self.max_tries))
             yield self.state
 
-    def _mh_accept(self, log_prob_trial, log_prob_current):
-        if log_prob_trial == -np.inf:
+    def _mh_accept(self, proposal_log_prob, current_log_prob):
+        if proposal_log_prob == -np.inf:
             return False
-        if log_prob_trial > log_prob_current:
+        if proposal_log_prob > current_log_prob:
             return True
-        return self.rng.standard_exponential() > (log_prob_current - log_prob_trial)
+        return self.rng.standard_exponential() > (current_log_prob - proposal_log_prob)
 
     def get_chain(self):
         return np.array([state.coords for state in self.states])
 
     def get_weight(self):
-        return np.array([state.weight for state in self.states])
+        return np.array([state.weight for state in self.states], dtype='i8')
 
     def get_log_prob(self):
         return np.array([state.log_prob for state in self.states])
@@ -468,11 +371,13 @@ class MCMCSampler(BaseBatchPosteriorSampler):
             covariance['burnin'] = covariance.get('burnin', burnin)
         else:
             covariance = {'source': covariance, 'burnin': burnin}
-        covariance = SourceConfig(covariance).cov(params=self.varied_params)
+        if self.mpicomm.rank == 0:
+            covariance = SourceConfig(covariance).cov(params=self.varied_params)
+        covariance = self.mpicomm.bcast(covariance, root=0)
         self.proposer.set_covariance(covariance)
         self.learn_diagnostics = {}
         propose = [self.proposer.slow, self.proposer.fast] if drag else self.proposer
-        self.sampler = MHSampler(len(self.varied_params), self.logposterior, propose=propose, nsteps_drag=nsteps_drag, max_tries=self.max_tries, rng=self.rng)
+        self.sampler = MHSampler(len(self.varied_params), self.loglikelihood, propose=propose, nsteps_drag=nsteps_drag, max_tries=self.max_tries, rng=self.rng)
 
     def _set_rng(self, *args, **kwargs):
         super(MCMCSampler, self)._set_rng(*args, **kwargs)
@@ -511,8 +416,8 @@ class MCMCSampler(BaseBatchPosteriorSampler):
         for _ in self.sampler.sample(start=np.ravel(start), iterations=niterations, thin_by=thin_by):
             pass
         chain = self.sampler.get_chain()
-        self.sampler.reset()
         if chain.size:
-            data = [chain[..., iparam] for iparam, param in enumerate(self.varied_params)] + [self.sampler.get_log_prob()]
-            return Chain(data=data, params=self.varied_params + ['logposterior'])
+            data = [chain[..., iparam] for iparam, param in enumerate(self.varied_params)] + [self.sampler.get_weight(), self.sampler.get_log_prob()]
+            self.sampler.reset()
+            return Chain(data=data, params=self.varied_params + ['fweight', 'logposterior'])
         return None

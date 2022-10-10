@@ -977,8 +977,10 @@ class BasePipeline(BaseClass):
         for calculator in self.calculators:
             calculator.runtime_info.monitor.reset()
         for ii in range(niterations):
-            params = {str(param): param.ref.sample(random_state=rng) for param in self.params.select(varied=True)}
+            params = {str(param): param.ref.sample(random_state=rng) for param in self.params.select(varied=True, solved=False)}
             BasePipeline.run(self, **params)
+        if self.mpicomm.rank == 0:
+            self.log_info('Found speeds:')
         for calculator in self.calculators:
             if calculator.runtime_info.speed is None or override:
                 total_time = self.mpicomm.allreduce(calculator.runtime_info.monitor.get('time', average=False))
@@ -987,6 +989,8 @@ class BasePipeline(BaseClass):
                     calculator.runtime_info.speed = 1e6
                 else:
                     calculator.runtime_info.speed = counter / total_time
+                if self.mpicomm.rank == 0:
+                    self.log_info('- {}: {:.2f} iterations / second'.format(calculator, calculator.runtime_info.speed))
 
     def block_params(self, params=None, nblocks=None, oversample_power=0, **kwargs):
         from itertools import permutations, chain
@@ -1129,7 +1133,7 @@ class LikelihoodPipeline(BasePipeline):
         sum_logprior = 0.
         for param in self.params:
             if param.varied and not param.solved:
-                if param.derived and not param.depends:
+                if param.derived and not param.drop:
                     array = self.derived[param]
                     sum_logprior += array.param.prior(array)
                 else:
@@ -1162,17 +1166,18 @@ class LikelihoodPipeline(BasePipeline):
                 invfisher = jac.T.dot(projector)
                 projections.append(projection)
                 inverse_fishers.append(invfisher)
-        x0 = []
+        dx, x = [], []
         if solve_calculators:
-            inverse_priors, offsets = [], []
+            inverse_priors, x0 = [], []
             for param in self.solved_params:
                 scale = getattr(param.prior, 'scale', None)
                 inverse_priors.append(0. if scale is None or param.fixed else scale**(-2))
-                offsets.append(self._param_values[param.name])
+                x0.append(self._param_values[param.name])
             inverse_priors = np.array(inverse_priors)
             sum_inverse_fishers = sum(inverse_fishers + [np.diag(inverse_priors)])
-            x0 = - np.linalg.solve(sum_inverse_fishers, sum(projections)) + offsets
-        for param, xx in zip(self.solved_params, x0):
+            dx = - np.linalg.solve(sum_inverse_fishers, sum(projections))
+            x = x0 + dx
+        for param, xx in zip(self.solved_params, x):
             sum_logprior += self.params[param].prior(xx)
             if param.derived:
                 self.derived.set(ParameterArray(xx, param), output=True)
@@ -1189,15 +1194,15 @@ class LikelihoodPipeline(BasePipeline):
                 index = solve_calculators.index(calculator)
                 # Note: priors of solved params have already been added
                 if indices_best:
-                    loglikelihood -= 1. / 2. * x0[indices_best].dot(inverse_fishers[index][np.ix_(indices_best, indices_best)]).dot(x0[indices_best])
-                    loglikelihood -= projections[index][indices_best].dot(x0[indices_best])
+                    loglikelihood -= 1. / 2. * dx[indices_best].dot(inverse_fishers[index][np.ix_(indices_best, indices_best)]).dot(dx[indices_best])
+                    loglikelihood -= projections[index][indices_best].dot(dx[indices_best])
                 if indices_marg:
-                    loglikelihood += 1. / 2. * x0[indices_marg].dot(inverse_fishers[index][np.ix_(indices_marg, indices_marg)]).dot(x0[indices_marg])
+                    loglikelihood += 1. / 2. * dx[indices_marg].dot(inverse_fishers[index][np.ix_(indices_marg, indices_marg)]).dot(dx[indices_marg])
             sum_loglikelihood += loglikelihood
         if indices_marg:
             sum_loglikelihood -= 1. / 2. * np.linalg.slogdet(sum_inverse_fishers[np.ix_(indices_marg, indices_marg)])[1]
             #sum_loglikelihood += 1. / 2. * len(indices_marg) * np.log(2. * np.pi)
-            # Convention: in the limit of no likelihood constraint on x0, no change to the loglikelihood
+            # Convention: in the limit of no likelihood constraint on dx, no change to the loglikelihood
             # This allows to ~ keep the interpretation in terms of -1./2. chi2
             ip = inverse_priors[indices_marg]
             sum_loglikelihood += 1. / 2. * np.sum(np.log(ip[ip > 0.]))  # logdet

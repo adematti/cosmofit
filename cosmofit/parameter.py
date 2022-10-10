@@ -4,6 +4,7 @@ import re
 import fnmatch
 import functools
 import copy
+import numbers
 
 import numpy as np
 from scipy import stats
@@ -987,6 +988,8 @@ class ParameterCollectionConfig(BaseParameterCollection):
                 getattr(self, meta_name).update({name: bool(value) for name, value in meta.items()})
         self.data = []
         for name, conf in data.items():
+            if isinstance(conf, numbers.Number):
+                conf = {'value': conf}
             conf = (conf or {}).copy()
             latex = conf.pop('latex', None)
             for name, latex in yield_names_latex(name, latex=latex):
@@ -1343,7 +1346,7 @@ class ParameterPrior(BaseClass):
                 self.rv = dist(*self.limits, **kwargs)
         else:
             self.rv = getattr(stats, self.dist)(**kwargs)
-        self.limits = self.rv.support()
+        #self.limits = self.rv.support()
 
     def isin(self, x):
         """Whether ``x`` is within prior, i.e. within limits - strictly positive probability."""
@@ -1416,9 +1419,18 @@ class ParameterPrior(BaseClass):
 
     def affine_transform(self, loc=0., scale=1.):
         state = self.__getstate__()
+        try:
+            center = self.loc
+        except AttributeError:
+            if self.is_limited():
+                center = np.mean([lim for lim in self.limits if not np.isinf(lim)])
+            else:
+                center = 0.
         for name, value in state.items():
-            if name in ['loc', 'limits']:
-                state[name] = (value + loc) * scale
+            if name in ['loc']:
+                state[name] = value + loc
+            elif name in ['limits']:
+                state[name] = tuple((lim - center) * scale + loc for lim in value)
             elif name in ['scale']:
                 state[name] = value * scale
         return self.__class__(**state)

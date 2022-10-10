@@ -86,7 +86,7 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
     _attrs = []
     _key_import = '.import'
 
-    def __init__(self, data=None, string=None, parser=None, decode=True, **kwargs):
+    def __init__(self, data=None, string=None, parser=None, decode=True, base_dir=None, **kwargs):
         """
         Initialize :class:`Decoder`.
 
@@ -119,10 +119,10 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
 
         datad = {}
 
-        self.base_dir = '.'
+        self.base_dir = base_dir
         if isinstance(data, str):
             if string is None: string = ''
-            # if base_dir is None: self.base_dir = os.path.dirname(data)
+            if base_dir is None: self.base_dir = os.path.dirname(data)
             with open(data, 'r') as file:
                 string += file.read()
         elif data is not None:
@@ -163,8 +163,6 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
                         assert key not in word
                         di[key] = freplace
                         word = word.replace(placeholder, key)
-                print(word)
-                print(di)
                 return evaluate(word, locals=di)
             return None
 
@@ -268,6 +266,8 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         if fn is None:
             d = self
         else:
+            if self.base_dir is not None:
+                fn = os.path.join(self.base_dir, fn)
             d = BaseConfig(fn)
 
         def search(d, namespaces):

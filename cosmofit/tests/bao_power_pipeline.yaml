@@ -33,7 +33,7 @@ pipeline:
           loc: 0.
           scale: 1e5
       #.derived: [.varied]
-    load: f'{output_dir}/emulator.npy'
+    #load: f'{output_dir}/emulator.npy'
     emulator:
       plot: f'{output_dir}/emulator_*.png'
       save: f'{output_dir}/emulator.npy'
@@ -50,7 +50,7 @@ pipeline:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 
 emulate:
-  class: MLPEmulatorEngine
+  class: MLPEmulator
   sample: #f'{output_dir}/samples.npy'
     niterations: 1000
     save: f'{output_dir}/samples.npy'

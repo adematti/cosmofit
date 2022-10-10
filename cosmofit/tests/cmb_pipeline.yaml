@@ -1,20 +1,13 @@
 pipeline:
-  like:
-    class: cosmofit.likelihoods.clustering.ShapeFitParameterizationLikelihood
-    #class: cosmofit.likelihoods.clustering.WiggleSplitParameterizationLikelihood
-    #class: cosmofit.likelihoods.clustering.BandVelocityPowerSpectrumParameterizationLikelihood
+  TTTEEE:
+    class: cosmofit.likelihoods.cmb.planck2018.highl_plik.TTTEEE
     init:
-      source:
-        fn: f'{data_dir}/chain_0.npy'
-        burnin: 0.5
-      #fiducial: DESI
-    save: f'{output_dir}/bao_like.npy'
-    #load: True
+      clik_dir: /home/adematti/Bureau/DESI/NERSC/lib/
   theory:
-    class: cosmofit.likelihoods.clustering.compressed.ShapeFitParameterizationTheory
-    #load: f'{output_dir}/fs_emulator.npy'
+    class: cosmofit.likelihoods.cmb.planck2018.base.ClTheory
+    #load: f'{output_dir}/cl_emulator.npy'
     emulator:
-      save: f'{output_dir}/fs_emulator.npy'
+      save: f'{output_dir}/cl_emulator.npy'
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
     init:
@@ -31,7 +24,7 @@ pipeline:
 emulate:
   class: TaylorEmulator
   init:
-    order: 1
+    order: 2
 
 summarize:
   source:
@@ -44,6 +37,10 @@ summarize:
     fn: f'{output_dir}/gelman_rubin.png'
     nsplits: 4
   plot_geweke: f'{output_dir}/geweke.png'
+
+summarize:
+   source: f'{output_dir}/profiles.npy'
+   stats: f'{output_dir}/stats.tex'
 
 sample:
   class: cosmofit.samplers.EmceeSampler
@@ -62,5 +59,4 @@ profile:
   maximize:
     niterations: 2
 
-data_dir: _fs
-output_dir: _post
+output_dir: _cmb

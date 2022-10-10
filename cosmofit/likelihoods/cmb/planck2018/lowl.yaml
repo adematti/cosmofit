@@ -1,11 +1,11 @@
-class: LowlTT
+class: TT
 
 info:
   version: 0.0.1
   date: 10/09/2022
   author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
-  description: Planck 2018 release: low-ell, TT power spectrum likelihood
+  description: Planck 2018 release for low-ell, TT power spectrum likelihood
   url:
   licence:
   bibtex: []
@@ -21,14 +21,14 @@ params:
 
 ---
 
-class: LowlEE
+class: EE
 
 info:
   version: 0.0.1
   date: 10/09/2022
   author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
-  description: Planck 2018 release: low-ell, EE power spectrum likelihood
+  description: Planck 2018 release for low-ell, EE power spectrum likelihood
   url:
   licence:
   bibtex: []

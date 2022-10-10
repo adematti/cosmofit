@@ -8,7 +8,7 @@ from cosmofit.theories.clustering import APEffect, BAOExtractor, ShapeFitPowerSp
 from cosmofit import utils
 
 
-class BaseModel(BaseCalculator):
+class BaseParameterizationTheory(BaseCalculator):
 
     def __init__(self, quantities, **kwargs):
         self.quantities = list(quantities)
@@ -56,7 +56,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
         if self._parambasenames is not None:
             self.params = self.params.select(basename=self._parambasenames)
             self.params.sort(np.argsort([self._parambasenames.index(param.basename) for param in self.params if param.basename in self._parambasenames]))
-        self.requires = {'theory': {'class': self.__class__.__name__.replace('ParameterizationLikelihood', 'Model'),
+        self.requires = {'theory': {'class': self.__class__.__name__.replace('Likelihood', 'Theory'),
                                     'init': {'quantities': self.params.basenames()}}}
 
     def _select_params(self):
@@ -99,7 +99,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
         return self.theory.theory
 
 
-class FullModel(BaseModel):
+class FullParameterizationTheory(BaseParameterizationTheory):
 
     pass
 
@@ -108,10 +108,10 @@ class FullParameterizationLikelihood(BaseParameterizationLikelihood):
     pass
 
 
-class BAOModel(BaseModel):
+class BAOParameterizationTheory(BaseParameterizationTheory):
 
     def __init__(self, *args, **kwargs):
-        super(BAOModel, self).__init__(*args, **kwargs)
+        super(BAOParameterizationTheory, self).__init__(*args, **kwargs)
         BAOExtractor.__init__(self, zeff=self.zeff)
 
     def run(self):
@@ -135,10 +135,10 @@ class BAOParameterizationLikelihood(BaseParameterizationLikelihood):
         self._set_meta(zeff=zeff)
 
 
-class ShapeFitModel(BAOModel):
+class ShapeFitParameterizationTheory(BAOParameterizationTheory):
 
     def __init__(self, *args, **kwargs):
-        super(ShapeFitModel, self).__init__(*args, **kwargs)
+        super(ShapeFitParameterizationTheory, self).__init__(*args, **kwargs)
         ShapeFitPowerSpectrumExtractor.__init__(self, zeff=self.zeff)
 
     def run(self):
@@ -168,10 +168,10 @@ class ShapeFitParameterizationLikelihood(BAOParameterizationLikelihood):
         self._set_meta(kp_rs=kp_rs)
 
 
-class WiggleSplitModel(BaseModel):
+class WiggleSplitParameterizationTheory(BaseParameterizationTheory):
 
     def __init__(self, *args, **kwargs):
-        super(WiggleSplitModel, self).__init__(*args, **kwargs)
+        super(WiggleSplitParameterizationTheory, self).__init__(*args, **kwargs)
         self.kp_fid = self.kp
         WiggleSplitPowerSpectrumExtractor.__init__(self, zeff=self.zeff, kp=self.kp_fid)
         requires = self.requires
@@ -207,10 +207,10 @@ class WiggleSplitParameterizationLikelihood(BaseParameterizationLikelihood):
         self._set_meta(r=r, zeff=zeff, kp=kp, eta=eta, fiducial=fiducial)
 
 
-class BandVelocityPowerSpectrumModel(BaseModel):
+class BandVelocityPowerSpectrumParameterizationTheory(BaseParameterizationTheory):
 
     def __init__(self, *args, **kwargs):
-        super(BandVelocityPowerSpectrumModel, self).__init__(*args, **kwargs)
+        super(BandVelocityPowerSpectrumParameterizationTheory, self).__init__(*args, **kwargs)
         self.kptt_fid = self.kptt
         BandVelocityPowerSpectrumExtractor.__init__(self, zeff=self.zeff, kptt=self.kptt_fid)
         APEffect.__init__(self, zeff=self.zeff, fiducial=self.fiducial, mode='distances', eta=self.eta)
