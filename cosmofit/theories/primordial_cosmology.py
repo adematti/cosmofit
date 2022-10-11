@@ -50,7 +50,7 @@ class Cosmoprimo(BasePrimordialCosmology):
         return params
 
     def run(self, **params):
-        print(params)
+        #print(params)
         self.cosmo = self.fiducial.clone(**params)
 
     def __getattr__(self, name):

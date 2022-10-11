@@ -51,7 +51,6 @@ def _get_default_profiles_params(profiles, params=None, of='bestfit', varied=Tru
         list_params = [profile.get(of).params(name=[str(param) for param in params]) for profile in profiles]
     else:
         list_params = [profile.get(of).params(varied=varied, output=output, **kwargs) for profile in profiles]
-    list_params = [profile.get(of).params(varied=varied, output=output, **kwargs) for profile in profiles]
     return [params for params in list_params[0] if all(params in lparams for lparams in list_params[1:])]
 
 
