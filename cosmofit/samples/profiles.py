@@ -26,12 +26,15 @@ class ParameterBestFit(ParameterValues):
             self[self._logposterior] = np.zeros(self.shape, dtype='f8')
         return self[self._logposterior]
 
-    def choice(self, index='argmax', params=None, **kwargs):
+    def choice(self, index='argmax', params=None, return_type='dict', **kwargs):
         if params is None:
             params = self.params(**kwargs)
         if index == 'argmax':
             index = self.logposterior.argmax()
-        return {str(param): self[param][index] for param in params}
+        toret = self[[index]]
+        if return_type == 'dict':
+            return {str(param): toret[param] for param in params}
+        return toret
 
 
 class ParameterCovariance(BaseClass):
@@ -105,7 +108,7 @@ class ParameterCovariance(BaseClass):
 
     def __repr__(self):
         """Return string representation of parameter covariance, including parameters."""
-        return '{}({})'.format(self.__class__.__name__, self.params)
+        return '{}({})'.format(self.__class__.__name__, self._params)
 
     def __eq__(self, other):
         """Is ``self`` equal to ``other``, i.e. same type and attributes?"""

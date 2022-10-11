@@ -315,8 +315,8 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         list_profiles = [None] * nparams
         mpicomm_bak = self.mpicomm
         with TaskManager(nprocs_per_task=nprocs_per_param, use_all_nprocs=True, mpicomm=self.mpicomm) as tm:
-            self.likelihood.mpicomm = self.mpicomm = tm.mpicomm
-            for iparam, param in tm.iterate(enumerate(params)):
+            self.mpicomm = tm.mpicomm
+            for iparam, param in tm.iterate(list(enumerate(params))):
                 self.derived = None
                 profiles = method(start, param, **kwargs)
                 list_profiles[iparam] = self._profiles_transform(profiles) if self.mpicomm.rank == 0 else None

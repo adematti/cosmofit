@@ -260,7 +260,7 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
             isscalar = ',' not in namespaces
             namespaces = [namespace.split(delimiter) for namespace in namespaces.split(',')]
         else:
-            isscalar = np.ndim(namespaces[0]) == 0
+            isscalar = len(namespaces) == 0 or np.ndim(namespaces[0]) == 0
             if isscalar:
                 namespaces = [namespaces]
         if fn is None:
