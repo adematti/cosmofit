@@ -1428,9 +1428,9 @@ class ParameterPrior(BaseClass):
                 center = 0.
         for name, value in state.items():
             if name in ['loc']:
-                state[name] = value + loc
+                state[name] = center + loc
             elif name in ['limits']:
-                state[name] = tuple((lim - center) * scale + loc for lim in value)
+                state[name] = tuple((lim - center) * scale + center + loc for lim in value)
             elif name in ['scale']:
                 state[name] = value * scale
         return self.__class__(**state)

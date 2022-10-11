@@ -38,7 +38,7 @@ class ParameterCovariance(BaseClass):
 
     """Class that represents a parameter covariance."""
 
-    def __init__(self, covariance, params=None):
+    def __init__(self, covariance, params=None, sizes=None):
         """
         Initialize :class:`ParameterCovariance`.
 
@@ -54,9 +54,20 @@ class ParameterCovariance(BaseClass):
             self.__dict__.update(covariance.__dict__)
             return
         self._value = np.atleast_2d(covariance)
+        if self._value.ndim != 2:
+            raise ValueError('Input covariance must be 2D')
+        if shape[1] != shape[0]:
+            raise ValueError('Input covariance must be square')
         if params is None:
             raise ValueError('Provide covariance parameters')
         self._params = ParameterCollection(params)
+        if sizes is None:
+            sizes = [1] * len(self._params)
+        self._sizes = [int(size) for size in sizes]
+        if len(self._sizes) != len(self._params):
+            raise ValueError('Provide as many sizes as params')
+        if sum(self._sizes) != self._value.shape[0]:
+            raise ValueError('Input sizes / number of params must match input covariance shape')
 
     def params(self, *args, **kwargs):
         return self._params.params(*args, **kwargs)
@@ -77,6 +88,8 @@ class ParameterCovariance(BaseClass):
         if isscalar:
             params = [params]
         idx = np.array([self._params.index(param) for param in params])
+        cumsizes = np.cumsum([0] + self._sizes)
+        idx = np.concatenate([np.arange(cumsizes[ii], cumsizes[ii + 1]) for ii in idx])
         toret = self._value[np.ix_(idx, idx)]
         if isscalar:
             toret = toret[0, 0]
@@ -96,12 +109,18 @@ class ParameterCovariance(BaseClass):
 
     def __getstate__(self):
         """Return this class state dictionary."""
-        return {'value': self._value, 'params': self._params.__getstate__()}
+        state = {}
+        for name in ['value', 'sizes']: state[name] = getattr(self, '_{}'.format(name))
+        state['params'] = self._params.__getstate__()
+        return state
 
     def __setstate__(self, state):
         """Set this class state dictionary."""
-        self._value = state['value']
         self._params = ParameterCollection.from_state(state['params'])
+        # Backward-compatibility
+        state.setdefault('sizes', [1] * len(self._params))
+        for name in ['value', 'sizes']:
+            setattr(self, '_{}'.format(name), state[name])
 
     def __repr__(self):
         """Return string representation of parameter covariance, including parameters."""

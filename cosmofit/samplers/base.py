@@ -114,16 +114,19 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
         values = np.asarray(values)
         if self._check_same_input:
             all_values = self.likelihood.mpicomm.allgather(values)
-            if not all(np.allclose(values, all_values[0], atol=0., rtol=1e-7) for values in all_values if values is not None):
+            if not all(np.allclose(values, all_values[0], atol=0., rtol=1e-7, equal_nan=True) for values in all_values if values is not None):
                 raise ValueError('Input values different on all ranks: {}'.format(all_values))
-        return self.likelihood.mpicomm.bcast(values, root=0)
-
-    def loglikelihood(self, values):
-        values = self._bcast_values(values)
-        if not values.size:
-            return -np.inf
+        values = self.likelihood.mpicomm.bcast(values, root=0)
         isscalar = values.ndim == 1
         values = np.atleast_2d(values)
+        values = values[~np.isnan(values).any(axis=1)]
+        if not values.size: isscalar = False
+        return values, isscalar
+
+    def loglikelihood(self, values):
+        values, isscalar = self._bcast_values(values)
+        if not values.size:
+            return -np.inf
         points = ParameterValues(values.T, params=self.varied_params)
         self.likelihood.mpirun(**points.to_dict())
         toret = None
@@ -145,20 +148,22 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
         return toret
 
     def logprior(self, values):
-        values = self._bcast_values(values)
-        logprior = 0.
+        values, isscalar = self._bcast_values(values)
+        toret = 0.
         for param, value in zip(self.varied_params, values.T):
-            logprior += param.prior(value)
-        return logprior
+            toret += param.prior(value)
+        if isscalar: toret = toret[0]
+        return toret
 
     def logposterior(self, values):
-        values = self._bcast_values(values)
-        isscalar = values.ndim == 1
-        values = np.atleast_2d(values)
+        values, isscalar = self._bcast_values(values)
         toret = self.logprior(values)
         mask = ~np.isinf(toret)
         toret[mask] = self.loglikelihood(values[mask])
-        if isscalar: toret = toret[0]
+        if not toret.size:
+            toret = -np.inf
+        elif isscalar:
+            toret = toret[0]
         return toret
 
     def __getstate__(self):
@@ -196,7 +201,7 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
             return np.array(toret).T
 
         start = np.full((self.nchains, self.nwalkers, len(self.varied_params)), np.nan)
-        logposterior = np.full((self.nchains, self.nwalkers), np.inf)
+        logposterior = np.full((self.nchains, self.nwalkers), -np.inf)
         for ichain, chain in enumerate(self.chains):
             if self.mpicomm.bcast(chain is not None, root=0):
                 start[ichain] = self.mpicomm.bcast(np.array([chain[param][-1] for param in self.varied_params]).T if self.mpicomm.rank == 0 else None, root=0)

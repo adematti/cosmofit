@@ -303,7 +303,7 @@ class Chain(Samples):
             return {str(param): self.mean(param) for param in params}
         raise ValueError('Unknown "index" argument {}'.format(index))
 
-    def cov(self, params=None, ddof=1):
+    def cov(self, params=None, return_type='nparray', ddof=1):
         """
         Estimate weighted param covariance.
 
@@ -325,7 +325,9 @@ class Chain(Samples):
         if params is None: params = self.params()
         if not utils.is_sequence(params): params = [params]
         values = np.concatenate([self[param].reshape(self.size, -1) for param in params], axis=-1)
-        return np.atleast_2d(np.cov(values, rowvar=False, fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof))
+        cov = np.atleast_2d(np.cov(values, rowvar=False, fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof))
+        if return_type == 'nparray':
+            return cov
 
     def invcov(self, params=None, ddof=1):
         """

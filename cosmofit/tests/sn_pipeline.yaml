@@ -1,13 +1,9 @@
 pipeline:
-  TTTEEE:
-    class: cosmofit.likelihoods.cmb.planck2018.highl_plik.TTTEEE
+  SN:
+    class: cosmofit.likelihoods.supernovae.PantheonSNLikelihood
     init:
-      clik_dir: /home/adematti/Bureau/DESI/NERSC/lib/
-  theory:
-    class: cosmofit.likelihoods.cmb.planck2018.base.ClTheory
-    #load: f'{output_dir}/cl_emulator.npy'
-    emulator:
-      save: f'{output_dir}/cl_emulator.npy'
+      config_dir: /home/adematti/Bureau/DESI/NERSC/lib/Pantheon/
+    plot: f'{output_dir}/plot.png'
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
     init:
@@ -21,11 +17,6 @@ pipeline:
           limits: [0.05, 0.6]
         latex: \Omega_{m}
 
-emulate:
-  class: TaylorEmulator
-  init:
-    order: 2
-
 summarize:
    source: f'{output_dir}/profiles.npy'
    stats: f'{output_dir}/stats.tex'
@@ -36,4 +27,8 @@ profile:
   maximize:
     niterations: 2
 
-output_dir: _cmb
+do:
+  source: f'{profile.save}'
+  plot:
+
+output_dir: _sn

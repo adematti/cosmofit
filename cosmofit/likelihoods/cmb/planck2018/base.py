@@ -1,7 +1,6 @@
 import os
 
 import numpy as np
-from scipy import constants
 
 from cosmofit.likelihoods.base import BaseCalculator
 from cosmofit.theories.primordial_cosmology import BasePrimordialCosmology

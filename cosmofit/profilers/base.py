@@ -211,14 +211,14 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
                     toret.append([param.value] * size)
             return np.array(toret).T
 
-        logposterior = np.inf
+        logposterior = -np.inf
         for itry in range(max_tries):
             if np.isfinite(logposterior): break
             self.derived = None
             start = np.ravel(get_start(size=1))
             logposterior = self.logposterior(start)
 
-        if np.isnan(logposterior):
+        if not np.isfinite(logposterior):
             raise ValueError('Could not find finite log posterior after {:d} tries'.format(itry))
         return start, logposterior
 

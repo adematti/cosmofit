@@ -1096,6 +1096,8 @@ class LikelihoodPipeline(BasePipeline):
                 if not np.ndim(loglikelihood) == 0:
                     raise PipelineError('End calculator {} attribute {} must be scalar'.format(calculator, self._loglikelihood_name))
         self.__dict__.update(self.select(end_calculators).__dict__)
+        if not self.end_calculators:
+            raise PipelineError('No likelihood (= calculator with {} attribute set) found'.format(self._loglikelihood_name))
         from .samples.utils import outputs_to_latex
         for calculator in self.end_calculators:
             if self._loglikelihood_name not in calculator.runtime_info.base_params:

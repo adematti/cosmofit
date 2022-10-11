@@ -38,8 +38,8 @@ pipeline:
     #  load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
-    shapefit:
-      class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
+    #shapefit:
+    #  class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
     #full:
     #  class: cosmofit.theories.clustering.FullPowerSpectrumParameterization
     #  init:
@@ -59,14 +59,14 @@ pipeline:
     #      derived: '1e-10 * np.exp({logA})'
     #wiggle:
     #  class: cosmofit.theories.clustering.WiggleSplitPowerSpectrumParameterization
-    #pthetap:
-    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
-    #  init:
-    #    kptt: e'np.linspace(0.03, 0.18, 2)'
-    #  params:
+    pthetap:
+      class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
+      init:
+        kptt: e'np.linspace(0.03, 0.18, 3)'
+      params:
     #    #.fixed: [f, qap]
-    #    .fixed: [f]
-    #    .fixed: '*'
+        .fixed: [f]
+    #    #.fixed: '*'
     #ptheta:
     #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumTemplate
     #  params:
@@ -138,17 +138,6 @@ sample:
   save: f'{output_dir}/chain_*.npy'
 
 sample:
-  class: cosmofit.samplers.EmceeSampler
-  init:
-    #nwalkers: 40
-    chains: 1
-  run:
-    max_iterations: 10000
-    check_every: 10
-    check: True
-  save: f'{output_dir}/chain_*.npy'
-
-sample:
   class: cosmofit.samplers.MCMCSampler
   init:
     covariance: f'{output_dir}/chain_0.npy'
@@ -167,12 +156,17 @@ sample:
   run:
   save: f'{output_dir}/chain_*.npy'
 
-
-profile:
-  class: cosmofit.profilers.MinuitProfiler
-  maximize:
-    niterations: 1
-  save: f'{output_dir}/profiles.npy'
+sample:
+  class: cosmofit.samplers.EmceeSampler
+  init:
+    #nwalkers: 40
+    chains: 1
+    max_tries: 10
+  run:
+    max_iterations: 10000
+    check_every: 100
+    check: True
+  save: f'{output_dir}/chain_*.npy'
 
 profile:
   class: cosmofit.profilers.BOBYQAProfiler
@@ -186,6 +180,12 @@ profile:
   class: cosmofit.profilers.ScipyProfiler
   init:
     rescale: True
+  maximize:
+    niterations: 1
+  save: f'{output_dir}/profiles.npy'
+
+profile:
+  class: cosmofit.profilers.MinuitProfiler
   maximize:
     niterations: 1
   save: f'{output_dir}/profiles.npy'
