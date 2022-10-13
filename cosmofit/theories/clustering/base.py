@@ -61,10 +61,10 @@ class BaseTheoryCorrelationFunctionFromPowerSpectrumMultipoles(BaseTheoryCorrela
         return params.clear()
 
     def run(self):
-        power = [np.interp(np.log10(self.lowk), np.log10(self.kin), p) for p in self.power.power]
-        power = [np.concatenate([p, p[-1] * self.pad_highk], axis=-1) for p in power]
+        power = [jnp.interp(np.log10(self.lowk), np.log10(self.kin), p) for p in self.power.power]
+        power = jnp.vstack([jnp.concatenate([p, p[-1] * self.pad_highk], axis=-1) for p in power])
         s, corr = self.fftlog(power)
-        self.corr = np.array([np.interp(self.s, ss, cc) for ss, cc in zip(s, corr)])
+        self.corr = jnp.array([jnp.interp(self.s, ss, cc) for ss, cc in zip(s, corr)])
 
     def plot(self, fn=None, kw_save=None):
         # Comparison to brute-force (non-fftlog) computation
@@ -328,7 +328,7 @@ class WindowedCorrelationFunctionMultipoles(BaseCalculator):
         self.requires = {'theory': theory}
 
     def run(self):
-        theory = np.ravel(self.theory.corr)
+        theory = jnp.ravel(self.theory.corr)
         if self.smask is not None:
             self.flatcorr = theory[self.smask]
         else:

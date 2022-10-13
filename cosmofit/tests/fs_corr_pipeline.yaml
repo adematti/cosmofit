@@ -12,21 +12,26 @@ pipeline:
         zeff: 0.5
         fiducial: DESI
       save: f'{output_dir}/QSO.like.npy'
-      load: True
+      #load: True
       plot: f'{output_dir}/corr.png'
     theory:
       class: cosmofit.theories.clustering.LPTTracerCorrelationFunctionMultipoles
-    #lpt:
-    #  class: cosmofit.theories.clustering.LPTPowerSpectrumMultipoles
+      params:
+        alpha*:
+          derived: '.auto'
+        sn*:
+          derived: '.auto'
+    lpt:
+      class: cosmofit.theories.clustering.LPTPowerSpectrumMultipoles
       #load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
-    #shapefit:
-    #  class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
-    pthetap:
-      class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
-      init:
-        kptt: e'np.linspace(0.02, 0.2, 4)'
+    shapefit:
+      class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
+    #pthetap:
+    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
+    #  init:
+    #    kptt: e'np.linspace(0.02, 0.2, 4)'
     #ptheta:
     #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumTemplate
     #  params:
@@ -88,6 +93,8 @@ sample:
 
 profile:
   class: cosmofit.profilers.MinuitProfiler
+  maximize:
+    niterations: 2
   save: f'{output_dir}/profiles.npy'
 
 data_dir: _xi
