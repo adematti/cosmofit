@@ -293,15 +293,21 @@ class Chain(Samples):
         toret = MCMCSamples(samples=samples.T, columns=names, weights=np.asarray(self.weight.ravel()), logL=-np.asarray(self.logposterior.ravel()), labels=labels, label=label, logzero=-np.inf)
         return toret
 
-    def choice(self, index='argmax', params=None, **kwargs):
+    def choice(self, index='argmax', params=None, return_type='dict', **kwargs):
         if params is None:
             params = self.params(**kwargs)
         if index == 'argmax':
             index = np.unravel_index(self.logposterior.argmax(), shape=self.shape)
-            return {str(param): self[param][index] for param in params}
+            di = {str(param): self[param][index] for param in params}
         elif index == 'mean':
-            return {str(param): self.mean(param) for param in params}
-        raise ValueError('Unknown "index" argument {}'.format(index))
+            di = {str(param): self.mean(param) for param in params}
+        else:
+            raise ValueError('Unknown "index" argument {}'.format(index))
+        if return_type == 'dict':
+            return di
+        toret = self.copy()
+        toret.data = [ParameterArray([value], param=value.param) for value in di.values()]
+        return toret
 
     def cov(self, params=None, return_type='nparray', ddof=1):
         """
@@ -324,10 +330,15 @@ class Chain(Samples):
         """
         if params is None: params = self.params()
         if not utils.is_sequence(params): params = [params]
-        values = np.concatenate([self[param].reshape(self.size, -1) for param in params], axis=-1)
+        params = [self[param].param for param in params]
+        values = [self[param].reshape(self.size, -1) for param in params]
+        sizes = [value.shape[-1] for value in values]
+        values = np.concatenate(values, axis=-1)
         cov = np.atleast_2d(np.cov(values, rowvar=False, fweights=self.fweight.ravel(), aweights=self.aweight.ravel(), ddof=ddof))
         if return_type == 'nparray':
             return cov
+        from .profiles import ParameterCovariance
+        return ParameterCovariance(cov, params=params, sizes=sizes)
 
     def invcov(self, params=None, ddof=1):
         """

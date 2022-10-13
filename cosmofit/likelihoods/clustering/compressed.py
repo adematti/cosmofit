@@ -39,7 +39,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
         params, mean, covariance = None, None, None
         if self.mpicomm.rank == 0:
             source = SourceConfig(source)
-            covariance = source.cov()
+            covariance = source.cov(return_type=None)
             params = covariance.params()
             if hasattr(source.source, 'bestfit'):
                 mean = source.choice(index=source.get('index', 'argmax'))
@@ -73,7 +73,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
         params = [params[quantity] for quantity in self.theory.quantities]
         if self.mpicomm.rank == 0:
             self.log_info('Fitting input samples {}.'.format(params))
-        mean = [self.source_mean[param] for param in params]
+        mean = np.concatenate([np.ravel(self.source_mean[param]) for param in params])
         covariance = self.source_covariance.cov(params)
         super(BaseParameterizationLikelihood, self).__init__(covariance=covariance, data=mean)
 

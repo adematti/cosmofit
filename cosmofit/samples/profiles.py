@@ -31,9 +31,11 @@ class ParameterBestFit(ParameterValues):
             params = self.params(**kwargs)
         if index == 'argmax':
             index = self.logposterior.argmax()
-        toret = self[[index]]
+        di = {str(param): toret[param][index] for param in params}
         if return_type == 'dict':
-            return {str(param): toret[param] for param in params}
+            return di
+        toret = self.copy()
+        toret.data = [ParameterArray([value], param=value.param) for value in di.values()]
         return toret
 
 
@@ -59,6 +61,7 @@ class ParameterCovariance(BaseClass):
         self._value = np.atleast_2d(covariance)
         if self._value.ndim != 2:
             raise ValueError('Input covariance must be 2D')
+        shape = self._value.shape
         if shape[1] != shape[0]:
             raise ValueError('Input covariance must be square')
         if params is None:
@@ -83,7 +86,7 @@ class ParameterCovariance(BaseClass):
         new._params = params
         return new
 
-    def cov(self, params=None):
+    def cov(self, params=None, return_type='nparray'):
         """Return covariance matrix for input parameters ``params``."""
         if params is None:
             params = self._params
@@ -92,11 +95,13 @@ class ParameterCovariance(BaseClass):
             params = [params]
         idx = np.array([self._params.index(param) for param in params])
         cumsizes = np.cumsum([0] + self._sizes)
-        idx = np.concatenate([np.arange(cumsizes[ii], cumsizes[ii + 1]) for ii in idx])
-        toret = self._value[np.ix_(idx, idx)]
-        if isscalar:
-            toret = toret[0, 0]
-        return toret
+        index = np.concatenate([np.arange(cumsizes[ii], cumsizes[ii + 1]) for ii in idx])
+        toret = self._value[np.ix_(index, index)]
+        if return_type == 'nparray':
+            if isscalar:
+                toret = toret[0, 0]
+            return toret
+        return ParameterCovariance(toret, params=[self._params[ii] for ii in idx], sizes=[self._sizes[ii] for ii in idx])
 
     def invcov(self, params=None):
         """Return inverse covariance matrix for input parameters ``params``."""

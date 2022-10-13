@@ -81,7 +81,7 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         if self.mpicomm.rank == 0:
             covariance = SourceConfig(covariance)
             # Get the covariance for all parameters
-            covariance = covariance.cov(params=self.varied_params)
+            covariance = covariance.cov(params=self.varied_params, return_type='nparray')
         covariance = self.mpicomm.bcast(covariance, root=0)
         self._original_params = self.mpicomm.bcast(self.varied_params, root=0)
 

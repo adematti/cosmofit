@@ -18,7 +18,7 @@ from cosmofit.parameter import ParameterCollection
 from cosmofit.io import BaseConfig, ConfigError
 
 
-def load_source(source, choice=None, cov=None, burnin=None, params=None, default=False):
+def load_source(source, choice=None, cov=None, burnin=None, params=None, default=False, return_type=None):
     if not utils.is_sequence(source): fns = [source]
     else: fns = source
 
@@ -53,7 +53,7 @@ def load_source(source, choice=None, cov=None, burnin=None, params=None, default
                 tmp[str(param)] = (param.value if default is False else default)
             tmp = [tmp[str(param)] for param in params]
         elif source:
-            tmp = source.choice(params=source.params(), **choice)
+            tmp = source.choice(params=source.params(), return_type=return_type, **choice)
         toret.append(tmp)
 
     if cov is not None:
@@ -61,19 +61,27 @@ def load_source(source, choice=None, cov=None, burnin=None, params=None, default
             source = source.covariance
         tmp = None
         if params is not None:
-            tmp = np.zeros((len(params),) * 2, dtype='f8')
             params_in_source = [param for param in params if param in source]
-            indices = [params.index(param) for param in params_in_source]
-            if indices:
-                tmp[np.ix_(indices, indices)] = source.cov(params=params_in_source)
+            if params_in_source:
+                cov = source.cov(params=params_in_source, return_type=None)
+                params = [cov._params[param] if params in params_in_source else param for param in params]
             params_not_in_source = [param for param in params if param not in params_in_source]
-            indices = [params.index(param) for param in params_not_in_source]
+            sizes = [1 if param in params_not_in_source else cov._sizes[params_in_source.index(param)] for param in params]
+            tmp = np.zeros((len(sizes),) * 2, dtype='f8')
+            cumsizes = np.cumsum([0] + sizes)
+            if params_in_source:
+                idx = [params.index(param) for param in params_in_source]
+                index = np.concatenate([np.arange(cumsizes[ii], cumsizes[ii + 1]) for ii in idx])
+                tmp[np.ix_(index, index)] = cov._value
+            idx = [params.index(param) for param in params_not_in_source]
+            index = np.concatenate([np.arange(cumsizes[ii], cumsizes[ii + 1]) for ii in idx])
             if default is False:
-                tmp[indices, indices] = default
+                np.fill_diagonal(tmp, index, [param.proposal**2 if param.proposal is not None else np.nan for param in params_not_in_source])
             else:
-                tmp[indices, indices] = [param.proposal**2 if param.proposal is not None else np.nan for param in params_not_in_source]
-        elif source:
-            tmp = ParameterCovariance(source.cov(params=source.params()), params=source.params())
+                np.fill_diagonal(tmp, index, default)
+            source = ParameterCovariance(tmp, params=params, sizes=sizes)
+        if source:
+            tmp = source.cov(return_type=return_type)
         toret.append(tmp)
 
     if len(toret) == 0:
@@ -92,11 +100,11 @@ class SourceConfig(BaseConfig):
         fn = self.pop('fn', self.pop('source', None))
         self.source = load_source(fn, **{k: v for k, v in self.items() if k not in ['choice', 'cov']})
 
-    def choice(self, params=None, default=False, **choice):
-        return load_source(self.source, choice={**self.get('choice', {}), **choice}, params=params, default=default)
+    def choice(self, params=None, default=False, return_type='dict', **choice):
+        return load_source(self.source, choice={**self.get('choice', {}), **choice}, params=params, default=default, return_type=return_type)
 
-    def cov(self, params=None, default=False):
-        return load_source(self.source, cov=True, params=params, default=default)
+    def cov(self, params=None, default=False, return_type='nparray'):
+        return load_source(self.source, cov=True, params=params, default=default, return_type=return_type)
 
 
 class SummaryConfig(BaseConfig):

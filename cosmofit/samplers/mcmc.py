@@ -372,7 +372,7 @@ class MCMCSampler(BaseBatchPosteriorSampler):
         else:
             covariance = {'source': covariance, 'burnin': burnin}
         if self.mpicomm.rank == 0:
-            covariance = SourceConfig(covariance).cov(params=self.varied_params)
+            covariance = SourceConfig(covariance).cov(params=self.varied_params, return_type='nparray')
         covariance = self.mpicomm.bcast(covariance, root=0)
         self.proposer.set_covariance(covariance)
         self.learn_diagnostics = {}
