@@ -990,7 +990,7 @@ class ParameterCollectionConfig(BaseParameterCollection):
         for name, conf in data.items():
             if isinstance(conf, numbers.Number):
                 conf = {'value': conf}
-            conf = (conf or {}).copy()
+            conf = dict(conf or {})
             latex = conf.pop('latex', None)
             for name, latex in yield_names_latex(name, latex=latex):
                 tmp = conf.__getstate__() if isinstance(conf, ParameterConfig) else conf

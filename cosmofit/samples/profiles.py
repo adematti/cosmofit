@@ -31,11 +31,11 @@ class ParameterBestFit(ParameterValues):
             params = self.params(**kwargs)
         if index == 'argmax':
             index = self.logposterior.argmax()
-        di = {str(param): toret[param][index] for param in params}
+        di = {str(param): self[param][[index]] for param in params}
         if return_type == 'dict':
-            return di
+            return {k: v[0] for k, v in di.items()}
         toret = self.copy()
-        toret.data = [ParameterArray([value], param=value.param) for value in di.values()]
+        toret.data = [ParameterArray(value, param=value.param) for value in di.values()]
         return toret
 
 

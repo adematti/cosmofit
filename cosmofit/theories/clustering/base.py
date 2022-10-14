@@ -68,7 +68,7 @@ class BaseTheoryCorrelationFunctionFromPowerSpectrumMultipoles(BaseTheoryCorrela
 
     def plot(self, fn=None, kw_save=None):
         # Comparison to brute-force (non-fftlog) computation
-        # Convergence towards brute-force when decreasing amping sigma
+        # Convergence towards brute-force when decreasing damping sigma
         # Difference between fftlog and brute-force: ~ effect of truncation / damping
         corr = []
         weights = utils.weights_trapz(np.log(self.kin))
