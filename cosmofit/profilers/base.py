@@ -1,3 +1,5 @@
+import functools
+
 import numpy as np
 import mpytools as mpy
 
@@ -55,6 +57,30 @@ class RegisteredProfiler(type(BaseClass)):
         cls = super().__new__(meta, name, bases, class_dict)
         meta._registry.add(cls)
         return cls
+
+
+def bcast_values(func):
+
+    @functools.wraps(func)
+    def wrapper(self, values):
+        values = np.asarray(values)
+        if self._check_same_input:
+            all_values = self.likelihood.mpicomm.allgather(values)
+            if not all(np.allclose(values, all_values[0], atol=0., rtol=1e-7, equal_nan=True) for values in all_values if values is not None):
+                raise ValueError('Input values different on all ranks: {}'.format(all_values))
+        values = self.likelihood.mpicomm.bcast(values, root=0)
+        isscalar = values.ndim == 1
+        values = np.atleast_2d(values)
+        mask = ~np.isnan(values).any(axis=1)
+        toret = np.full(values.shape[0], -np.inf)
+        values = values[mask]
+        if values.size:
+            toret[mask] = func(self, values)
+        if isscalar and toret.size:
+            toret = toret[0]
+        return toret
+
+    return wrapper
 
 
 class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
@@ -122,23 +148,8 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
         self.save_fn = save_fn
 
-    def _bcast_values(self, values):
-        values = np.asarray(values)
-        if self._check_same_input:
-            all_values = self.likelihood.mpicomm.allgather(values)
-            if not all(np.allclose(values, all_values[0], atol=0., rtol=1e-7, equal_nan=True) for values in all_values if values is not None):
-                raise ValueError('Input values different on all ranks: {}'.format(all_values))
-        values = self.likelihood.mpicomm.bcast(values, root=0)
-        isscalar = values.ndim == 1
-        values = np.atleast_2d(values)
-        values = values[~np.isnan(values).any(axis=1)]
-        if not values.size: isscalar = False
-        return values, isscalar
-
+    @bcast_values
     def loglikelihood(self, values):
-        values, isscalar = self._bcast_values(values)
-        if not values.size:
-            return -np.inf
         values = self._params_forward_transform(values)
         points = ParameterValues(values.T, params=self.varied_params)
         self.likelihood.mpirun(**points.to_dict())
@@ -157,27 +168,21 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
         toret[mask] = -np.inf
         if mask.any() and self.mpicomm.rank == 0:
             self.log_warning('loglikelihood is NaN for {}'.format({k: v[mask] for k, v in points.items()}))
-        if isscalar: toret = toret[0]
         return toret
 
+    @bcast_values
     def logprior(self, values):
-        values, isscalar = self._bcast_values(values)
         toret = 0.
         values = self._params_forward_transform(values)
         for param, value in zip(self.varied_params, values.T):
             toret += param.prior(value)
-        if isscalar: toret = toret[0]
         return toret
 
+    @bcast_values
     def logposterior(self, values):
-        values, isscalar = self._bcast_values(values)
         toret = self.logprior(values)
         mask = ~np.isinf(toret)
         toret[mask] = self.loglikelihood(values[mask])
-        if not toret.size:
-            toret = -np.inf
-        elif isscalar:
-            toret = toret[0]
         return toret
 
     def chi2(self, values):

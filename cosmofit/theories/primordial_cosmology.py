@@ -21,12 +21,13 @@ def get_from_cosmo(cosmo, name):
     if name.lower().startswith('omega_'):
         name = name[:5] + '0' + name[5:]
     if name.startswith('omega'):
-        Omega = getattr(cosmo, 'O' + name[1:], None)
-        if Omega is not None:
-            return Omega * cosmo.h ** 2
+        return get_from_cosmo(cosmo, 'O' + name[1:]) * cosmo.h ** 2
     if name == 'k_pivot':
         return cosmo.k_pivot * cosmo.h
-    return getattr(cosmo, name)
+    toret = getattr(cosmo, name)
+    if not toret:
+        return 0.
+    return toret
 
 
 class Cosmoprimo(BasePrimordialCosmology):
