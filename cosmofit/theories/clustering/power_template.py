@@ -120,8 +120,8 @@ class ShapeFitPowerSpectrumExtractor(BaseCalculator):
 
 class ShapeFitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
-    def __init__(self, a=0.6, kp=0.03, k=None, **kwargs):
-        super(ShapeFitPowerSpectrumTemplate, self).__init__(k=k, **kwargs)
+    def __init__(self, a=0.6, kp=0.03, k=None, with_now=False, **kwargs):
+        super(ShapeFitPowerSpectrumTemplate, self).__init__(k=k, with_now=with_now, **kwargs)
         ShapeFitPowerSpectrumExtractor.__init__(self, kp=kp, **kwargs)
         self.a = float(a)
 
@@ -167,8 +167,8 @@ class WiggleSplitPowerSpectrumExtractor(BaseCalculator):
 
 class WiggleSplitPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
-    def __init__(self, k=None, kp=0.03, r=8., **kwargs):
-        super(WiggleSplitPowerSpectrumTemplate, self).__init__(k=k, **kwargs)
+    def __init__(self, k=None, kp=0.03, r=8., with_now=False, **kwargs):
+        super(WiggleSplitPowerSpectrumTemplate, self).__init__(k=k, with_now=with_now, **kwargs)
         WiggleSplitPowerSpectrumExtractor.__init__(self, kp=kp, **kwargs)
         self.r = float(r)
 
@@ -223,8 +223,8 @@ class BandVelocityPowerSpectrumTemplate(BasePowerSpectrumTemplate):
 
     _baseparamname = 'rptt'
 
-    def __init__(self, kptt=None, k=None, zeff=1., **kwargs):
-        super(BandVelocityPowerSpectrumTemplate, self).__init__(k=k, zeff=zeff, **kwargs)
+    def __init__(self, kptt=None, k=None, zeff=1., with_now=False, **kwargs):
+        super(BandVelocityPowerSpectrumTemplate, self).__init__(k=k, zeff=zeff, with_now=with_now, **kwargs)
         wiggles = self.requires.get('wiggles', None)
         BandVelocityPowerSpectrumExtractor.__init__(self, kptt=kptt, **kwargs)
         if self.with_now:

@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import interpolate
 
 from cosmofit.utils import jax, jnp
 from .base import TrapzTheoryPowerSpectrumMultipoles
@@ -11,7 +12,7 @@ class BasePTPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
     def __init__(self, *args, **kwargs):
         super(BasePTPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
         self.kin = np.geomspace(min(1e-3, self.k[0] / 2), max(1., self.k[0] * 2), 600)  # margin for AP effect
-        self.requires = {'template': (BasePowerSpectrumParameterization, {'k': self.kin, 'zeff': self.zeff, 'fiducial': self.fiducial})}
+        self.requires = {'template': {'class': BasePowerSpectrumParameterization, 'init': {'k': self.kin, 'zeff': self.zeff, 'fiducial': self.fiducial}}}
 
 
 class BasePTCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMultipoles):
@@ -19,7 +20,7 @@ class BasePTCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMultipole
     def __init__(self, s=None, zeff=1., ells=(0, 2, 4), fiducial=None):
         super(BasePTCorrelationFunctionMultipoles, self).__init__(s=s, zeff=zeff, ells=ells, fiducial=fiducial)
         self.kin = np.geomspace(min(1e-3, 1 / self.s[-1] / 2), max(2., 1 / self.s[0] * 2), 1000)  # margin for AP effect
-        self.requires = {'template': (BasePowerSpectrumParameterization, {'k': self.kin, 'zeff': self.zeff, 'fiducial': self.fiducial})}
+        self.requires = {'template': {'class': BasePowerSpectrumParameterization, 'init': {'k': self.kin, 'zeff': self.zeff, 'fiducial': self.fiducial}}}
 
 
 class BaseTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionFromPowerSpectrumMultipoles):
@@ -178,11 +179,11 @@ class EPTMomentsPowerSpectrumMultipoles(BaseVelocileptorsPowerSpectrumMultipoles
 
     def __init__(self, *args, **kwargs):
         super(EPTMomentsPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
-        self.requires['template']['with_now'] = True
+        self.requires['template']['init']['with_now'] = True
 
     def run(self):
         from velocileptors.EPT.moment_expansion_fftw import MomentExpansion
-        self.pt = MomentExpansion(self.klin, self.template.power_dd, pnw=self.template.power_dd_now, **self.pt_options)
+        self.pt = MomentExpansion(self.kin, self.template.power_dd, pnw=self.template.power_dd_now, **self.pt_options)
 
 
 class EPTMomentsTracerPowerSpectrumMultipoles(BaseVelocileptorsTracerPowerSpectrumMultipoles):
@@ -193,7 +194,7 @@ class EPTMomentsTracerPowerSpectrumMultipoles(BaseVelocileptorsTracerPowerSpectr
         super(EPTMomentsTracerPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
         for name in ['beyond_gauss']:
             self.requires['pt']['init'][name] = self.bias_options[name]
-        if self.bias_options['beyond_gauss']:
+        if self.pt_options['beyond_gauss']:
             if self.bias_options['reduced']:
                 self.required_bias_params = ['b1', 'b2', 'bs', 'b3', 'alpha0', 'alpha2', 'alpha4', 'alpha6', 'sn0', 'sn2', 'sn4']
             else:
@@ -217,18 +218,18 @@ class EPTFullResummedPowerSpectrumMultipoles(BaseVelocileptorsPowerSpectrumMulti
                             extrap_min=-5, extrap_max=3, import_wisdom=False)
 
     def __init__(self, *args, **kwargs):
-        super(EPTFullPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
-        self.requires['template']['with_now'] = True
+        super(EPTFullResummedPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
+        self.requires['template']['init']['with_now'] = True
 
     def run(self):
         from velocileptors.EPT.ept_fullresum_fftw import REPT
-        self.pt = REPT(self.klin, self.template.power_dd, pnw=self.template.power_dd_now, **self.pt_options)
+        self.pt = REPT(self.kin, self.template.power_dd, pnw=self.template.power_dd_now, **self.pt_options)
 
 
 class EPTFullResummedTracerPowerSpectrumMultipoles(BaseVelocileptorsTracerPowerSpectrumMultipoles):
 
     def __init__(self, *args, **kwargs):
-        super(EPTFullTracerPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
+        super(EPTFullResummedTracerPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
         self.required_bias_params = ['b1', 'b2', 'bs', 'b3', 'alpha0', 'alpha2', 'alpha4', 'alpha6', 'sn0', 'sn2', 'sn4']
         self.optional_bias_params = ['bFoG']
         default_values = {'b1': 1.69, 'b2': -1.17, 'bs': -0.71, 'b3': -0.479}
@@ -244,7 +245,7 @@ class LPTMomentsPowerSpectrumMultipoles(BaseVelocileptorsPowerSpectrumMultipoles
 
     def run(self):
         from velocileptors.LPT.moment_expansion_fftw import MomentExpansion
-        self.pt = MomentExpansion(self.klin, self.template.power_dd, **self.pt_options)
+        self.pt = MomentExpansion(self.kin, self.template.power_dd, **self.pt_options)
 
 
 class LPTMomentsTracerPowerSpectrumMultipoles(BaseVelocileptorsTracerPowerSpectrumMultipoles):
@@ -255,16 +256,15 @@ class LPTMomentsTracerPowerSpectrumMultipoles(BaseVelocileptorsTracerPowerSpectr
         super(LPTMomentsTracerPowerSpectrumMultipoles, self).__init__(*args, **kwargs)
         self.pt_options = {}
         for name in ['beyond_gauss', 'shear', 'third_order']:
-            self.requires['pt']['init'][name] = self.bias_options[name]
-            self.pt_options[name] = self.bias_options.pop(name)
-        if self.bias_options['beyond_gauss']:
+            self.pt_options[name] = self.requires['pt']['init'][name] = self.bias_options.pop(name)
+        if self.pt_options['beyond_gauss']:
             if self.bias_options['reduced']:
                 self.required_bias_params = ['b1', 'b2', 'bs', 'b3', 'alpha0', 'alpha2', 'alpha4', 'alpha6', 'sn0', 'sn2', 'sn4']
             else:
                 self.required_bias_params = ['b1', 'b2', 'bs', 'b3', 'alpha', 'alpha_v', 'alpha_s0', 'alpha_s2', 'alpha_g1',\
                                              'alpha_g3', 'alpha_k2', 'sn0', 'sv', 'sigma0_stoch', 'sn4']
         else:
-            if self.pt_options['reduced']:
+            if self.bias_options['reduced']:
                 self.required_bias_params = ['b1', 'b2', 'bs', 'b3', 'alpha0', 'alpha2', 'alpha4', 'sn0', 'sn2']
             else:
                 self.required_bias_params = ['b1', 'b2', 'bs', 'b3', 'alpha', 'alpha_v', 'alpha_s0', 'alpha_s2',
@@ -292,7 +292,7 @@ class LPTFourierStreamingPowerSpectrumMultipoles(BaseVelocileptorsPowerSpectrumM
 
     def run(self):
         from velocileptors.LPT.fourier_streaming_model_fftw import FourierStreamingModel
-        self.pt = FourierStreamingModel(self.klin, self.template.power_dd, **self.pt_options)
+        self.pt = FourierStreamingModel(self.kin, self.template.power_dd, **self.pt_options)
 
 
 class LPTFourierStreamingTracerPowerSpectrumMultipoles(BaseVelocileptorsTracerPowerSpectrumMultipoles):
@@ -328,7 +328,7 @@ class LPTGaussianStreamingCorrelationFunctionMultipoles(BaseVelocileptorsCorrela
 
     def run(self):
         from velocileptors.LPT.gaussian_streaming_model_fftw import GaussianStreamingModel
-        self.pt = GaussianStreamingModel(self.klin, self.template.power_dd, **self.pt_options)
+        self.pt = GaussianStreamingModel(self.kin, self.template.power_dd, **self.pt_options)
 
 
 class LPTGaussianStreamingTracerCorrelationFunctionMultipoles(BaseVelocileptorsTracerCorrelationFunctionMultipoles):
