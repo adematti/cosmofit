@@ -484,7 +484,7 @@ class PyBirdCorrelationFunctionMultipoles(BasePTCorrelationFunctionMultipoles):
 
 class PyBirdTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
-    _default_options = dict(with_nnlo_higher_derivative=False, with_nnlo_counterterm=False, with_stoch=False)
+    _default_options = dict(with_nnlo_higher_derivative=False, with_nnlo_counterterm=False, with_stoch=False, eft_basis='eftoflss')
 
     def __init__(self, *args, **kwargs):
         self.bias_options = self._default_options.copy()
@@ -497,23 +497,36 @@ class PyBirdTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
             self.pt_options[name] = self.requires['pt']['init'][name] = self.bias_options.pop(name)
 
     def set_params(self, params):
-        self.required_bias_params = ['b1', 'b2', 'b3', 'b4', 'cct']
+        self.required_bias_params = ['b1', 'b3', 'cct']
+        allowed_eft_basis = ['eftoflss', 'westcoast']
+        if self.bias_options['eft_basis'] not in allowed_eft_basis:
+            raise ValueError('eft_basis must be one of {}'.format(allowed_eft_basis))
+        if self.bias_options['eft_basis'] == 'westcoast':
+            self.required_bias_params += ['b2p4', 'b2m4']
+        else:
+            self.required_bias_params += ['b2', 'b4']
         if len(self.ells) >= 2: self.required_bias_params += ['cr1', 'cr2']
         if self.bias_options['with_stoch']:
             self.required_bias_params += ['ce0', 'ce1', 'ce2']
         if self.pt_options['with_nnlo_counterterm']:
             self.required_bias_params += ['cr4', 'cr6']
-        default_values = {'b1': 1.69, 'b2': -1.17, 'b3': -0.479}
+        default_values = {'b1': 1.69, 'b3': -0.479}
         self.required_bias_params = {name: default_values.get(name, 0.) for name in self.required_bias_params}
         return params.select(basename=list(self.required_bias_params.keys()))
+    
+    def transform_params(self, **params):
+        if self.bias_options['eft_basis'] == 'westcoast':
+            params['b2'] = (params['b2p4'] + params['b2m4']) / 2.**0.5
+            params['b4'] = (params.pop('b2p4') - params.pop('b2m4')) / 2.**0.5
+        return params
 
     def run(self, **params):
-        self.power = self.pt.combine_bias_terms_poles(**params)
+        self.power = self.pt.combine_bias_terms_poles(**self.transform_params(**params))
 
 
 class PyBirdTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMultipoles):
 
-    _default_options = dict(with_nnlo_higher_derivative=False, with_nnlo_counterterm=False, with_stoch=False)
+    _default_options = dict(with_nnlo_higher_derivative=False, with_nnlo_counterterm=False, with_stoch=False, eft_basis='eftoflss')
 
     def __init__(self, *args, **kwargs):
         self.bias_options = self._default_options.copy()
@@ -528,5 +541,8 @@ class PyBirdTracerCorrelationFunctionMultipoles(BaseTheoryCorrelationFunctionMul
     def set_params(self, params):
         return PyBirdTracerPowerSpectrumMultipoles.set_params(self, params)
 
+    def transform_params(self, **params):
+        return PyBirdTracerPowerSpectrumMultipoles.transform_params(self, **params)
+
     def run(self, **params):
-        self.corr = self.pt.combine_bias_terms_poles(**params)
+        self.corr = self.pt.combine_bias_terms_poles(**self.transform_params(**params))

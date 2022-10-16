@@ -816,25 +816,14 @@ init:
   ells: [0, 2, 4]
 
 params:
+  .fixed: ['b2p4']
   b1:
     value: 1.69
     prior:
-      dist: uniform
       limits: [-1., 4.0]
     ref:
       limits: [0., 1.]
     latex: b_{1}
-  b2:
-    value: -3.
-    prior:
-      dist: norm
-      loc: 0.
-      scale: 15.
-    ref:
-      dist: norm
-      loc: -3.
-      scale: 0.5
-    latex: b_{2}
   b3:
     value: -0.479
     prior:
@@ -846,13 +835,31 @@ params:
       loc: 1.0
       scale: 0.5
     latex: b_{3}
+  b2:
+    value: 0.
+    prior:
+      limits: [-10., 10.]
+    ref:
+      limits: [-1., 1.]
+    latex: b_{2}
   b4:
     value: 0.
     prior:
-      dist: norm
-      loc: 0.
-      scale: 100.
+      limits: [-10., 10.]
+    ref:
+      limits: [-1., 1.]
     latex: b_{4}
+  # west coast
+  b2p4:
+    value: 0.
+    prior:
+      limits: [-10., 10.]
+    latex: '(b_{2} + b_{4})/\sqrt{2}'
+  b2m4:
+    value: 0.
+    prior:
+      limits: [-10., 10.]
+    latex: '(b_{2} - b_{4})/\sqrt{2}'
   cct:
     value: 0.
     prior:
@@ -916,25 +923,14 @@ init:
   ells: [0, 2, 4]
 
 params:
+  .fixed: ['b2p4']
   b1:
     value: 1.69
     prior:
-      dist: uniform
       limits: [-1., 4.0]
     ref:
       limits: [0., 1.]
     latex: b_{1}
-  b2:
-    value: -3.
-    prior:
-      dist: norm
-      loc: 0.
-      scale: 15.
-    ref:
-      dist: norm
-      loc: -3.
-      scale: 0.5
-    latex: b_{2}
   b3:
     value: -0.479
     prior:
@@ -946,13 +942,31 @@ params:
       loc: 1.0
       scale: 0.5
     latex: b_{3}
+  b2:
+    value: 0.
+    prior:
+      limits: [-10., 10.]
+    ref:
+      limits: [-1., 1.]
+    latex: b_{2}
   b4:
     value: 0.
     prior:
-      dist: norm
-      loc: 0.
-      scale: 100.
+      limits: [-10., 10.]
+    ref:
+      limits: [-1., 1.]
     latex: b_{4}
+  # west coast
+  b2p4:
+    value: 0.
+    prior:
+      limits: [-10., 10.]
+    latex: '(b_{2} + b_{4})/\sqrt{2}'
+  b2m4:
+    value: 0.
+    prior:
+      limits: [-10., 10.]
+    latex: '(b_{2} - b_{4})/\sqrt{2}'
   cct:
     value: 0.
     prior:
