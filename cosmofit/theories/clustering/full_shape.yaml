@@ -888,27 +888,13 @@ params:
       loc: 0.
       scale: 100.
     latex: c_{r, 6}
-  ce0:
+  ce[:3]:
     value: 0.
     prior:
       dist: norm
       loc: 0.
       scale: 100.
-    latex: c_{e, 0}
-  ce1:
-    value: 0.
-    prior:
-      dist: norm
-      loc: 0.
-      scale: 100.
-    latex: c_{e, 1}
-  ce2:
-    value: 0.
-    prior:
-      dist: norm
-      loc: 0.
-      scale: 100.
-    latex: c_{e, 2}
+    latex: c_{e, []}
 
 ---
 
@@ -1002,27 +988,13 @@ params:
       loc: 0.
       scale: 100.
     latex: c_{r, 6}
-  ce0:
+  ce[:3]:
     value: 0.
     prior:
       dist: norm
       loc: 0.
       scale: 100.
-    latex: c_{e, 0}
-  ce1:
-    value: 0.
-    prior:
-      dist: norm
-      loc: 0.
-      scale: 100.
-    latex: c_{e, 1}
-  ce2:
-    value: 0.
-    prior:
-      dist: norm
-      loc: 0.
-      scale: 100.
-    latex: c_{e, 2}
+    latex: c_{e, []}
 
 ---
 

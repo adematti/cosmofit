@@ -97,7 +97,6 @@ def bcast_values(func):
     return wrapper
 
 
-
 class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
 
     nwalkers = 1
