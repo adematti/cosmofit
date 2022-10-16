@@ -4,6 +4,9 @@ from .bao import (DampedBAOWigglesPowerSpectrumMultipoles, ResummedBAOWigglesPow
                   DampedBAOWigglesTracerCorrelationFunctionMultipoles, ResummedBAOWigglesCorrelationFunctionMultipoles)
 from .full_shape import (KaiserTracerPowerSpectrumMultipoles, KaiserTracerCorrelationFunctionMultipoles,
                          LPTPowerSpectrumMultipoles, LPTTracerPowerSpectrumMultipoles, LPTTracerCorrelationFunctionMultipoles,
+                         EPTMomentsPowerSpectrumMultipoles, EPTMomentsTracerPowerSpectrumMultipoles,
+                         EPTFullResummedPowerSpectrumMultipoles, EPTFullResummedTracerPowerSpectrumMultipoles,
+                         LPTMomentsPowerSpectrumMultipoles, LPTMomentsTracerPowerSpectrumMultipoles,
                          PyBirdPowerSpectrumMultipoles, PyBirdTracerPowerSpectrumMultipoles,  PyBirdCorrelationFunctionMultipoles, PyBirdTracerCorrelationFunctionMultipoles)
 from .power_template import (BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor, BandVelocityPowerSpectrumExtractor,
                              FullPowerSpectrumTemplate, ShapeFitPowerSpectrumTemplate, WiggleSplitPowerSpectrumTemplate, BandVelocityPowerSpectrumTemplate,

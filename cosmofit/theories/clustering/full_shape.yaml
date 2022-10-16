@@ -100,8 +100,6 @@ info:
 init:
   ells: [0, 2, 4]
   beyond_gauss: True
-  shear: True
-  third_order: True
   reduced: True  # reduced set of parameters
 
 params:

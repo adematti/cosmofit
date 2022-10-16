@@ -18,8 +18,11 @@ pipeline:
       plot: f'{output_dir}/power.png'
     theory:
       #class: cosmofit.theories.clustering.LPTTracerPowerSpectrumMultipoles
-      class: cosmofit.theories.clustering.PyBirdTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.clustering.PyBirdTracerPowerSpectrumMultipoles
       #class: cosmofit.theories.clustering.KaiserTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.clustering.EPTMomentsTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.clustering.EPTFullResummedTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.clustering.LPTMomentsTracerPowerSpectrumMultipoles
       params:
       #  .derived: [.varied]
       #  .fixed: '*'
@@ -36,12 +39,12 @@ pipeline:
       #    order: {'*': 1}
       #  plot: f'{output_dir}/fs_emulator_*.png'
       #  save: f'{output_dir}/fs_emulator.npy'
-    pt:
+    #pt:
       #class: cosmofit.theories.clustering.LPTPowerSpectrumMultipoles
-      class: cosmofit.theories.clustering.PyBirdPowerSpectrumMultipoles
-      #load: f'{output_dir}/emulator.npy'
-      emulator:
-        save: f'{output_dir}/emulator.npy'
+    #  class: cosmofit.theories.clustering.PyBirdPowerSpectrumMultipoles
+    #  load: f'{output_dir}/emulator.npy'
+    #  emulator:
+    #    save: f'{output_dir}/emulator.npy'
     #pt:
     #  class: cosmofit.theories.full_shape.LPTPowerSpectrumMultipoles
     #  load: f'{output_dir}/emulator.npy'
