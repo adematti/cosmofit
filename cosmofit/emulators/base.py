@@ -173,7 +173,6 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
         pipeline = self.to_pipeline(derived=['emulator.{}'.format(name) for name in self.varied])
         pipeline.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
         derived = pipeline.derived
-        for array in derived: array.param.namespace = None
 
         #calculator = self.pipeline
         #calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
@@ -194,6 +193,7 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
                     diagnostics[name].append(value)
                 return value
 
+            for array in derived: array.param.namespace = None
             item = '- '
             mse = {}
             for name in self.varied:
