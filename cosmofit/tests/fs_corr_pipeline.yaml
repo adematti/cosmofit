@@ -15,17 +15,21 @@ pipeline:
       #load: True
       plot: f'{output_dir}/corr.png'
     theory:
-      class: cosmofit.theories.clustering.LPTTracerCorrelationFunctionMultipoles
+      #class: cosmofit.theories.clustering.LPTTracerCorrelationFunctionMultipoles
+      class: cosmofit.theories.clustering.PyBirdTracerCorrelationFunctionMultipoles
       params:
-        alpha*:
+        c*:
           derived: '.auto'
-        sn*:
-          derived: '.auto'
-    lpt:
-      class: cosmofit.theories.clustering.LPTPowerSpectrumMultipoles
-      #load: f'{output_dir}/emulator.npy'
-    #  emulator:
-    #    save: f'{output_dir}/emulator.npy'
+        #alpha*:
+        #  derived: '.auto'
+        #sn*:
+        #  derived: '.auto'
+    pt:
+      #class: cosmofit.theories.clustering.LPTPowerSpectrumMultipoles
+      class: cosmofit.theories.clustering.PyBirdCorrelationFunctionMultipoles
+      load: f'{output_dir}/emulator.npy'
+      emulator:
+        save: f'{output_dir}/emulator.npy'
     shapefit:
       class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
     #pthetap:
@@ -46,7 +50,7 @@ pipeline:
 
 emulate:
   class: TaylorEmulator
-  fit:
+  init:
     order: 1
 
 summarize:
@@ -61,9 +65,9 @@ summarize:
     nsplits: 4
   plot_geweke: f'{output_dir}/geweke.png'
 
-#summarize:
-#   profiles: f'{output_dir}/profiles.npy'
-#   plot_aligned_stacked: f'{output_dir}/aligned_stacked.png'
+summarize:
+   source: f'{output_dir}/profiles.npy'
+   stats: f'{output_dir}/stats.tex'
 
 sample:
   class: cosmofit.samplers.QMCSampler

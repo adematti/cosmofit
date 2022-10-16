@@ -18,28 +18,37 @@ pipeline:
       plot: f'{output_dir}/power.png'
     theory:
       #class: cosmofit.theories.clustering.LPTTracerPowerSpectrumMultipoles
-      class: cosmofit.theories.clustering.KaiserTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.clustering.PyBirdTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.clustering.KaiserTracerPowerSpectrumMultipoles
       params:
       #  .derived: [.varied]
       #  .fixed: '*'
-        alpha*:
-          derived: '.auto'
+        #c*:
+        #  derived: '.auto'
+        #alpha*:
+        #  derived: '.auto'
         #sn*:
         #  derived: '.auto'
       #load: f'{output_dir}/fs_emulator.npy'
+      #emulator:
+      #  init:
+      #    #order: {'*': 1, 'q*': 2, 'b1': 2}
+      #    order: {'*': 1}
+      #  plot: f'{output_dir}/fs_emulator_*.png'
+      #  save: f'{output_dir}/fs_emulator.npy'
+    pt:
+      #class: cosmofit.theories.clustering.LPTPowerSpectrumMultipoles
+      class: cosmofit.theories.clustering.PyBirdPowerSpectrumMultipoles
+      #load: f'{output_dir}/emulator.npy'
       emulator:
-        init:
-          #order: {'*': 1, 'q*': 2, 'b1': 2}
-          order: {'*': 1}
-        plot: f'{output_dir}/fs_emulator_*.png'
-        save: f'{output_dir}/fs_emulator.npy'
-    #lpt:
+        save: f'{output_dir}/emulator.npy'
+    #pt:
     #  class: cosmofit.theories.full_shape.LPTPowerSpectrumMultipoles
     #  load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
-    #shapefit:
-    #  class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
+    shapefit:
+      class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
     #full:
     #  class: cosmofit.theories.clustering.FullPowerSpectrumParameterization
     #  init:
@@ -59,13 +68,13 @@ pipeline:
     #      derived: '1e-10 * np.exp({logA})'
     #wiggle:
     #  class: cosmofit.theories.clustering.WiggleSplitPowerSpectrumParameterization
-    pthetap:
-      class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
-      init:
-        kptt: e'np.linspace(0.03, 0.18, 3)'
-      params:
+    #pthetap:
+    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
+    #  init:
+    #    kptt: e'np.linspace(0.03, 0.18, 3)'
+    #  params:
     #    #.fixed: [f, qap]
-        .fixed: [f]
+    #    .fixed: [f]
     #    #.fixed: '*'
     #ptheta:
     #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumTemplate

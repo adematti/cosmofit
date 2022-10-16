@@ -89,6 +89,7 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
                 calculators.append(calculator)
 
         calculator = self.pipeline.end_calculators[0]
+        calculator.runtime_info.namespace = 'emulator'
         calculator.runtime_info.derived_auto = OrderedSet('.fixed', '.varied')
         calculators.append(calculator)
         calculators, fixed, varied = self.pipeline._set_derived_auto(calculators)
@@ -100,6 +101,7 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
             self.fixed.update({k: v for k, v in ff.items() if k in bp and bp[k].derived})
             self.varied |= OrderedSet(k for k in vv if k in bp and bp[k].derived)
             #self.varied += [k for k in vv if k in bp and bp[k].derived and k not in self.varied]
+        self.in_end_calculator = set(ff.keys()) | set(vv)
         self.varied = list(self.varied)
 
         if self.mpicomm.rank == 0:
@@ -168,9 +170,10 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
 
         toret = True
         samples = self.subsamples(**kwargs)
-        pipeline = self.to_pipeline(derived=self.varied)
+        pipeline = self.to_pipeline(derived=['emulator.{}'.format(name) for name in self.varied])
         pipeline.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
         derived = pipeline.derived
+        for array in derived: array.param.namespace = None
 
         #calculator = self.pipeline
         #calculator.mpirun(**{name: samples[name] if self.mpicomm.rank == 0 else None for name in self.varied_params})
@@ -253,6 +256,7 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
         Emulator = self.__class__
         Calculator = import_class(*state['end_calculator__class__'])
         new_name = Calculator.__name__
+        in_end_calculator = self.in_end_calculator
 
         clsdict = {}
 
@@ -261,10 +265,13 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
 
         def new_run(self, **params):
             predict = Emulator.predict(self, **params)
-            Calculator.__setstate__(self, {**self.fixed, **predict})
+            state = {**self.fixed, **predict}
+            calc_state = {name: value for name, value in state.items() if name in in_end_calculator}
+            self.__dict__.update(state)
+            Calculator.__setstate__(self, calc_state)
 
         def new_getstate(self):
-            return Calculator.__getstate__(self)
+            return {**self.__dict__, **Calculator.__getstate__(self)}
 
         clsdict = {'set_params': new_set_params, 'run': new_run, '__getstate__': new_getstate, '__module__': Calculator.__module__}
 
@@ -284,9 +291,9 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
         calculator.runtime_info.full_params = self.params.deepcopy()
 
         if derived is not None:
-            for name in derived:
-                if name not in calculator.runtime_info.base_params:
-                    param = Parameter(name, namespace=None, derived=True)
+            for param in derived:
+                param = Parameter(param, namespace=None, derived=True)
+                if param.name not in calculator.runtime_info.base_params:
                     calculator.runtime_info.full_params.set(param)
                     calculator.runtime_info.full_params = calculator.runtime_info.full_params
         return calculator
@@ -296,7 +303,7 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
 
     def __getstate__(self):
         state = {}
-        for name in ['varied_params', 'fixed', 'varied', 'yaml_data', 'end_calculator__class__', 'calculators__class__']:
+        for name in ['varied_params', 'fixed', 'varied', 'in_end_calculator', 'yaml_data', 'end_calculator__class__', 'calculators__class__']:
             state[name] = getattr(self, name)
         state['params'] = self.params.__getstate__()
         return state
@@ -322,6 +329,7 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
 
     def __setstate__(self, state):
         super(BaseEmulator, self).__setstate__(state)
+        self.in_end_calculator = getattr(self, 'in_end_calculator', set(self.fixed) | set(self.varied))
         self.params = ParameterCollection.from_state(state['params'])
 
 
