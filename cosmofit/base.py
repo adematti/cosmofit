@@ -14,6 +14,7 @@ from .parameter import Parameter, ParameterArray, ParameterCollectionConfig, Par
 from .io import BaseConfig
 from .samples import ParameterValues
 from .samples.utils import outputs_to_latex
+from .install import InstallerConfig
 
 
 namespace_delimiter = '.'
@@ -119,7 +120,7 @@ class BaseCalculator(BaseClass, metaclass=RegisteredCalculator):
             state = {}
             for name in ['requires', 'globals']:
                 state[name] = getattr(self, name)
-            state['__class__'] = serialize_class(self)
+            state['__class__'] = serialize_class(self.__class__)
             np.save(filename, {**state, **self.__getstate__()}, allow_pickle=True)
 
     def run(self, **params):
@@ -370,6 +371,16 @@ class SectionConfig(BaseConfig):
                 self[name] = value
 
 
+class InstallableSectionConfig(SectionConfig):
+
+    def __init__(self, *args, install=None, **kwargs):
+        super(InstallableSectionConfig, self).__init__(*args, **kwargs)
+        if install is not None:
+            self['install'] = InstallerConfig(self.get('install', {})).clone(InstallerConfig(install))
+        else:
+            self['install'] = None
+
+
 def is_in_namespace(child, parent):
 
     def split(namespace):
@@ -400,12 +411,12 @@ def _best_match_parameter(namespace, basename, params, choice='max'):
     return params[ibestmatch]
 
 
-class CalculatorConfig(SectionConfig):
+class CalculatorConfig(InstallableSectionConfig):
 
     _sections = ['info', 'init', 'params']
-    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save', 'config_fn', 'speed']
+    _keywords = ['class', 'info', 'init', 'params', 'emulator', 'load', 'save', 'config_fn', 'speed', 'install']
 
-    def __init__(self, data, **kwargs):
+    def __init__(self, data, install=None, **kwargs):
         # cls, init kwargs
         if isinstance(data, str):
             data = BaseConfig(data, **kwargs).data
@@ -418,8 +429,8 @@ class CalculatorConfig(SectionConfig):
                 raise PipelineError('Provide (ClassName, {}) or {class: ClassName, ...}')
         else:
             data = dict(data)
-        super(CalculatorConfig, self).__init__(data)
-        self['class'] = import_class(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry)
+        super(CalculatorConfig, self).__init__(data, install=install)
+        self['class'] = import_class(data.get('class'), pythonpath=data.get('pythonpath', None), registry=BaseCalculator._registry, install=self['install'])
         self['info'] = Info(**self['info'])
         self['params'] = ParameterCollectionConfig(self['params'])
         load_fn = data.get('load', None)
@@ -503,9 +514,10 @@ class CalculatorConfig(SectionConfig):
 class PipelineConfig(BaseConfig):
 
     @CurrentMPIComm.enable
-    def __init__(self, *args, params=None, mpicomm=None, **kwargs):
+    def __init__(self, *args, params=None, mpicomm=None, install=None, **kwargs):
         self.mpicomm = mpicomm
         super(PipelineConfig, self).__init__(*args, **kwargs)
+        self._install = install
 
         params = ParameterCollectionConfig(params, identifier='name')
         self.namespaces_deepfirst = ['']
@@ -538,7 +550,7 @@ class PipelineConfig(BaseConfig):
         for namespace in self.namespaces_deepfirst:
             calculators_in_namespace = self.calculators_by_namespace[namespace] = self.calculators_by_namespace.get(namespace, {})
             for basename, calcdict in calculators_in_namespace.items():
-                config = CalculatorConfig(calcdict)
+                config = CalculatorConfig(calcdict, install=self._install)
                 full_config = self.clone_config_with_fn(config)
                 calculators_in_namespace[basename] = full_config
                 full_config_params = full_config['params'].with_namespace(namespace=namespace)
@@ -598,7 +610,7 @@ class PipelineConfig(BaseConfig):
             calculators.append(new)
             for requirementbasename, config in getattr(new, 'requires', {}).items():
                 # Search for calc in config
-                config = CalculatorConfig(config)
+                config = CalculatorConfig(config, install=self._install)
                 key_requires = requirementbasename
                 requirementnamespace = namespace
                 match_first, match_name = None, None

@@ -26,3 +26,7 @@ class BOBYQAProfiler(BaseProfiler):
         profiles.set(error=ParameterValues(np.diag(cov)**0.5, params=self.varied_params))
         profiles.set(covariance=ParameterCovariance(cov, params=self.varied_params))
         return profiles
+
+    @classmethod
+    def install(cls, config):
+        config.pip('pybobyqa')

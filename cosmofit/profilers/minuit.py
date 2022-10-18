@@ -73,3 +73,7 @@ class MinuitProfiler(BaseProfiler):
         x1, x2 = self.minuit.mncontour(str(param1), str(param2), **contour)
         profiles.set(profile=ParameterContours([(ParameterArray(x1, param1), ParameterArray(x2, param2))]))
         return profiles
+
+    @classmethod
+    def install(cls, config):
+        config.pip('iminuit')

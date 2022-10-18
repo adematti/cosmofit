@@ -7,21 +7,23 @@ import mpytools as mpy
 
 from cosmofit import utils
 from cosmofit.io import ConfigError
-from cosmofit.base import SectionConfig, import_class
+from cosmofit.base import InstallableSectionConfig, import_class
 from cosmofit.utils import BaseClass, TaskManager
 from cosmofit.samples import Chain, ParameterValues, load_source
 from cosmofit.samples import diagnostics as sample_diagnostics
 from cosmofit.parameter import ParameterPriorError, ParameterArray
 
 
-class SamplerConfig(SectionConfig):
+class SamplerConfig(InstallableSectionConfig):
 
     _sections = ['source', 'init', 'run', 'check']
 
     def __init__(self, *args, **kwargs):
         # cls, init kwargs
         super(SamplerConfig, self).__init__(*args, **kwargs)
-        self['class'] = import_class(self['class'], pythonpath=self.pop('pythonpath', None), registry=BasePosteriorSampler._registry)
+        if 'class' not in self:
+            raise ConfigError('Provide sampler class!')
+        self['class'] = import_class(self['class'], pythonpath=self.pop('pythonpath', None), registry=BasePosteriorSampler._registry, install=self['install'])
         self.is_posterior_sampler = issubclass(self['class'], BasePosteriorSampler)
 
     def run(self, pipeline):

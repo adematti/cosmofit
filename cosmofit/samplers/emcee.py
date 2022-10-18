@@ -25,3 +25,7 @@ class EmceeSampler(BaseBatchPosteriorSampler):
         data = [chain[..., iparam] for iparam, param in enumerate(self.varied_params)] + [self.sampler.get_log_prob()]
         self.sampler.reset()
         return Chain(data=data, params=self.varied_params + ['logposterior'])
+
+    @classmethod
+    def install(cls, config):
+        config.pip('emcee')

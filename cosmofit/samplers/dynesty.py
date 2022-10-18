@@ -107,3 +107,7 @@ class DynestySampler(BasePosteriorSampler):
 
         self.derived = self.resume_derived
         return self.resume_chain
+
+    @classmethod
+    def install(cls, config):
+        config.pip('dynesty')

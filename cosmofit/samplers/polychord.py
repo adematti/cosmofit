@@ -156,3 +156,7 @@ class PolychordSampler(BasePosteriorSampler):
         self.derived = [ParameterValues.sendrecv(derived, source=loglikelihood_rank, dest=0, mpicomm=self.mpicomm) for derived in self.derived]
         chain = ParameterValues.sendrecv(self.resume_chain, source=loglikelihood_rank, dest=0, mpicomm=self.mpicomm)
         return chain
+
+    @classmethod
+    def install(cls, config):
+        config.pip('git+https://github.com/adematti/PolyChordLite@mpi4py')

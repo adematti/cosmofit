@@ -5,3 +5,7 @@ from .parameter import Parameter, ParameterPrior, ParameterCollection, Parameter
 from .samples import *
 from .samplers import *
 from .profilers import *
+
+
+from .install import InstallerConfig
+InstallerConfig.setenv()

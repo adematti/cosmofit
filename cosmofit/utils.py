@@ -139,16 +139,16 @@ class BaseMetaClass(type):
             setattr(cls, 'log_{}'.format(level), make_logger(level))
 
 
-def serialize_class(self):
-    clsname = '.'.join([self.__module__, self.__class__.__name__])
+def serialize_class(cls):
+    clsname = '.'.join([cls.__module__, cls.__name__])
     try:
-        pythonpath = os.path.dirname(sys.modules[self.__module__].__file__)
+        pythonpath = os.path.dirname(sys.modules[cls.__module__].__file__)
     except AttributeError:
         pythonpath = None
     return (clsname, pythonpath)
 
 
-def import_class(clsname, pythonpath=None, registry=None):
+def import_class(clsname, pythonpath=None, registry=None, install=None):
     """
     Import class from class name.
 
@@ -164,31 +164,44 @@ def import_class(clsname, pythonpath=None, registry=None):
     registry : set, default=None
         Optionally, a set of class types to look into.
     """
+    from .parameter import find_names
     if isinstance(clsname, type):
-        return clsname
-    tmp = clsname.rsplit('.', 1)
-    if len(tmp) == 1:
-        clsname = tmp[0]
-        if registry is None:
-            try:
-                return globals()[clsname]
-            except KeyError:
-                raise ImportError('Unknown class {}, provide e.g. pythonpath or module name as module_name.ClassName'.format(clsname))
-        allcls = []
-        for cls in registry:
-            if cls.__name__ == clsname: allcls.append(cls)
-        if len(allcls) == 1:
-            return allcls[0]
-        if len(allcls) > 1:
-            raise ImportError('Multiple classes are named {} in registry'.format(clsname))
-        raise ImportError('No calculator class {} found in registry'.format(clsname))
-    modname, clsname = tmp
-    if pythonpath is not None:
-        sys.path.insert(0, pythonpath)
+        cls = clsname
     else:
-        sys.path.append(os.path.dirname(__file__))
-    module = importlib.import_module(modname)
-    return getattr(module, clsname)
+        if install is not None:
+            exclude = install.get('exclude', [])
+            if find_names(clsname, exclude): install = None
+        tmp = clsname.rsplit('.', 1)
+        if len(tmp) == 1:
+            clsname = tmp[0]
+            if registry is None:
+                try:
+                    return globals()[clsname]
+                except KeyError:
+                    raise ImportError('Unknown class {}, provide e.g. pythonpath or module name as module_name.ClassName'.format(clsname))
+            allcls = []
+            for cls in registry:
+                if cls.__name__ == clsname: allcls.append(cls)
+            if len(allcls) == 1:
+                cls = allcls[0]
+            elif len(allcls) > 1:
+                raise ImportError('Multiple classes are named {} in registry'.format(clsname))
+            else:
+                raise ImportError('No calculator class {} found in registry'.format(clsname))
+        else:
+            modname, clsname = tmp
+            if pythonpath is not None:
+                sys.path.insert(0, pythonpath)
+            else:
+                sys.path.append(os.path.dirname(__file__))
+            module = importlib.import_module(modname)
+            cls = getattr(module, clsname)
+    if install is not None and hasattr(cls, 'install'):
+        from .install import InstallerConfig
+        install = InstallerConfig(install)
+        if not find_names(serialize_class(cls)[0], install.get('exclude', [])):
+            cls.install(install)
+    return cls
 
 
 class BaseClass(object, metaclass=BaseMetaClass):
@@ -216,7 +229,7 @@ class BaseClass(object, metaclass=BaseMetaClass):
     def save(self, filename):
         self.log_info('Saving {}.'.format(filename))
         mkdir(os.path.dirname(filename))
-        np.save(filename, {'__class__': serialize_class(self), **self.__getstate__()}, allow_pickle=True)
+        np.save(filename, {'__class__': serialize_class(self.__class__), **self.__getstate__()}, allow_pickle=True)
 
     @classmethod
     def load(cls, filename, fallback_class=None):

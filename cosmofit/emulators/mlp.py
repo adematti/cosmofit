@@ -204,3 +204,7 @@ class MLPEmulator(BaseEmulator):
                 if hasattr(tmp, '__getstate__'): tmp = tmp.__getstate__()
                 state[name] = tmp
         return state
+
+    @classmethod
+    def install(cls, config):
+        config.pip('tensorflow')

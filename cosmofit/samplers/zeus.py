@@ -35,3 +35,7 @@ class ZeusSampler(BaseBatchPosteriorSampler):
         random.setstate(py_random_state_bak)
         np.random.set_state(np_random_state_bak)
         return Chain(data=data, params=self.varied_params + ['logposterior'])
+
+    @classmethod
+    def install(cls, config):
+        config.pip('zeus-mcmc')

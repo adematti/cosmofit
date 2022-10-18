@@ -64,3 +64,7 @@ class Cosmoprimo(BasePrimordialCosmology):
                 except CosmologyError as exc:  # TODO: remove once cosmoprimo is updated
                     raise AttributeError from exc
             raise exc
+
+    @classmethod
+    def install(cls, config):
+        config.pip('git+https://github.com/cosmodesi/cosmoprimo')

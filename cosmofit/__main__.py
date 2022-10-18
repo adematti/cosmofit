@@ -8,6 +8,7 @@ commands['profile'] = ['main', 'profile_from_args']
 commands['do'] = ['main', 'do_from_args']
 commands['summarize'] = ['main', 'summarize_from_args']
 commands['emulate'] = ['main', 'emulate_from_args']
+commands['install'] = ['main', 'install_from_args']
 
 
 help_msg = ('Add one of the following commands and its arguments (`<command> -h` for help): {}'.format(list(commands)))

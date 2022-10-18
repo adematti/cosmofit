@@ -70,3 +70,7 @@ class PocoMCSampler(BaseBatchPosteriorSampler):
             self.sampler.save_state(self.state_fn[self._ichain])
         data = [result['samples'][..., iparam] for iparam, param in enumerate(self.varied_params)] + [result['logprior'], result['loglikelihood']]
         return Chain(data=data, params=self.varied_params + ['logprior', 'loglikelihood'])
+
+    @classmethod
+    def install(cls, config):
+        config.pip('pocomc')

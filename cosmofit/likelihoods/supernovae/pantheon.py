@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import scipy as sp
 
@@ -44,3 +46,18 @@ class PantheonSNLikelihood(SNLikelihood):
         if fn is not None:
             plotting.savefig(fn, fig=fig, **(kw_save or {}))
         return lax
+
+    @classmethod
+    def install(cls, config):
+        from cosmofit import install
+        data_dir = config.data_dir(cls.__name__)
+        github = 'https://raw.githubusercontent.com/dscolnic/Pantheon/master/'
+        for fn in ['full_long.dataset', 'lcparam_full_long.txt', 'lcparam_full_long_zhel.txt', 'sys_full_long.txt']:
+            install.download(github + fn, os.path.join(data_dir, fn))
+        config_fn = os.path.join(data_dir, 'full_long.dataset')
+        with open(config_fn, 'r') as file:
+            txt = file.read()
+        txt = txt.replace('/your-path/', '')
+        with open(config_fn, 'w') as file:
+            file.write(txt)
+        config.write({cls.__name__: {'data_dir': data_dir}})

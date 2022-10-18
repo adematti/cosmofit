@@ -14,7 +14,7 @@ pipeline:
         zeff: 0.5
         fiducial: DESI
       save: f'{output_dir}/QSO.like.npy'
-      #load: True
+      load: True
       plot: f'{output_dir}/power.png'
     theory:
       #class: cosmofit.theories.clustering.LPTTracerPowerSpectrumMultipoles
@@ -22,7 +22,7 @@ pipeline:
       #class: cosmofit.theories.clustering.KaiserTracerPowerSpectrumMultipoles
       #class: cosmofit.theories.clustering.EPTMomentsTracerPowerSpectrumMultipoles
       #class: cosmofit.theories.clustering.EPTFullResummedTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.clustering.LPTMomentsTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.clustering.LPTMomentsTracerPowerSpectrumMultipoles
       params:
       #  .derived: [.varied]
       #  .fixed: '*'

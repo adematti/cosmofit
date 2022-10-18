@@ -1,8 +1,6 @@
 pipeline:
   SN:
     class: cosmofit.likelihoods.supernovae.PantheonSNLikelihood
-    init:
-      config_dir: /home/adematti/Bureau/DESI/NERSC/lib/Pantheon/
     plot: f'{output_dir}/plot.png'
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo

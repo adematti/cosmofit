@@ -5,7 +5,8 @@ from collections import UserDict
 import numpy as np
 import yaml
 
-from .utils import BaseClass, deep_eq, evaluate
+from . import utils
+from .utils import BaseClass, deep_eq
 
 
 class YamlLoader(yaml.SafeLoader):
@@ -163,7 +164,7 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
                         assert key not in word
                         di[key] = freplace
                         word = word.replace(placeholder, key)
-                return evaluate(word, locals=di)
+                return utils.evaluate(word, locals=di)
             return None
 
         def decode_format(word):
@@ -314,5 +315,27 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
         new.update(*args, **kwargs)
         return new
 
+    def select(self, keys=None):
+        toret = self.copy()
+        if keys is not None:
+            for key in list(toret.keys()):
+                if key not in keys:
+                    del toret[key]
+        return toret
+
     def __eq__(self, other):
         return type(other) == type(self) and deep_eq(self.data, other.data)
+
+    def write(self, fn):
+        self.log_info('Saving {}.'.format(fn))
+        utils.mkdir(os.path.dirname(fn))
+        data = utils.dict_to_yaml(self.data)
+
+        def list_rep(dumper, data):
+            return dumper.represent_sequence(u'tag:yaml.org,2002:seq', data, flow_style=True)
+
+        yaml.add_representer(list, list_rep)
+
+        utils.mkdir(os.path.dirname(fn))
+        with open(fn, 'w') as file:
+            yaml.dump(data, file, default_flow_style=False)

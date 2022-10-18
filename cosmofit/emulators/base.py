@@ -3,14 +3,15 @@ import sys
 
 import numpy as np
 
+from cosmofit.io import BaseConfig, ConfigError
 from cosmofit.samples import ParameterValues
-from cosmofit.base import BasePipeline, PipelineError, SectionConfig
+from cosmofit.base import BasePipeline, PipelineError, InstallableSectionConfig
 from cosmofit import utils, plotting
 from cosmofit.utils import BaseClass, OrderedSet, import_class, serialize_class
 from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError, ParameterCollection, ParameterConfig
 
 
-class EmulatorConfig(SectionConfig):
+class EmulatorConfig(InstallableSectionConfig):
 
     _sections = ['source', 'init', 'fit', 'check']
 
@@ -30,7 +31,10 @@ class EmulatorConfig(SectionConfig):
                     emudict = {'save': emudict}
                 emudict = self.clone(EmulatorConfig(emudict))
                 save_fn = emudict.get('save', calcdict.get('save', None))
-                cls = import_class(emudict['class'], pythonpath=emudict.get('pythonpath', None), registry=BaseEmulator._registry)
+                if 'class' not in emudict:
+                    raise ConfigError('Provide emulator class!')
+                cls = import_class(emudict['class'], pythonpath=emudict.get('pythonpath', None), registry=BaseEmulator._registry, install=self['install'])
+                if self['install'] is not None: continue
                 emulator = cls(pipeline.select(calculator), **emudict['init'])
                 sample = emudict.get('sample', {})
                 if not isinstance(sample, dict):
@@ -108,9 +112,9 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
             self.log_info('Varied parameters: {}.'.format(self.varied_params))
             self.log_info('Found varying {} and fixed {} outputs.'.format(self.varied, list(self.fixed.keys())))
 
-        self.end_calculator__class__ = serialize_class(calculator)
-        self.calculators__class__ = [serialize_class(calc) for calc in self.pipeline.calculators]
-        self.yaml_data = {}
+        self.end_calculator__class__ = serialize_class(calculator.__class__)
+        self.calculators__class__ = [serialize_class(calc.__class__) for calc in self.pipeline.calculators]
+        self.yaml_data = BaseConfig()
         self.yaml_data['class'] = calculator.__class__.__name__
         self.yaml_data['info'] = dict(calculator.info)
         self.yaml_data['init'] = {}
@@ -121,7 +125,6 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
             params[param.name] = dict(ParameterConfig(param))
             params[param.name].pop('basename')
         self.yaml_data['params'] = params
-        self.yaml_data = utils.dict_to_yaml(self.yaml_data)
         self.diagnostics = {}
 
     def set_samples(self, samples=None, save_fn=None, **kwargs):
@@ -303,33 +306,25 @@ class BaseEmulator(BaseClass, metaclass=RegisteredEmulator):
 
     def __getstate__(self):
         state = {}
-        for name in ['varied_params', 'fixed', 'varied', 'in_end_calculator', 'yaml_data', 'end_calculator__class__', 'calculators__class__']:
+        for name in ['varied_params', 'fixed', 'varied', 'in_end_calculator', 'end_calculator__class__', 'calculators__class__']:
             state[name] = getattr(self, name)
+        state['yaml_data'] = self.yaml_data.data
         state['params'] = self.params.__getstate__()
         return state
 
     def save(self, filename, yaml=True):
         self.log_info('Saving {}.'.format(filename))
         utils.mkdir(os.path.dirname(filename))
-        state = {'__class__': serialize_class(self), **self.__getstate__()}
+        state = {'__class__': serialize_class(self.__class__), **self.__getstate__()}
         if yaml:
             state['config_fn'] = fn = os.path.splitext(filename)[0] + '.yaml'
-            self.log_info('Saving {}.'.format(fn))
-            self.save_yaml(fn)
+            self.yaml_data.write(fn)
         np.save(filename, state, allow_pickle=True)
-
-    def save_yaml(self, fn):
-        import yaml
-        def list_rep(dumper, data):
-            return dumper.represent_sequence(u'tag:yaml.org,2002:seq', data, flow_style=True)
-        yaml.add_representer(list, list_rep)
-        utils.mkdir(os.path.dirname(fn))
-        with open(fn, 'w') as file:
-            yaml.dump(self.yaml_data, file, default_flow_style=False)
 
     def __setstate__(self, state):
         super(BaseEmulator, self).__setstate__(state)
         self.in_end_calculator = getattr(self, 'in_end_calculator', set(self.fixed) | set(self.varied))
+        self.yaml_data = BaseConfig(self.yaml_data)
         self.params = ParameterCollection.from_state(state['params'])
 
 

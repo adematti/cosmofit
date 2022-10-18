@@ -10,14 +10,13 @@ from cosmofit.theories.primordial_cosmology import BasePrimordialCosmology
 
 class SNLikelihood(BaseCalculator):
 
-    def __init__(self, config_fn, config_dir=None):
-
-        if config_dir is not None:
-            config_fn = os.path.join(config_dir, config_fn)
-
-        self.config = self.read_config(config_fn)
-        self.covariance = self.read_covariance(os.path.join(config_dir, self.config['mag_covmat_file']))
-        self.light_curve_params = self.read_light_curve_params(os.path.join(config_dir, self.config['data_file']))
+    def __init__(self, config_fn, data_dir=None):
+        if data_dir is None:
+            from cosmofit.install import InstallerConfig
+            data_dir = InstallerConfig()[self.__class__.__name__]['data_dir']
+        self.config = self.read_config(os.path.join(data_dir, config_fn))
+        self.covariance = self.read_covariance(os.path.join(data_dir, self.config['mag_covmat_file']))
+        self.light_curve_params = self.read_light_curve_params(os.path.join(data_dir, self.config['data_file']))
         self.requires = {'cosmo': {'class': BasePrimordialCosmology}}
 
     def read_config(self, fn):

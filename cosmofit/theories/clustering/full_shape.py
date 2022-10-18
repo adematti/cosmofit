@@ -70,6 +70,10 @@ class BaseVelocileptorsPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles):
         tmp = np.array(self.pt.compute_redshift_space_power_multipoles(pars, self.template.f, apar=self.template.qpar, aperp=self.template.qper, **self.bias_options, **opts)[1:])
         return interpolate.interp1d(self.pt.kv, tmp, kind='cubic', axis=-1, copy=False, bounds_error=True, assume_sorted=True)(self.k)
 
+    @classmethod
+    def install(cls, config):
+        config.pip('git+https://github.com/sfschen/velocileptors')
+
 
 class BaseVelocileptorsTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
@@ -154,6 +158,10 @@ class LPTPowerSpectrumMultipoles(BaseVelocileptorsPowerSpectrumMultipoles):
             if hasattr(self, name):
                 state[name] = getattr(self, name)
         return state
+
+    @classmethod
+    def install(cls, config):
+        config.pip('git+https://github.com/sfschen/velocileptors')
 
 
 class LPTTracerPowerSpectrumMultipoles(BaseVelocileptorsTracerPowerSpectrumMultipoles):
@@ -418,6 +426,10 @@ class PyBirdPowerSpectrumMultipoles(BasePTPowerSpectrumMultipoles):
         self.bird.with_bias = False
         self.bird.__dict__.update(state)
 
+    @classmethod
+    def install(cls, config):
+        config.pip('git+https://github.com/adematti/pybird@dev')
+
 
 class PyBirdCorrelationFunctionMultipoles(BasePTCorrelationFunctionMultipoles):
 
@@ -481,6 +493,10 @@ class PyBirdCorrelationFunctionMultipoles(BasePTCorrelationFunctionMultipoles):
         self.bird.with_bias = False
         self.bird.__dict__.update(state)
 
+    @classmethod
+    def install(cls, config):
+        config.pip('git+https://github.com/adematti/pybird@dev')
+
 
 class PyBirdTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
 
@@ -513,7 +529,7 @@ class PyBirdTracerPowerSpectrumMultipoles(BaseTheoryPowerSpectrumMultipoles):
         default_values = {'b1': 1.69, 'b3': -0.479}
         self.required_bias_params = {name: default_values.get(name, 0.) for name in self.required_bias_params}
         return params.select(basename=list(self.required_bias_params.keys()))
-    
+
     def transform_params(self, **params):
         if self.bias_options['eft_basis'] == 'westcoast':
             params['b2'] = (params['b2p4'] + params['b2m4']) / 2.**0.5

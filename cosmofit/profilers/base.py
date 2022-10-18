@@ -3,21 +3,24 @@ import functools
 import numpy as np
 import mpytools as mpy
 
-from cosmofit.base import SectionConfig, import_class
+from cosmofit.io import ConfigError
+from cosmofit.base import InstallableSectionConfig, import_class
 from cosmofit.utils import BaseClass, TaskManager
 from cosmofit.samples import SourceConfig
 from cosmofit.samples.profiles import Profiles, ParameterValues, ParameterBestFit
 from cosmofit.parameter import ParameterArray, ParameterCollection
 
 
-class ProfilerConfig(SectionConfig):
+class ProfilerConfig(InstallableSectionConfig):
 
     _sections = ['source', 'init']
 
     def __init__(self, *args, **kwargs):
         # cls, init kwargs
         super(ProfilerConfig, self).__init__(*args, **kwargs)
-        self['class'] = import_class(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseProfiler._registry)
+        if 'class' not in self:
+            raise ConfigError('Provide profiler class!')
+        self['class'] = import_class(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseProfiler._registry, install=self['install'])
 
     def run(self, pipeline):
         pipeline = pipeline.copy()
