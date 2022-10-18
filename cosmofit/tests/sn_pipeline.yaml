@@ -29,4 +29,4 @@ do:
   source: f'{profile.save}'
   plot:
 
-output_dir: _sn
+output_dir: '_sn

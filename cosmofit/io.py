@@ -144,19 +144,24 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
             m = re.match(eval_re_pattern, word)
             if m:
                 word = m.group(1)
-                placeholders = re.finditer(r'\{.*?\}', word)
+                placeholders = re.finditer(r'\$?\{.*?\}', word)
                 word_letters = re.sub(r'[^a-zA-Z]', '_', word)
                 di = {}
                 for placeholder in placeholders:
                     placeholder = placeholder.group()
-                    key = placeholder_nobrackets = placeholder[1:-1]
-                    if placeholder.startswith('{{'):
-                        word = word.replace(placeholder, placeholder_nobrackets)
+                    inenv = placeholder.startswith('$')
+                    if inenv: placeholder_nobrackets = placeholder[2:-1]
+                    else: placeholder_nobrackets = placeholder[1:-1]
+                    if placeholder_nobrackets.startswith('{'):
+                        word = word.replace(placeholder, '$' * inenv + placeholder_nobrackets)
                     else:
-                        freplace = replace = self.search(key)
-                        if isinstance(replace, str):
-                            freplace = decode_eval(replace)
-                            if freplace is None: freplace = replace
+                        if inenv:
+                            freplace = os.getenv(placeholder_nobrackets)
+                        else:
+                            freplace = replace = self.search(placeholder_nobrackets)
+                            if isinstance(replace, str):
+                                freplace = decode_eval(replace)
+                                if freplace is None: freplace = replace
                         #if isinstance(freplace, str):
                         #    word = word.replace(placeholder, freplace)
                         #else:
@@ -171,20 +176,25 @@ class BaseConfig(BaseClass, UserDict, metaclass=MetaClass):
             m = re.match(format_re_pattern, word)
             if m:
                 word = m.group(1)
-                placeholders = re.finditer(r'\{.*?\}', word)
+                placeholders = re.finditer(r'\$?\{.*?\}', word)
                 for placeholder in placeholders:
                     placeholder = placeholder.group()
-                    placeholder_nobrackets = placeholder[1:-1]
-                    if placeholder.startswith('{{'):
-                        word = word.replace(placeholder, placeholder_nobrackets)
+                    inenv = placeholder.startswith('$')
+                    if inenv: placeholder_nobrackets = placeholder[2:-1]
+                    else: placeholder_nobrackets = placeholder[1:-1]
+                    if placeholder_nobrackets.startswith('{'):
+                        word = word.replace(placeholder, '$' * inenv + placeholder_nobrackets)
                     else:
                         keyfmt = re.match(r'^(.*[^:])(:[^:]*)$', placeholder_nobrackets)
                         if keyfmt: key, fmt = keyfmt.groups()
                         else: key, fmt = placeholder_nobrackets, ''
-                        freplace = replace = self.search(key)
-                        if isinstance(replace, str):
-                            freplace = decode_format(replace)
-                            if freplace is None: freplace = replace
+                        if inenv:
+                            freplace = os.getenv(key)
+                        else:
+                            freplace = replace = self.search(key)
+                            if isinstance(replace, str):
+                                freplace = decode_format(replace)
+                                if freplace is None: freplace = replace
                         word = word.replace(placeholder, ('{' + fmt + '}').format(freplace))
                 return word
             return None
