@@ -27,6 +27,21 @@ If you want to install extra requirements, run::
 
   python -m pip install git+https://github.com/adematti/cosmofit#egg=cosmofit[plotting,jax]
 
+git
+---
+
+First:
+
+  git clone https://github.com/adematti/cosmofit.git
+
+To install the code::
+
+  python setup.py install --user
+
+Or in development mode (any change to Python code will take place immediately)::
+
+  python setup.py develop --user
+
 
 Pipeline dependencies, samplers, profilers, emulators
 -----------------------------------------------------

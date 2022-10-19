@@ -23,36 +23,9 @@ Example notebooks are provided in directory nb/.
 
 Documentation is hosted on Read the Docs, [cosmofit docs](https://cosmofit.readthedocs.io/).
 
-## Requirements
-
-Only strict requirements are:
-
-  - numpy
-  - scipy
-
 ## Installation
 
-### pip
-
-Simply run:
-```
-python -m pip install git+https://github.com/adematti/cosmofit
-```
-
-### git
-
-First:
-```
-git clone https://github.com/adematti/cosmofit.git
-```
-To install the code:
-```
-python setup.py install --user
-```
-Or in development mode (any change to Python code will take place immediately):
-```
-python setup.py develop --user
-```
+See [cosmofit docs](https://cosmofit.readthedocs.io/en/latest/user/building.html).
 
 ## License
 
