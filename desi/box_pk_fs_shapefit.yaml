@@ -1,0 +1,156 @@
+pipeline:
+  LRG:
+    like:
+      class: cosmofit.likelihoods.galaxy_clustering.PowerSpectrumMultipolesLikelihood
+      init:
+        data: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/AbacusSummit/CubicBox/LRG/Pk/Pre/jmena/nmesh_512/pypower_format/Pk_AbacusSummit_base_*.npy'
+        covariance: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/EZmock/CubicBox/LRG/Pk/jmena/nmesh_512/pypower_format/Pk_EZmock_B2000G512Z0.8N8015724_b0.385d4r169c0.3_seed*.npy'
+        covariance_scale: True
+        wmatrix: f'/global/cfs/cdirs/desi/users/adematti/desi_mock_challenge/FirstGenMocks/AbacusSummit/CubicBox/ELG/z1.100/window_nmesh512_los-x.npy'
+        klim:
+          0: [0.02, 0.2]
+          2: [0.02, 0.2]
+          #4: [0.02, 0.2]
+        kstep: 0.005
+        zeff: e'{z}'
+        fiducial: DESI
+      plot: f'{tmp_dir}/power.png'
+      save: f'{tmp_dir}/like.npy'
+      #load: True
+    wmat:
+      class: cosmofit.theories.galaxy_clustering.WindowedPowerSpectrumMultipoles
+      init:
+        kinrebin: 1
+    theory:
+      class: cosmofit.theories.galaxy_clustering.LPTTracerPowerSpectrumMultipoles
+      params:
+        #.fixed: '*'
+        #.varied: ['b1', 'sn*']
+        b1:
+          ref:
+            limits: [1., 1.1]
+        b2:
+          ref:
+            limits: [1.5, 2.5]
+        bs:
+          ref:
+            limits: [-1., 1.]
+        alpha*:
+          derived: '.auto'
+        sn*:
+          derived: '.auto'
+    lpt:
+      class: cosmofit.theories.galaxy_clustering.LPTPowerSpectrumMultipoles
+      #config_fn: tmp_pk_fs_shapefit/emulator.yaml
+      params:
+        #.fixed: 'qp*r'
+        #f:
+        #  value: 0.84
+        #  ref:
+        #    limits: [0.83, 0.85]
+        #qp*r:
+        #  ref:
+        #    limits: [0.999, 1.001]
+        #dm:
+        #  ref:
+        #    limits: [-0.0005, 0.0005]
+      #load: f'{tmp_dir}/emulator.npy'
+      emulator:
+        init:
+          order: 4
+        sample:
+          scale: 1.
+        save: f'{tmp_dir}/emulator.npy'
+    #theory:
+    #  class: cosmofit.theories.full_shape.KaiserTracerPowerSpectrumMultipoles
+    #  #load: f'{tmp_dir}/emulator.npy'
+    #  emulator:
+    #    init:
+    #      order: {'*': 1, 'q*': 2, 'b1': 2}
+    #      #order: {'*': 1}
+    #    save: f'{tmp_dir}/emulator.npy'
+    shapefit:
+      class: cosmofit.theories.galaxy_clustering.ShapeFitPowerSpectrumParameterization
+      params:
+        #.fixed: '*'
+        f:
+          value: 0.84
+          ref:
+            limits: [0.83, 0.85]
+        dm:
+          ref:
+            limits: [-0.01, 0.01]
+        qp*r:
+          ref:
+            limits: [0.99, 1.01]
+  cosmo:
+    class: cosmofit.theories.primordial_cosmology.Cosmoprimo
+
+emulate:
+  class: TaylorEmulator
+
+summarize:
+   source:
+     - f'{output_dir}/profiles.npy'
+   stats:
+     - f'{tmp_dir}/stats.tex'
+   plot_aligned_stacked: f'{tmp_dir}/aligned_stacked.png'
+
+summarize:
+  source:
+    fn: f'{output_dir}/chain_*.npy'
+    burnin: 0.5
+  stats: f'{tmp_dir}/stats.tex'
+  plot_triangle:
+    fn: f'{tmp_dir}/triangle.png'
+    params: ['LRG.f', 'LRG.dm', 'LRG.qpar', 'LRG.qper']
+  #plot_trace: f'{tmp_dir}/trace.png'
+  #plot_autocorrelation_time: f'{tmp_dir}/autocorrelation_time.png'
+  #plot_gelman_rubin:
+  #  fn: f'{tmp_dir}/gelman_rubin.png'
+  #  nsplits: 4
+  #plot_geweke: f'{tmp_dir}/geweke.png'
+
+sample:
+  class: cosmofit.samplers.MCMCSampler
+  init:
+    chains: 8
+  run:
+    max_iterations: 10000
+    check_every: 500
+    check: True
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.PocoMCSampler
+  init:
+    nwalkers: 1000
+    chains: 8 #f'{output_dir}/chain_0.npy'
+  run:
+    max_iterations: 10000
+    check_every: 100
+    check: True
+  save: f'{output_dir}/chain_*.npy'
+
+
+profile:
+  class: cosmofit.profilers.MinuitProfiler
+  save: f'{output_dir}/profiles.npy'
+  init:
+    seed: 2
+  maximize:
+    niterations: 10
+  interval:
+    params: ['LRG.f', 'LRG.dm', 'LRG.qpar', 'LRG.qper']
+
+do:
+  source:
+    chain:
+      fn: f'{output_dir}/chain_*.npy'
+      burnin: 0.5
+  do: plot
+
+z: 0.8
+tmp_dir: tmp_pk_fs_shapefit
+scratch_dir: f'${SCRATCH}'
+output_dir: f'{scratch_dir}/desi_mock_challenge/fitFirstGenMocks/AbacusSummit/CubicBox/LRG/z{z:.3f}/pk_fs_shapefit/wm/'

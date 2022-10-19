@@ -1,30 +1,24 @@
 pipeline:
-  LRG:
+  ELG:
     like:
-      class: cosmofit.likelihoods.galaxy_clustering.PowerSpectrumMultipolesLikelihood
+      class: cosmofit.likelihoods.galaxy_clustering.CorrelationFunctionMultipolesLikelihood
       init:
-        data: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/AbacusSummit/CubicBox/LRG/Pk/Pre/jmena/nmesh_512/pypower_format/Pk_AbacusSummit_base_*.npy'
-        covariance: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/EZmock/CubicBox/LRG/Pk/jmena/nmesh_512/pypower_format/Pk_EZmock_B2000G512Z0.8N8015724_b0.385d4r169c0.3_seed*.npy'
+        data: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/AbacusSummit/CubicBox/ELG/Xi/Pre/lhior/npy/Xi_AbacusSummit_base_c000_ph*.npy'
+        covariance: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/EZmock/CubicBox/ELG/Xi/lhior/npy/Xi_CubicBox_ELG_z1.100_EZmock_B2000G512Z1.1N24000470_b0.345d1.45r40c0.05_seed*.npy'
         covariance_scale: True
-        wmatrix: f'/global/cfs/cdirs/desi/users/adematti/desi_mock_challenge/FirstGenMocks/AbacusSummit/CubicBox/ELG/z1.100/window_nmesh512_los-x.npy'
-        klim:
-          0: [0.02, 0.3]
-          2: [0.02, 0.3]
-          4: [0.02, 0.3]
-        kstep: 0.005
+        slim:
+          0: [40., 160.]
+          2: [40., 160.]
+          4: [40., 160.]
+        sstep: 5.
         zeff: e'{z}'
         fiducial: DESI
-      plot: f'{tmp_dir}/power.png'
-      plot_bao: f'{tmp_dir}/power_bao.png'
+      plot: f'{tmp_dir}/xi.png'
       save: f'{tmp_dir}/bao_like.npy'
       #load: True
-    wm:
-      class: cosmofit.theories.galaxy_clustering.WindowedPowerSpectrumMultipoles
-      init:
-        #ellsin: [0, 2]
     theory:
-      class: cosmofit.theories.galaxy_clustering.DampedBAOWigglesTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.galaxy_clustering.ResummedBAOWigglesTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.galaxy_clustering.DampedBAOWigglesTracerCorrelationFunctionMultipoles
+      #class: cosmofit.theories.galaxy_clustering.ResummedBAOWigglesTracerCorrelationFunctionMultipoles
       init:
         nowiggle: False
       params:
@@ -32,17 +26,20 @@ pipeline:
         .varied: 'sigmap*r'
         bias:
           ref:
-            limits: [1.8, 2.2]
+            limits: [1.0, 1.2]
         al*:
           ref:
-            limits: [-10., 10.]
-        #al[:3:2]_[0:2]:
-        #  fixed: False
+            limits: [-1e-5, 1e-5]
+          prior:
+            dist: 'norm'
+            loc: 0.
+            scale: 100
+          derived: '.auto'
       #load: f'{tmp_dir}/emulator.npy'
       emulator:
         save: f'{tmp_dir}/emulator.npy'
     param:
-      class: cosmofit.theories.power_template.BAOPowerSpectrumParameterization
+      class: cosmofit.theories.galaxy_clustering.BAOPowerSpectrumParameterization
       init:
         #mode: qiso
       params:
@@ -51,9 +48,8 @@ pipeline:
         #  prior:
         #    limits: [0.2, 1.]
         qp*r:
-          ref:
+          prior:
             limits: [0.99, 1.01]
-
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
 
@@ -110,7 +106,7 @@ profile:
   save: f'{output_dir}/profiles.npy'
   #save: e'{output_dir} + ("/profiles_nowiggle_qiso.npy" if {pipeline.ELG.theory.init.nowiggle} else "/profiles_qiso.npy")'
   maximize:
-    niterations: 3
+    niterations: 1
   #interval:
    # params: qiso
   #profile:
@@ -118,6 +114,6 @@ profile:
 
 z: 0.8
 imock: '*'
-tmp_dir: tmp_pk_bao_fits
-scratch_dir: /global/cfs/cdirs/desi/users/adematti
-output_dir: f'{scratch_dir}/desi_mock_challenge/fitFirstGenMocks/AbacusSummit/CubicBox/ELG/z{z:.3f}/pk_bao_fits/wm/'
+tmp_dir: tmp_xi_bao_fits
+scratch_dir: f'${SCRATCH}'
+output_dir: f'{scratch_dir}/desi_mock_challenge/fitFirstGenMocks/AbacusSummit/CubicBox/ELG/z{z:.3f}/xi_bao_fits/'
