@@ -1,8 +1,8 @@
 pipeline:
   like:
-    #class: cosmofit.likelihoods.clustering.ShapeFitParameterizationLikelihood
-    #class: cosmofit.likelihoods.clustering.WiggleSplitParameterizationLikelihood
-    class: cosmofit.likelihoods.clustering.BandVelocityPowerSpectrumParameterizationLikelihood
+    #class: cosmofit.likelihoods.galaxy_clustering.ShapeFitParameterizationLikelihood
+    #class: cosmofit.likelihoods.galaxy_clustering.WiggleSplitParameterizationLikelihood
+    class: cosmofit.likelihoods.galaxy_clustering.BandVelocityPowerSpectrumParameterizationLikelihood
     init:
       source:
         fn: f'{data_dir}/chain_0.npy'
@@ -11,7 +11,7 @@ pipeline:
     save: f'{output_dir}/bao_like.npy'
     #load: True
   theory:
-    class: cosmofit.likelihoods.clustering.compressed.BandVelocityPowerSpectrumParameterizationTheory
+    class: cosmofit.likelihoods.galaxy_clustering.compressed.BandVelocityPowerSpectrumParameterizationTheory
     #load: f'{output_dir}/fs_emulator.npy'
     emulator:
       save: f'{output_dir}/fs_emulator.npy'

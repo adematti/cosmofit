@@ -1,7 +1,7 @@
 pipeline:
   LRG:
     like:
-      class: cosmofit.likelihoods.clustering.PowerSpectrumMultipolesLikelihood
+      class: cosmofit.likelihoods.galaxy_clustering.PowerSpectrumMultipolesLikelihood
       init:
         data: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/AbacusSummit/CubicBox/LRG/Pk/Pre/jmena/nmesh_512/pypower_format/Pk_AbacusSummit_base_*.npy'
         covariance: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/EZmock/CubicBox/LRG/Pk/jmena/nmesh_512/pypower_format/Pk_EZmock_B2000G512Z0.8N8015724_b0.385d4r169c0.3_seed*.npy'
@@ -19,12 +19,12 @@ pipeline:
       save: f'{tmp_dir}/bao_like.npy'
       #load: True
     wm:
-      class: cosmofit.theories.clustering.WindowedPowerSpectrumMultipoles
+      class: cosmofit.theories.galaxy_clustering.WindowedPowerSpectrumMultipoles
       init:
         #ellsin: [0, 2]
     theory:
-      class: cosmofit.theories.clustering.DampedBAOWigglesTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.clustering.ResummedBAOWigglesTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.galaxy_clustering.DampedBAOWigglesTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.galaxy_clustering.ResummedBAOWigglesTracerPowerSpectrumMultipoles
       init:
         nowiggle: False
       params:

@@ -1,7 +1,7 @@
 pipeline:
   ELG:
     like:
-      class: cosmofit.likelihoods.clustering.CorrelationFunctionMultipolesLikelihood
+      class: cosmofit.likelihoods.galaxy_clustering.CorrelationFunctionMultipolesLikelihood
       init:
         data: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/AbacusSummit/CubicBox/ELG/Xi/Pre/lhior/npy/Xi_AbacusSummit_base_c000_ph*.npy'
         covariance: f'/global/cfs/cdirs/desi/cosmosim/KP45/MC/Clustering/EZmock/CubicBox/ELG/Xi/lhior/npy/Xi_CubicBox_ELG_z1.100_EZmock_B2000G512Z1.1N24000470_b0.345d1.45r40c0.05_seed*.npy'
@@ -17,8 +17,8 @@ pipeline:
       save: f'{tmp_dir}/bao_like.npy'
       #load: True
     theory:
-      class: cosmofit.theories.clustering.DampedBAOWigglesTracerCorrelationFunctionMultipoles
-      #class: cosmofit.theories.clustering.ResummedBAOWigglesTracerCorrelationFunctionMultipoles
+      class: cosmofit.theories.galaxy_clustering.DampedBAOWigglesTracerCorrelationFunctionMultipoles
+      #class: cosmofit.theories.galaxy_clustering.ResummedBAOWigglesTracerCorrelationFunctionMultipoles
       init:
         nowiggle: False
       params:
@@ -34,7 +34,7 @@ pipeline:
       emulator:
         save: f'{tmp_dir}/emulator.npy'
     param:
-      class: cosmofit.theories.clustering.BAOPowerSpectrumParameterization
+      class: cosmofit.theories.galaxy_clustering.BAOPowerSpectrumParameterization
       init:
         #mode: qiso
       params:

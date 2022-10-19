@@ -49,8 +49,8 @@ def test_mlp_linear(plot=False):
 
 def test_mlp(plot=False):
     pipeline = {}
-    pipeline['theory'] = {'class': 'cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles', 'init': {'fiducial': 'DESI'}, 'params': {'.fixed': 'al*'}}
-    pipeline['param'] = {'class': 'cosmofit.theories.power_template.BAOPowerSpectrumParameterization'}
+    pipeline['theory'] = {'class': 'cosmofit.theories.galaxy_clustering.DampedBAOWigglesTracerPowerSpectrumMultipoles', 'init': {'fiducial': 'DESI'}, 'params': {'.fixed': 'al*'}}
+    pipeline['param'] = {'class': 'cosmofit.theories.galaxy_clustering.BAOPowerSpectrumParameterization'}
     pipeline['cosmo'] = {'class': 'cosmofit.theories.primordial_cosmology.Cosmoprimo', 'params': {'.fixed': '*'}}
     pipeline = BasePipeline(pipeline)
     power_bak = pipeline.end_calculators[0].power.copy()

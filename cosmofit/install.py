@@ -97,11 +97,11 @@ class InstallerConfig(BaseConfig):
     def parser(parser=None):
         if parser is None:
             parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-        parser.add_argument('--install_dir', type=str, default=None, help='Installation directory')
+        parser.add_argument('--install-dir', type=str, default=None, help='Installation directory')
         parser.add_argument('--user', action='store_true', default=False, help='Install to the Python user install directory for your platform. Typically ~/.local/')
         parser.add_argument('--no-deps', action='store_true', default=False, help='Don’t install package dependencies.')
-        parser.add_argument('--force_reinstall', action='store_true', default=False, help='Reinstall all packages even if they are already up-to-date.')
-        parser.add_argument('--ignore_installed', action='store_true', default=False, help='Ignore the installed packages, overwriting them. '
+        parser.add_argument('--force-reinstall', action='store_true', default=False, help='Reinstall all packages even if they are already up-to-date.')
+        parser.add_argument('--ignore-installed', action='store_true', default=False, help='Ignore the installed packages, overwriting them. '
                             'This can break your system if the existing package is of a different version or was installed with a different package manager!')
         return parser
 

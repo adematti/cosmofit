@@ -4,7 +4,7 @@ import numpy as np
 import mpytools as mpy
 
 from cosmofit.io import ConfigError
-from cosmofit.base import InstallableSectionConfig, import_class
+from cosmofit.base import InstallableSectionConfig, import_class, clone_config_with_fn
 from cosmofit.utils import BaseClass, TaskManager
 from cosmofit.samples import SourceConfig
 from cosmofit.samples.profiles import Profiles, ParameterValues, ParameterBestFit
@@ -23,6 +23,7 @@ class ProfilerConfig(InstallableSectionConfig):
         self['class'] = import_class(self['class'], pythonpath=self.pop('pythonpath', None), registry=BaseProfiler._registry, install=self['install'])
 
     def run(self, pipeline):
+        self.update(clone_config_with_fn(self))
         pipeline = pipeline.copy()
         params = pipeline.params.deepcopy()
         from cosmofit.samples import SourceConfig

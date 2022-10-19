@@ -12,8 +12,8 @@
 #
 import os
 import sys
-sys.path.insert(0,os.path.abspath('..'))
-sys.path.insert(0, os.path.abspath(os.path.join('..','cosmofit')))
+sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath(os.path.join('..', 'cosmofit')))
 from _version import __version__
 
 # -- General configuration ------------------------------------------------
@@ -35,7 +35,7 @@ extensions = [
 # -- Project information -----------------------------------------------------
 
 project = 'cosmofit'
-copyright = '2021, Arnaud de Mattia'
+copyright = '2022, Arnaud de Mattia'
 author = 'Arnaud de Mattia'
 
 # The full version, including alpha/beta/rc tags
@@ -90,3 +90,23 @@ def setup(app):
 
 
 autoclass_content = 'both'
+
+this_dir = os.path.dirname(__file__)
+package_dir = os.path.join(os.path.dirname(this_dir), project)
+
+
+def get_yaml_files(dir, rel_dir=None):
+    if rel_dir is None: rel_dir = this_dir
+    for root, dirs, files in os.walk(os.path.join(package_dir, dir)):
+        for file in files:
+            if file.endswith('.yaml'):
+                yield os.path.relpath(os.path.join(root, file), rel_dir)
+
+
+user_dir = os.path.join(this_dir, 'user')
+
+for section in ['samplers', 'profilers', 'emulators']:
+    with open(os.path.join(user_dir, f'{section}_configs.rst'), 'w') as file:
+        for fn in get_yaml_files(section, rel_dir=user_dir):
+            file.write(f'.. literalinclude:: {fn}\n'
+                        '  :language: yaml\n')

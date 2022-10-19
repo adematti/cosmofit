@@ -5,9 +5,9 @@ import numpy as np
 
 from cosmofit.io import BaseConfig, ConfigError
 from cosmofit.samples import ParameterValues
-from cosmofit.base import BasePipeline, PipelineError, InstallableSectionConfig
+from cosmofit.base import BasePipeline, PipelineError, InstallableSectionConfig, import_class, clone_config_with_fn
 from cosmofit import utils, plotting
-from cosmofit.utils import BaseClass, OrderedSet, import_class, serialize_class
+from cosmofit.utils import BaseClass, OrderedSet, serialize_class
 from cosmofit.parameter import Parameter, ParameterArray, ParameterPriorError, ParameterCollection, ParameterConfig
 
 
@@ -16,6 +16,7 @@ class EmulatorConfig(InstallableSectionConfig):
     _sections = ['source', 'init', 'fit', 'check']
 
     def run(self, pipeline):
+        self.update(clone_config_with_fn(self))
         from cosmofit.samples import SourceConfig
         values = SourceConfig(self['source']).choice(params=pipeline.params)
         pipeline = pipeline.copy()

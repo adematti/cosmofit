@@ -7,7 +7,7 @@ import mpytools as mpy
 
 from cosmofit import utils
 from cosmofit.io import ConfigError
-from cosmofit.base import InstallableSectionConfig, import_class
+from cosmofit.base import InstallableSectionConfig, import_class, clone_config_with_fn
 from cosmofit.utils import BaseClass, TaskManager
 from cosmofit.samples import Chain, ParameterValues, load_source
 from cosmofit.samples import diagnostics as sample_diagnostics
@@ -27,6 +27,7 @@ class SamplerConfig(InstallableSectionConfig):
         self.is_posterior_sampler = issubclass(self['class'], BasePosteriorSampler)
 
     def run(self, pipeline):
+        self.update(clone_config_with_fn(self))
         save_fn = self.get('save', None)
         if 'save_fn' in self['init'] and 'save' in self:
             raise ConfigError('Provide either init: save_fn or save, not both')

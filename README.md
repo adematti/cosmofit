@@ -11,13 +11,12 @@ Example notebooks are provided in directory nb/.
 
 ## TODOs
 
-- dimensionality reduction (in process)
+- dimensionality reduction (in progress)
 - jax.jit
 - use Jacobian, if available, in Taylor emulator?
 - finish documentation
 - proper example with cross-covariance (e.g. many redshift slices), potential changes to the infrastructure
 - implement external likelihoods (Planck, Pantheon, DES, etc.)
-- more PT theory models
 - real science work...
 
 ## Documentation
@@ -61,7 +60,7 @@ python setup.py develop --user
 
 ## Acknowledgments
 
-- Some inspiration from cobaya: https://github.com/CobayaSampler/cobaya
+- Inspiration from cobaya: https://github.com/CobayaSampler/cobaya
 - BAO models: https://github.com/Samreay/Barry
 - Taylor expansion emulator: https://github.com/sfschen/velocileptors_shapefit
 - MLP emulator: https://github.com/sfschen/EmulateLSS

@@ -1,7 +1,7 @@
 pipeline:
   QSO:
     like:
-      class: cosmofit.likelihoods.clustering.CorrelationFunctionMultipolesLikelihood
+      class: cosmofit.likelihoods.galaxy_clustering.CorrelationFunctionMultipolesLikelihood
       init:
         data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
@@ -15,8 +15,8 @@ pipeline:
       #load: True
       plot: f'{output_dir}/corr.png'
     theory:
-      #class: cosmofit.theories.clustering.LPTTracerCorrelationFunctionMultipoles
-      class: cosmofit.theories.clustering.PyBirdTracerCorrelationFunctionMultipoles
+      #class: cosmofit.theories.galaxy_clustering.LPTTracerCorrelationFunctionMultipoles
+      class: cosmofit.theories.galaxy_clustering.PyBirdTracerCorrelationFunctionMultipoles
       params:
         c*:
           derived: '.auto'
@@ -25,19 +25,19 @@ pipeline:
         #sn*:
         #  derived: '.auto'
     pt:
-      #class: cosmofit.theories.clustering.LPTPowerSpectrumMultipoles
-      class: cosmofit.theories.clustering.PyBirdCorrelationFunctionMultipoles
+      #class: cosmofit.theories.galaxy_clustering.LPTPowerSpectrumMultipoles
+      class: cosmofit.theories.galaxy_clustering.PyBirdCorrelationFunctionMultipoles
       load: f'{output_dir}/emulator.npy'
       emulator:
         save: f'{output_dir}/emulator.npy'
     shapefit:
-      class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
+      class: cosmofit.theories.galaxy_clustering.ShapeFitPowerSpectrumParameterization
     #pthetap:
-    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
+    #  class: cosmofit.theories.galaxy_clustering.BandVelocityPowerSpectrumParameterization
     #  init:
     #    kptt: e'np.linspace(0.02, 0.2, 4)'
     #ptheta:
-    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumTemplate
+    #  class: cosmofit.theories.galaxy_clustering.BandVelocityPowerSpectrumTemplate
     #  params:
     #    rptt*:
     #      value: 0.

@@ -9,8 +9,8 @@ def test_base():
     emulator_dir = '_tests'
     fn = os.path.join(emulator_dir, 'emu.npy')
     config = {}
-    config['theory'] = {'class': 'cosmofit.theories.bao.DampedBAOWigglesTracerPowerSpectrumMultipoles', 'init': {'fiducial': 'DESI'}}
-    config['param'] = {'class': 'cosmofit.theories.power_template.BAOPowerSpectrumParameterization'}
+    config['theory'] = {'class': 'cosmofit.theories.galaxy_clustering.DampedBAOWigglesTracerPowerSpectrumMultipoles', 'init': {'fiducial': 'DESI'}}
+    config['param'] = {'class': 'cosmofit.theories.galaxy_clustering.BAOPowerSpectrumParameterization'}
     config['cosmo'] = {'class': 'cosmofit.theories.primordial_cosmology.Cosmoprimo', 'params': {'.fixed': '*'}}
 
     pipeline = BasePipeline(config)

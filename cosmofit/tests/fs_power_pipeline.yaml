@@ -1,7 +1,7 @@
 pipeline:
   QSO:
     like:
-      class: cosmofit.likelihoods.clustering.PowerSpectrumMultipolesLikelihood
+      class: cosmofit.likelihoods.galaxy_clustering.PowerSpectrumMultipolesLikelihood
       init:
         data: f'{data_dir}/data.npy'
         covariance: f'{data_dir}/mock_*.npy'
@@ -14,15 +14,15 @@ pipeline:
         zeff: 0.5
         fiducial: DESI
       save: f'{output_dir}/QSO.like.npy'
-      load: True
+      #load: True
       plot: f'{output_dir}/power.png'
     theory:
-      #class: cosmofit.theories.clustering.LPTTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.clustering.PyBirdTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.clustering.KaiserTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.clustering.EPTMomentsTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.clustering.EPTFullResummedTracerPowerSpectrumMultipoles
-      class: cosmofit.theories.clustering.LPTMomentsTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.galaxy_clustering.LPTTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.galaxy_clustering.PyBirdTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.galaxy_clustering.KaiserTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.galaxy_clustering.EPTMomentsTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.galaxy_clustering.EPTFullResummedTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.galaxy_clustering.LPTMomentsTracerPowerSpectrumMultipoles
       params:
       #  .derived: [.varied]
       #  .fixed: '*'
@@ -40,8 +40,8 @@ pipeline:
       #  plot: f'{output_dir}/fs_emulator_*.png'
       #  save: f'{output_dir}/fs_emulator.npy'
     #pt:
-      #class: cosmofit.theories.clustering.LPTPowerSpectrumMultipoles
-    #  class: cosmofit.theories.clustering.PyBirdPowerSpectrumMultipoles
+      #class: cosmofit.theories.galaxy_clustering.LPTPowerSpectrumMultipoles
+    #  class: cosmofit.theories.galaxy_clustering.PyBirdPowerSpectrumMultipoles
     #  load: f'{output_dir}/emulator.npy'
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
@@ -51,9 +51,9 @@ pipeline:
     #  emulator:
     #    save: f'{output_dir}/emulator.npy'
     shapefit:
-      class: cosmofit.theories.clustering.ShapeFitPowerSpectrumParameterization
+      class: cosmofit.theories.galaxy_clustering.ShapeFitPowerSpectrumParameterization
     #full:
-    #  class: cosmofit.theories.clustering.FullPowerSpectrumParameterization
+    #  class: cosmofit.theories.galaxy_clustering.FullPowerSpectrumParameterization
     #  init:
     #    fiducial: DESI
     #  params:
@@ -70,9 +70,9 @@ pipeline:
     #    A_s:
     #      derived: '1e-10 * np.exp({logA})'
     #wiggle:
-    #  class: cosmofit.theories.clustering.WiggleSplitPowerSpectrumParameterization
+    #  class: cosmofit.theories.galaxy_clustering.WiggleSplitPowerSpectrumParameterization
     #pthetap:
-    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumParameterization
+    #  class: cosmofit.theories.galaxy_clustering.BandVelocityPowerSpectrumParameterization
     #  init:
     #    kptt: e'np.linspace(0.03, 0.18, 3)'
     #  params:
@@ -80,7 +80,7 @@ pipeline:
     #    .fixed: [f]
     #    #.fixed: '*'
     #ptheta:
-    #  class: cosmofit.theories.clustering.BandVelocityPowerSpectrumTemplate
+    #  class: cosmofit.theories.galaxy_clustering.BandVelocityPowerSpectrumTemplate
     #  params:
     #    rptt*:
     #      value: 0.

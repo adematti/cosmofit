@@ -1,6 +1,6 @@
 pipeline:
   like:
-    class: cosmofit.likelihoods.clustering.PowerSpectrumMultipolesLikelihood
+    class: cosmofit.likelihoods.galaxy_clustering.PowerSpectrumMultipolesLikelihood
     init:
       data: f'{data_dir}/data.npy'
       #covariance_scale: True
@@ -18,10 +18,10 @@ pipeline:
     plot: f'{output_dir}/power.png'
     plot_bao: f'{output_dir}/power_bao.png'
   #window:
-  #  class: cosmofit.theories.clustering.WindowedPowerSpectrumMultipoles
+  #  class: cosmofit.theories.galaxy_clustering.WindowedPowerSpectrumMultipoles
   #  plot: f'{output_dir}/window.png'
   theory:
-    class: cosmofit.theories.clustering.DampedBAOWigglesTracerPowerSpectrumMultipoles
+    class: cosmofit.theories.galaxy_clustering.DampedBAOWigglesTracerPowerSpectrumMultipoles
     init:
       nowiggle: False
     params:
@@ -38,12 +38,12 @@ pipeline:
       plot: f'{output_dir}/emulator_*.png'
       save: f'{output_dir}/emulator.npy'
   #theory.bao:
-  #  class: cosmofit.theories.clustering.DampedBAOWigglesPowerSpectrumMultipoles
+  #  class: cosmofit.theories.galaxy_clustering.DampedBAOWigglesPowerSpectrumMultipoles
   #  load: f'{output_dir}/emulator.npy'
   #  emulator:
   #    save: f'{output_dir}/emulator.npy'
   param:
-    class: cosmofit.theories.clustering.BAOPowerSpectrumParameterization
+    class: cosmofit.theories.galaxy_clustering.BAOPowerSpectrumParameterization
     init:
       #mode: qiso
   cosmo:

@@ -11,13 +11,11 @@ Only strict requirements are:
   * scipy
   * tabulate
   * `mpytools <https://github.com/cosmodesi/mpytools>`_
-  * `cosmoprimo <https://github.com/cosmodesi/cosmoprimo>`_
 
 Extra requirements are:
 
-  * profilers: imuinuit
-  * samplers: emcee, zeus-mcmc, dynesty
-  * emulators: findiff, tensorflow
+  * plotting: getdist, anesthetic to make nice contour plots
+  * jax: for automatic differentiation (calculation of gradient)
 
 pip
 ---
@@ -25,6 +23,30 @@ To install **cosmofit**, simply run::
 
   python -m pip install git+https://github.com/adematti/cosmofit
 
-If you want to install extra requirements, e.g. profilers and samplers, run::
+If you want to install extra requirements, run::
 
-  python -m pip install git+https://github.com/adematti/cosmofit#egg=cosmofit[profilers,samplers]
+  python -m pip install git+https://github.com/adematti/cosmofit#egg=cosmofit[plotting,jax]
+
+
+Pipeline dependencies, samplers, profilers, emulators
+-----------------------------------------------------
+**cosmofit** comes with an infrastructure to install packages.
+One can install all dependencies given a configuration file ``config.yaml`` with::
+
+  cosmofit install config.yaml
+
+Run::
+
+  cosmofit install --help
+
+to print some help. Syntax is close to that of **pip**, e.g. dependencies can be installed locallly with::
+
+  cosmofit install --user config.yaml
+
+A notable difference w.r.t. to **pip** is the --install-dir option, that allows one to specify where to save dependencies
+(on top of possibly already exising environment, just like the **pip** --user option)::
+
+  cosmofit install --install-dir your/directory/ config.yaml
+
+In future calls, if omitted the installation directory will default to the first used.
+The default installation directory can be changed directly in ``$HOME/.cosmofit/config.yaml``.

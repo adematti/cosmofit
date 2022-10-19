@@ -90,7 +90,7 @@ class PowerSpectrumMultipolesLikelihood(BaseGaussianLikelihood):
         self.k, self.ells, flatdata, shotnoise, nobs = self.mpicomm.bcast((self.k, self.ells, flatdata, shotnoise, nobs) if self.mpicomm.rank == 0 else None, root=0)
         #flatdata += 1e3
         super(PowerSpectrumMultipolesLikelihood, self).__init__(covariance=covariance, data=flatdata, nobs=nobs)
-        self.requires['theory'] = ('cosmofit.theories.clustering.WindowedPowerSpectrumMultipoles',
+        self.requires['theory'] = ('cosmofit.theories.galaxy_clustering.WindowedPowerSpectrumMultipoles',
                                    {'k': self.k, 'ells': self.ells, 'wmatrix': wmatrix, 'shotnoise': shotnoise,
                                     'theory': {'init': {'zeff': zeff, 'fiducial': fiducial}}})
         self.globals['kdata'] = self.k

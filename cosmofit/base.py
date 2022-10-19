@@ -381,6 +381,32 @@ class InstallableSectionConfig(SectionConfig):
             self['install'] = None
 
 
+def clone_config_with_fn(config):
+    mpicomm = getattr(config, 'mpicomm', CurrentMPIComm.get())
+    cls = config['class']
+    config_fn = config.get('config_fn', None)
+    if config_fn is None:
+        try:
+            fn = inspect.getfile(cls)
+            default_config_fn = os.path.splitext(fn)[0] + '.yaml'
+            if os.path.isfile(default_config_fn):
+                config_fn = default_config_fn
+        except TypeError:  # built-in
+            pass
+    if config_fn is not None:
+        if mpicomm.rank == 0:
+            config.log_info('Loading config file {}'.format(config_fn))
+        try:
+            tmpconfig = config.__class__(config_fn, index={'class': cls.__name__})
+        except IndexError:  # no config for this class in config_fn
+            if mpicomm.rank == 0:
+                config.log_info('No config for {} found in config file {}'.format(cls.__name__, config_fn))
+        else:
+            config = tmpconfig.clone(config)
+    return config
+
+
+
 def is_in_namespace(child, parent):
 
     def split(namespace):
@@ -551,7 +577,7 @@ class PipelineConfig(BaseConfig):
             calculators_in_namespace = self.calculators_by_namespace[namespace] = self.calculators_by_namespace.get(namespace, {})
             for basename, calcdict in calculators_in_namespace.items():
                 config = CalculatorConfig(calcdict, install=self._install)
-                full_config = self.clone_config_with_fn(config)
+                full_config = clone_config_with_fn(config)
                 calculators_in_namespace[basename] = full_config
                 full_config_params = full_config['params'].with_namespace(namespace=namespace)
                 for param in full_config_params:
@@ -562,29 +588,6 @@ class PipelineConfig(BaseConfig):
         for param in params:
             self.params.set(param)
             self.updated_params.add(param.name)
-
-    def clone_config_with_fn(self, config):
-        cls = config['class']
-        config_fn = config.get('config_fn', None)
-        if config_fn is None:
-            try:
-                fn = inspect.getfile(cls)
-                default_config_fn = os.path.splitext(fn)[0] + '.yaml'
-                if os.path.isfile(default_config_fn):
-                    config_fn = default_config_fn
-            except TypeError:  # built-in
-                pass
-        if config_fn is not None:
-            if self.mpicomm.rank == 0:
-                self.log_info('Loading config file {}'.format(config_fn))
-            try:
-                tmpconfig = CalculatorConfig(config_fn, index={'class': cls.__name__})
-            except IndexError:  # no config for this class in config_fn
-                if self.mpicomm.rank == 0:
-                    self.log_info('No config for {} found in config file {}'.format(cls.__name__, config_fn))
-            else:
-                config = tmpconfig.clone(config)
-        return config
 
     def init(self):
 
@@ -639,7 +642,7 @@ class PipelineConfig(BaseConfig):
                     requirementnamespace, requirementbasename, config = match_first
                     used.add((requirementnamespace, requirementbasename))
                 else:
-                    config = self.clone_config_with_fn(config)
+                    config = clone_config_with_fn(config)
                 already_instantiated = False
                 for calc in calculators:
                     #if calc.__class__.__name__ == 'DampedBAOWigglesPowerSpectrumMultipoles':

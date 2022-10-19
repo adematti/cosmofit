@@ -4,7 +4,7 @@ from scipy import constants
 from cosmofit.likelihoods.base import BaseGaussianLikelihood, BaseCalculator
 from cosmofit.samples import ParameterValues, SourceConfig
 from cosmofit.parameter import ParameterCollection
-from cosmofit.theories.clustering import APEffect, BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor, BandVelocityPowerSpectrumExtractor
+from cosmofit.theories.galaxy_clustering import APEffect, BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor, BandVelocityPowerSpectrumExtractor
 from cosmofit import utils
 
 
@@ -65,7 +65,7 @@ class BaseParameterizationLikelihood(BaseGaussianLikelihood):
                 # if self.mpicomm.rank == 0:
                 #     self.log_info('Parameter {} is found to be fixed, ignoring.'.format(param))
                 del self.params[param]
-            elif self.source_covariance.cov(param) == 0.:
+            elif self.source_covariance.cov(param) < 1e-20:
                 del self.params[param]
 
     def _prepare(self):
