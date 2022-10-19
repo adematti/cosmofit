@@ -30,7 +30,7 @@ If you want to install extra requirements, run::
 git
 ---
 
-First:
+First::
 
   git clone https://github.com/adematti/cosmofit.git
 
