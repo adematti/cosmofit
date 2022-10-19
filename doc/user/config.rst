@@ -5,10 +5,10 @@ Code structure
 ==============
 **cosmofit** is structured the following way:
 
-- a pipeline: compute things given some parameters
-- emulators: to (optionally) emulate the pipeline
-- profilers: find likelihood/posterior best fit, 1D profiles and 2D contours
-- samplers: sample the posterior
+* a pipeline: compute things given some parameters
+* emulators: to (optionally) emulate the pipeline
+* profilers: find likelihood/posterior best fit, 1D profiles and 2D contours
+* samplers: sample the posterior
 
 
 **cosmofit** can be run from Python directly, as examplified in `notebooks <https://github.com/adematti/cosmofit/blob/main/nb>`_.
@@ -29,7 +29,7 @@ Below is an example configuration file.
     # (except if those are defined in higher-level namespace)
     QSO:
       like:  # Calculator name, which is purely arbitrary
-        # We need to specify where our likelihood "like" is defined, in the format module.Class --- it can be anywhere!
+        # We need to specify where our likelihood "like" is defined, in the format module.Class --* it can be anywhere!
         # We could also specify a pythonpath: location where to search for the said module
         class: cosmofit.likelihoods.galaxy_clustering.PowerSpectrumMultipolesLikelihood
         init: # Whatever parameters used for initialization of the likelihood class

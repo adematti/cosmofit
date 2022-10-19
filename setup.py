@@ -11,8 +11,8 @@ version = _version.__version__
 
 
 def get_yaml_files():
-    for dir in ['likelihoods', 'theories', 'samplers', 'profilers', 'emulators']:
-        for root, dirs, files in os.walk(os.path.join(package_dir, dir)):
+    for section in ['likelihoods', 'theories', 'samplers', 'profilers', 'emulators']:
+        for root, dirs, files in os.walk(os.path.join(package_dir, section)):
             for file in files:
                 if file.endswith('.yaml'):
                     yield os.path.relpath(os.path.join(root, file), package_dir)

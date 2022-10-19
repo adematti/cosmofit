@@ -95,9 +95,9 @@ this_dir = os.path.dirname(__file__)
 package_dir = os.path.join(os.path.dirname(this_dir), project)
 
 
-def get_yaml_files(dir, rel_dir=None):
+def get_yaml_files(section, rel_dir=None):
     if rel_dir is None: rel_dir = this_dir
-    for root, dirs, files in os.walk(os.path.join(package_dir, dir)):
+    for root, dirs, files in os.walk(os.path.join(package_dir, section)):
         for file in files:
             if file.endswith('.yaml'):
                 yield os.path.relpath(os.path.join(root, file), rel_dir)
@@ -105,8 +105,10 @@ def get_yaml_files(dir, rel_dir=None):
 
 user_dir = os.path.join(this_dir, 'user')
 
-for section in ['samplers', 'profilers', 'emulators']:
+for section in ['samplers', 'profilers', 'emulators', 'likelihoods', 'theories']:
     with open(os.path.join(user_dir, f'{section}_configs.rst'), 'w') as file:
         for fn in get_yaml_files(section, rel_dir=user_dir):
-            file.write(f'.. literalinclude:: {fn}\n'
-                        '  :language: yaml\n')
+            name = os.path.splitext(os.path.relpath(fn, os.path.join('../..', project, section)))[0]
+            file.write(name + '\n' + '-' * len(name) + '\n'
+                        + f'.. literalinclude:: {fn}\n'
+                          '  :language: yaml\n\n')
