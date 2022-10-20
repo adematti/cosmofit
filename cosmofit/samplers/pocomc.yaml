@@ -3,13 +3,28 @@ class: PocoMCSampler
 info:
   version: 0.0.1
   date: 05/04/2022
-  author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
   description: Wrapper for PocoMC sampler
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  url: https://github.com/minaskar/pocomc
+  doi: [10.1093/mnras/stac2272, 10.48550/arXiv.2207.05660]
+  long_description: 'Preconditioned Monte Carlo method for accelerated Bayesian inference'
 
 init:
+  # Number of walkers, defaults to 2 * max((int(2.5 * ndim) + 1) // 2, 2)
+  nwalkers: None
+  # The threshold value for the (normalised) proposal scale parameter below which
+  # normalising flow preconditioning (NFP) is enabled.
+  # Default is threshold = 1.0, meaning that NFP is used all the time
+  threshold: 1.0
+  # Whether to scale the distribution of particles to
+  # have zero mean and unit variance.
+  scale: True
+  # Whether to rescale the distribution of particles to
+  # have zero mean and unit variance in every iteration.
+  rescale: False
+  # Use a diagonal covariance matrix when rescaling instead of a full covariance.
+  diagonal: True
+  # Configuration of the normalizing flow
+  flow_config: None
+  # Configuration for training the normalizing flow
+  train_config: None

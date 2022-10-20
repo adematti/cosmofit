@@ -6,10 +6,54 @@ info:
   author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
   description: Wrapper for polychord sampler
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  url: https://github.com/PolyChord/PolyChordLite
+  doi: [10.1093/mnrasl/slv047, 10.1093/mnras/stv1911]
+  long_description: 'Nested sampling for cosmology'
 
 init:
+  # Parameter blocks are groups of parameters which are updated alltogether with a frequency proportional to oversample_factor
+  # Typically, parameter blocks are chosen such that parameters in a given block require the same evaluation time of the likelihood when updated
+  # By default these blocks are defined at runtime, based on (measured) speeds and oversample_power (below), but can be specified there in the format
+  # - [[param1, param2], oversample_factor1]
+  # - [[param3, param4], oversample_factor2]
+  blocks:
+  # Oversample factors are speed^oversample_power
+  oversample_power: 0.4
+  # Number of live points. Increasing nlive increases the accuracy of posteriors and evidences,
+  # and proportionally increases runtime ~ O(nlive).
+  nlive: '25 * ndim'
+  # The number of prior samples to draw before starting compression.
+  nprior: '10*nlive'
+  # The number of failed spawns before stopping nested sampling.
+  nfail: '1*nlive'
+  # The number of slice slice-sampling steps to generate a new point.
+  # Increasing nrepeats increases the reliability of the algorithm.
+  # Typically:
+  # * for reliable evidences need num_repeats ~ O(5*nDims).
+  # * for reliable posteriors need num_repeats ~ O(nDims)
+  nrepeats: '2*ndim'
+  # Variable number of live points option. This dictionary is a mapping
+  # between loglike contours and nlive.
+  # You should still set nlive to be a sensible number, as this indicates
+  # how often to update the clustering, and to define the default value.
+  nlives: {}
+  # Whether or not to explore multi-modality on the posterior
+  do_clustering: True
+  # Increase the number of posterior samples produced. This can be set
+  # arbitrarily high, but you won't be able to boost by more than nrepeats
+  # Warning: in high dimensions PolyChord produces _a lot_ of posterior
+  # samples. You probably don't need to change this
+  boost_posterior: 0.
+  # Parallelise with synchronous workers, rather than asynchronous ones.
+  # This can be set to False if the likelihood speed is known to be
+  # approximately constant across the parameter space. Synchronous
+  # parallelisation is less effective than asynchronous by a factor ~O(1)
+  # for large parallelisation.
+  synchronous: True
+
+run:
+  # How often to update the files and do clustering
+  compression_factor: e'np.exp(-1)'
+  check:
+    # Nested sampling terminates when the evidence contained in the live points is precision_criterion fraction of the total evidence.
+    precision_criterion: 0.001

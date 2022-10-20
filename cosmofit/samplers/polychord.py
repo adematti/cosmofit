@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 import itertools
 
@@ -15,7 +16,7 @@ class PolychordSampler(BasePosteriorSampler):
 
     check = None
 
-    def __init__(self, *args, blocks=None, oversample_power=0.4, nlive='25*ndim', max_ndead=None, nprior='10*nlive', nfail='1*nlive',
+    def __init__(self, *args, blocks=None, oversample_power=0.4, nlive='25*ndim', nprior='10*nlive', nfail='1*nlive',
                  nrepeats='2*ndim', nlives=None, do_clustering=True, boost_posterior=0, compression_factor=np.exp(-1),
                  synchronous=True, seed=None, **kwargs):
 
@@ -23,7 +24,6 @@ class PolychordSampler(BasePosteriorSampler):
         logzero = np.nan_to_num(-np.inf)
         di = {'ndim': len(self.varied_params)}
         di['nlive'] = nlive = utils.evaluate(nlive, type=int, locals=di)
-        max_ndead = utils.evaluate(max_ndead if max_ndead is not None else -1, type=int, locals=di)
         nprior = utils.evaluate(nprior, type=int, locals=di)
         nfail = utils.evaluate(nfail, type=int, locals=di)
         feedback = {logging.CRITICAL: 0, logging.ERROR: 0, logging.WARNING: 0,
@@ -46,7 +46,7 @@ class PolychordSampler(BasePosteriorSampler):
         self.file_roots = [os.path.splitext(os.path.basename(fn))[0] + '.polychord' for fn in self.save_fn]
         kwargs = {'nlive': nlive, 'nprior': nprior, 'nfail': nfail,
                   'do_clustering': do_clustering, 'feedback': feedback, 'precision_criterion': 1e-3,
-                  'logzero': logzero, 'max_ndead': max_ndead, 'boost_posterior': boost_posterior,
+                  'logzero': logzero, 'max_ndead': -1, 'boost_posterior': boost_posterior,
                   'posteriors': True, 'equals': True, 'cluster_posteriors': True,
                   'write_resume': True, 'read_resume': False, 'write_stats': False,
                   'write_live': True, 'write_dead': True, 'write_prior': True,
@@ -59,13 +59,14 @@ class PolychordSampler(BasePosteriorSampler):
     def _prepare(self):
         self.settings.read_resume = self.mpicomm.bcast(any(chain is not None for chain in self.chains), root=0)
 
-    def _run_one(self, start, check=None, **kwargs):
+    def _run_one(self, start, min_iterations=0, max_iterations=sys.maxsize, check=None, **kwargs):
 
         import pypolychord
 
         if check is not None: kwargs.update(check)
-        for name, value in kwargs:
+        for name, value in kwargs.items():
             setattr(self.settings, name, value)
+        self.settings.max_ndead = -1 if max_iterations == sys.maxsize else max_iterations
 
         def dumper(live, dead, logweights, logZ, logZerr):
             # Called only by rank = 0
@@ -107,7 +108,10 @@ class PolychordSampler(BasePosteriorSampler):
         def prior_transform(values):
             toret = np.empty_like(values)
             for iparam, (value, param) in enumerate(zip(values, self.varied_params)):
-                toret[iparam] = param.prior.ppf(value)
+                try:
+                    toret[iparam] = param.prior.ppf(value)
+                except AttributeError as exc:
+                    raise AttributeError('{} has no attribute ppf (maybe infinite prior?). Choose proper prior for nested sampling'.format(param.prior)) from exc
             return toret
 
         def loglikelihood(values):

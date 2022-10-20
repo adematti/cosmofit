@@ -1,15 +1,131 @@
-class: DynestySampler
+class: StaticDynestySampler
 
 info:
   version: 0.0.1
   date: 05/04/2022
-  author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
-  description: Wrapper for dynesty sampler
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  description: Wrapper for dynesty (static) sampler
+  url: https://github.com/joshspeagle/dynesty
+  doi: [10.1093/mnras/staa278, 10.5281/zenodo.7215695]
+  long_description: 'Nested Sampling. Proper priors only are supported.
+                     Using less “informative” priors will increase the expected number of nested sampling iterations.
+                     Static nested sampling is designed to estimate the evidence. For posterior estimation, rather use dynamic nested sampling.'
 
 init:
+  # Number of "live" points. Larger numbers result in a more finely sampled posterior (more accurate evidence), but also a larger
+  # number of iterations required to converge. Default is `500`.
+  nlive: 500
+  # Method used to approximately bound the prior using the current
+  # set of live points. Conditions the sampling methods used to
+  # propose new live points. Choices are no bound ('none'), a single
+  # bounding ellipsoid ('single'), multiple bounding ellipsoids
+  # ('multi'), balls centered on each live point ('balls'), and
+  # cubes centered on each live point ('cubes'). Default is 'multi'.
+  bound: 'multi'
+  # Method used to sample uniformly within the likelihood constraint,
+  # conditioned on the provided bounds. Unique methods available are:
+  # uniform sampling within the bounds('unif'),
+  # random walks with fixed proposals ('rwalk'),
+  # multivariate slice sampling along preferred orientations ('slice'),
+  # "random" slice sampling along all orientations ('rslice'),
+  # "Hamiltonian" slices along random trajectories ('hslice'), and
+  # any callable function which follows the pattern of the sample methods
+  # defined in dynesty.sampling.
+  # 'auto' selects the sampling method based on the dimensionality of the problem (ndim).
+  # When ndim < 10, this defaults to 'unif'.
+  # When 10 <= ndim <= 20, this defaults to 'rwalk'.
+  # When 'ndim > 20', this defaults to 'hslice' if a 'gradient' is provided and 'rslice' otherwise.
+  # 'slice' is provided as alternatives for 'rslice'.
+  # Default is 'auto'.
+  sample: 'auto'
+  # If an integer is passed, only update the proposal distribution
+  # every update_interval-th likelihood call. If a float is passed,
+  # update the proposal after every round(update_interval * nlive)-th likelihood call.
+  # Larger update intervals larger can be more efficient when the likelihood function is quick to evaluate.
+  # Default behavior is to target a roughly constant change in prior volume, with
+  # 1.5 for 'unif', 0.15 * walks for 'rwalk', 0.9 * ndim * slices for 'slice', 2.0 * slices for 'rslice',
+  # and 25.0 * slices for 'hslice'.
+  update_interval: None
+
+run:
+  check:
+    # Iteration will stop when the estimated contribution of the
+    # remaining prior volume to the total evidence falls below
+    # this threshold. Explicitly, the stopping criterion is
+    # ln(z + z_est) - ln(z) < dlogz, where z is the current
+    # evidence from all saved samples and z_est is the estimated
+    # contribution from the remaining volume.
+    # The default is 1e-3 * (nlive - 1) + 0.01.
+    #dlogz: 0.01
+
+    # Minimum number of effective posterior samples. If the estimated
+    # "effective sample size" (ESS) exceeds this number,
+    # sampling will terminate. Default is inf.
+    #n_effective:
+
+---
+
+class: DynamicDynestySampler
+
+info:
+  version: 0.0.1
+  date: 05/04/2022
+  maintainer: Arnaud de Mattia
+  description: Wrapper for dynesty (static) sampler
+  url: https://github.com/joshspeagle/dynesty
+  doi: [10.1093/mnras/staa278, 10.5281/zenodo.7215695]
+  long_description: 'Nested Sampling. Proper priors only are supported.
+                     Using less “informative” priors will increase the expected number of nested sampling iterations.
+                     Dynamic nested sampling allocate live points dynamically to sample preferentially in the posterior mass.'
+
+init:
+  # Number of "live" points. Larger numbers result in a more finely sampled posterior (more accurate evidence), but also a larger
+  # number of iterations required to converge. Default is `500`.
+  nlive: 500
+  # Method used to approximately bound the prior using the current
+  # set of live points. Conditions the sampling methods used to
+  # propose new live points. Choices are no bound ('none'), a single
+  # bounding ellipsoid ('single'), multiple bounding ellipsoids
+  # ('multi'), balls centered on each live point ('balls'), and
+  # cubes centered on each live point ('cubes'). Default is 'multi'.
+  bound: 'multi'
+  # Method used to sample uniformly within the likelihood constraint,
+  # conditioned on the provided bounds. Unique methods available are:
+  # uniform sampling within the bounds('unif'),
+  # random walks with fixed proposals ('rwalk'),
+  # multivariate slice sampling along preferred orientations ('slice'),
+  # "random" slice sampling along all orientations ('rslice'),
+  # "Hamiltonian" slices along random trajectories ('hslice'), and
+  # any callable function which follows the pattern of the sample methods
+  # defined in dynesty.sampling.
+  # 'auto' selects the sampling method based on the dimensionality of the problem (ndim).
+  # When ndim < 10, this defaults to 'unif'.
+  # When 10 <= ndim <= 20, this defaults to 'rwalk'.
+  # When 'ndim > 20', this defaults to 'hslice' if a 'gradient' is provided and 'rslice' otherwise.
+  # 'slice' is provided as alternatives for 'rslice'.
+  # Default is 'auto'.
+  sample: 'auto'
+  # If an integer is passed, only update the proposal distribution
+  # every update_interval-th likelihood call. If a float is passed,
+  # update the proposal after every round(update_interval * nlive)-th likelihood call.
+  # Larger update intervals larger can be more efficient when the likelihood function is quick to evaluate.
+  # Default behavior is to target a roughly constant change in prior volume, with
+  # 1.5 for 'unif', 0.15 * walks for 'rwalk', 0.9 * ndim * slices for 'slice', 2.0 * slices for 'rslice',
+  # and 25.0 * slices for 'hslice'.
+  update_interval: None
+
+run:
+  check:
+    # The baseline run will stop when the estimated contribution of the
+    # remaining prior volume to the total evidence falls below
+    # this threshold. Explicitly, the stopping criterion is
+    # ln(z + z_est) - ln(z) < dlogz, where z is the current
+    # evidence from all saved samples and z_est is the estimated
+    # contribution from the remaining volume.
+    # The default is 0.01
+    #dlogz_init: 0.01
+
+    # Minimum number of effective posterior samples. If the estimated
+    # "effective sample size" (ESS) exceeds this number,
+    # sampling will terminate. Default is max(10000, ndim^2).
+    #n_effective:

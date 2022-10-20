@@ -105,14 +105,14 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
     nwalkers = 1
     _check_same_input = False
 
-    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, chains=None, scale=1., save_fn=None, mpicomm=None):
+    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, chains=None, ref_scale=1., save_fn=None, mpicomm=None):
         if mpicomm is None:
             mpicomm = likelihood.mpicomm
         self.likelihood = BaseClass.copy(likelihood)
         self.mpicomm = mpicomm
         self.likelihood.solved_default = '.marg'
         self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False).deepcopy()
-        for param in self.varied_params: param.ref = param.ref.affine_transform(scale=scale)
+        for param in self.varied_params: param.ref = param.ref.affine_transform(scale=ref_scale)
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
         if not self.varied_params:
@@ -255,7 +255,7 @@ class BasePosteriorSampler(BaseClass, metaclass=RegisteredSampler):
             chain.set(array[indices].reshape(chain.shape + array.shape[1:]), output=True)
         return chain
 
-    def run(self, min_iterations=0, max_iterations=sys.maxsize, check_every=300, check=None, **kwargs):
+    def run(self, **kwargs):
         #self.derived = None
         nprocs_per_chain = max((self.mpicomm.size - 1) // self.nchains, 1)
         chains, ncalls = [[None] * self.nchains for i in range(2)]
@@ -358,9 +358,9 @@ class BaseBatchPosteriorSampler(BasePosteriorSampler):
 
     def check(self, nsplits=4, stable_over=2, burnin=0.5,
               max_eigen_gr=0.03, max_diag_gr=None, max_cl_diag_gr=None, nsigmas_cl_diag_gr=1., max_geweke=None, max_geweke_pvalue=None,
-              min_iterations_per_iact=None, reliable_iterations_per_iact=50, max_dact=None,
+              min_iterations_over_iact=None, reliable_iterations_over_iact=50, max_dact=None,
               min_eigen_gr=None, min_diag_gr=None, min_cl_diag_gr=None, min_geweke=None, min_geweke_pvalue=None,
-              max_iterations_per_iact=None,  min_dact=None, diagnostics=None, quiet=False):
+              max_iterations_over_iact=None,  min_dact=None, diagnostics=None, quiet=False):
 
         toret = None
         if diagnostics is None:
@@ -489,9 +489,9 @@ class BaseBatchPosteriorSampler(BasePosteriorSampler):
                 niterations = len(split_samples[0])
                 iact = iact.max()
                 name = '({:d} iterations / integrated autocorrelation time)'.format(niterations)
-                if reliable_iterations_per_iact * iact < niterations:
+                if reliable_iterations_over_iact * iact < niterations:
                     name = '{} (reliable)'.format(name)
-                toret &= full_test('iterations_per_iact', name, niterations / iact, min_iterations_per_iact, max_iterations_per_iact)
+                toret &= full_test('iterations_over_iact', name, niterations / iact, min_iterations_over_iact, max_iterations_over_iact)
 
                 iact = diagnostics['iact']
                 if len(iact) >= 2:

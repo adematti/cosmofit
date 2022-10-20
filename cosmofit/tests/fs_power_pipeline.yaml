@@ -19,10 +19,10 @@ pipeline:
     theory:
       #class: cosmofit.theories.galaxy_clustering.LPTTracerPowerSpectrumMultipoles
       #class: cosmofit.theories.galaxy_clustering.PyBirdTracerPowerSpectrumMultipoles
-      #class: cosmofit.theories.galaxy_clustering.KaiserTracerPowerSpectrumMultipoles
+      class: cosmofit.theories.galaxy_clustering.KaiserTracerPowerSpectrumMultipoles
       #class: cosmofit.theories.galaxy_clustering.EPTMomentsTracerPowerSpectrumMultipoles
       #class: cosmofit.theories.galaxy_clustering.EPTFullResummedTracerPowerSpectrumMultipoles
-      class: cosmofit.theories.galaxy_clustering.LPTMomentsTracerPowerSpectrumMultipoles
+      #class: cosmofit.theories.galaxy_clustering.LPTMomentsTracerPowerSpectrumMultipoles
       params:
       #  .derived: [.varied]
       #  .fixed: '*'
@@ -140,16 +140,6 @@ sample:
   save: f'{output_dir}/chain_*.npy'
 
 sample:
-  class: cosmofit.samplers.DynestySampler
-  init:
-    chains: 1 #f'{output_dir}/chain_0.npy'
-    mode: dynamic
-  run:
-    check:
-      dlogz: 1
-  save: f'{output_dir}/chain_*.npy'
-
-sample:
   class: cosmofit.samplers.MCMCSampler
   init:
     covariance: f'{output_dir}/chain_0.npy'
@@ -162,13 +152,6 @@ sample:
   save: f'{output_dir}/chain_*.npy'
 
 sample:
-  class: cosmofit.samplers.PolychordSampler
-  init:
-    chains: 1 #f'{output_dir}/chain_0.npy'
-  run:
-  save: f'{output_dir}/chain_*.npy'
-
-sample:
   class: cosmofit.samplers.EmceeSampler
   init:
     #nwalkers: 40
@@ -178,6 +161,22 @@ sample:
     max_iterations: 10000
     check_every: 100
     check: True
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.PolychordSampler
+  init:
+    chains: 1 #f'{output_dir}/chain_0.npy'
+  run:
+  save: f'{output_dir}/chain_*.npy'
+
+sample:
+  class: cosmofit.samplers.StaticDynestySampler
+  init:
+    chains: 1 #f'{output_dir}/chain_0.npy'
+  run:
+    check:
+      dlogz: 1
   save: f'{output_dir}/chain_*.npy'
 
 profile:

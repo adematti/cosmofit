@@ -91,14 +91,14 @@ class BaseProfiler(BaseClass, metaclass=RegisteredProfiler):
 
     _check_same_input = False
 
-    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, profiles=None, covariance=None, transform=False, scale=1., save_fn=None, mpicomm=None):
+    def __init__(self, likelihood, rng=None, seed=None, max_tries=1000, profiles=None, covariance=None, transform=False, ref_scale=1., save_fn=None, mpicomm=None):
         if mpicomm is None:
             mpicomm = likelihood.mpicomm
         self.likelihood = BaseClass.copy(likelihood)
         self.mpicomm = mpicomm
         self.likelihood.solved_default = '.best'
         self.varied_params = self.likelihood.params.select(varied=True, derived=False, solved=False).deepcopy()
-        for param in self.varied_params: param.ref = param.ref.affine_transform(scale=scale)
+        for param in self.varied_params: param.ref = param.ref.affine_transform(scale=ref_scale)
         if self.mpicomm.rank == 0:
             self.log_info('Varied parameters: {}.'.format(self.varied_params.names()))
         if not self.varied_params:

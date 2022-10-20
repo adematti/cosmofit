@@ -3,15 +3,18 @@ class: EmceeSampler
 info:
   version: 0.0.1
   date: 05/04/2022
-  author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
   description: Wrapper for emcee sampler
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  url: https://github.com/dfm/emcee
+  doi: 10.1086/670067
+  long_description: 'Python implementation of the affine-invariant ensemble sampler
+                     for Markov chain Monte Carlo (MCMC) proposed by Goodman & Weare (2010)'
 
 init:
-  # Number of walkers
+  # Number of walkers, defaults to 2 * max((int(2.5 * ndim) + 1) // 2, 2)
+  # Can be given in dimension units, e.g. 3 * ndim
   nwalkers: None
+
+run:
+  # Thin samples by this factor
+  thin_by: 1

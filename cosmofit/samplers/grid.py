@@ -10,13 +10,13 @@ from .base import RegisteredSampler
 
 class GridSampler(BaseClass, metaclass=RegisteredSampler):
 
-    def __init__(self, pipeline, mpicomm=None, ngrid=3, scale=1., sphere=None, save_fn=None):
+    def __init__(self, pipeline, mpicomm=None, ngrid=3, ref_scale=1., sphere=None, save_fn=None):
         if mpicomm is None:
             mpicomm = pipeline.mpicomm
         self.pipeline = BaseClass.copy(pipeline)
         self.mpicomm = mpicomm
         self.varied_params = self.pipeline.params.select(varied=True, derived=False)
-        self.scale = float(scale)
+        self.ref_scale = float(ref_scale)
         self.sphere = sphere
         for name, item in zip(['ngrid', 'sphere'], [ngrid] + ([sphere] if sphere is not None else [])):
             if not isinstance(item, dict):
@@ -50,7 +50,7 @@ class GridSampler(BaseClass, metaclass=RegisteredSampler):
                 if ngrid == 1:
                     grid.append(np.array(param.value))
                 elif param.ref.is_proper():
-                    grid.append(np.linspace(param.value - self.scale * param.proposal, param.value + self.scale * param.proposal, ngrid))
+                    grid.append(np.linspace(param.value - self.ref_scale * param.proposal, param.value + self.ref_scale * param.proposal, ngrid))
                 else:
                     raise ParameterPriorError('Provide parameter limits or proposal')
             if self.sphere:

@@ -3,13 +3,34 @@ class: MCMCSampler
 info:
   version: 0.0.1
   date: 05/04/2022
-  author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
-  description: MCMC sampler
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  description: Blocked fast-slow Metropolis sampler
+  url: https://github.com/CobayaSampler/cobaya/tree/master/cobaya/samplers/mcmc
+  doi: [10.1103/PhysRevD.66.103511, 10.1103/PhysRevD.87.103529, 10.48550/arXiv.math/0502099]
+  long_description: 'Antony Lewis CosmoMC sampler, wrapped for cobaya by Jesus Torrado, reimplemented in cosmofit'
 
 init:
+  # Parameter blocks are groups of parameters which are updated alltogether with a frequency proportional to oversample_factor
+  # Typically, parameter blocks are chosen such that parameters in a given block require the same evaluation time of the likelihood when updated
+  # By default these blocks are defined at runtime, based on (measured) speeds and oversample_power (below), but can be specified there in the format
+  # - [[param1, param2], oversample_factor1]
+  # - [[param3, param4], oversample_factor2]
+  blocks:
+  # Oversample factors are speed^oversample_power
+  oversample_power: 0.4
+  # (Initial) proposal covariance (to draw parameter jumps)
+  # Can be previous samples ({fn: chain.npy, burnin: 0.5}), or profiles (containing covariance matrix)
+  # If variance for a given parameter is not provided, parameter 'proposal'
+  covariance:
+  # Scale proposal by this value when drawing jumps
+  proposal_scale: 2.4
+  # Learn proposal covariance matrix?
+  # Can be a dictionary, specifying when to update covariance matrix, with same options as check
+  # e.g. to update proposal when Gelman-Rubin is between 0.03 and 0.1: {'max_eigen_gr': 0.1, 'min_eigen_gr': 0.03}
+  learn: True
+  # Use dragging ("integrating out" fast parameters)
+  drag: False
+
+run:
+  # Thin samples by this factor
+  thin_by: 1
