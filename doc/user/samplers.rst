@@ -13,11 +13,11 @@ Typically, samplers are instantiated this way:
       chains: 4  # number of chains or paths to existing chains to resume from
       seed: None  # random seed
       ref_scale: 1.  # rescale all parameter reference distribution (from which they are initially sampled from) by this factor
+      max_tries: 1000  # maximum number of calls to get finite posterior
     run:
       check_every: 200  # save samples every 200 iterations
-      max_tries: 200  # maximum number of calls to get finite posterior
-      min_iterations: 100  # maximum number of iterations to run
       min_iterations: 100  # minimum number of iterations to run (useful if convergence criteria below are satisfied by chance at the beginning of the run)
+      max_iterations: sys.maxsize  # maximum number of iterations to run
       check:
         # Fraction of samples to remove for convergence tests
         burnin: 0.5
@@ -42,5 +42,7 @@ Sampling can be interrupted anytime, and resumed by providing the path to the sa
 
 One will typically run sampling ``nchains * nprocs_per_chain + 1`` processes, with ``nchains >= 1`` the number of chains and ``nprocs_per_chain >= 1``
 the number of processes per chain --- plus 1 root process to distribute the work.
+
+In the following we present samplers' default options (in addition to those presented above).
 
 .. include:: samplers_configs.rst

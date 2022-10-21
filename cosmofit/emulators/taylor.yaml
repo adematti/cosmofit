@@ -3,13 +3,20 @@ class: TaylorEmulator
 info:
   version: 0.0.1
   date: 05/04/2022
-  author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
   description: Wrapper for Taylor emulator
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  url: https://github.com/cosmodesi/desi-y1-kp45/tree/main/ShapeFit_Velocileptors
+  doi:
+  long_description: Based on Stephen Chen and Mark Maus' velocileptors' Taylor expansion
 
 init:
+  # The derivative order
+  # One can pass a dictionary of parameter name (including wildcard) and integers,
+  # e.g. {param*: 3, param1: 2}
+  order: 4
+  # The accuracy order, by default 2, i.e. O(dx^2)
+  accuracy: 2
+
+sample:
+  # Max parameter intervals correspond to width of reference distribution, scaled by this factor
+  ref_scale: 1e-1

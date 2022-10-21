@@ -20,7 +20,7 @@ init:
   oversample_power: 0.4
   # (Initial) proposal covariance (to draw parameter jumps)
   # Can be previous samples ({fn: chain.npy, burnin: 0.5}), or profiles (containing covariance matrix)
-  # If variance for a given parameter is not provided, parameter 'proposal'
+  # If variance for a given parameter is not provided, use parameter 'proposal' squared
   covariance:
   # Scale proposal by this value when drawing jumps
   proposal_scale: 2.4

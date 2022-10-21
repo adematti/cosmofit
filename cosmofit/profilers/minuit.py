@@ -35,9 +35,9 @@ class MinuitProfiler(BaseProfiler):
         for param, value in zip(self.varied_params, start):
             self.minuit.values[str(param)] = value
 
-    def _maximize_one(self, start, max_iterations=int(1e5), **kwargs):
+    def _maximize_one(self, start, max_iterations=int(1e5)):
         self._set_start(start)
-        self.minuit.migrad(ncall=max_iterations, **kwargs)
+        self.minuit.migrad(ncall=max_iterations)
         profiles = Profiles()
         profiles.set(start=ParameterValues(start, params=self.varied_params))
         profiles.set(bestfit=ParameterBestFit([self.minuit.values[str(param)] for param in self.varied_params] + [- 0.5 * self.minuit.fval], params=self.varied_params + ['logposterior']))
@@ -45,7 +45,7 @@ class MinuitProfiler(BaseProfiler):
         profiles.set(covariance=ParameterCovariance(np.array(self.minuit.covariance), params=self.varied_params))
         return profiles
 
-    def _interval_one(self, start, param, max_iterations=int(1e5), **kwargs):
+    def _interval_one(self, start, param, max_iterations=int(1e5), cl=None):
         self._set_start(start)
         profiles = Profiles()
         name = str(param)
@@ -55,22 +55,22 @@ class MinuitProfiler(BaseProfiler):
 
         return profiles
 
-    def _profile_one(self, start, param, **kwargs):
+    def _profile_one(self, start, param, size=30, bound=2, grid=None):
         self._set_start(start)
         profiles = Profiles()
         if 'cl' in kwargs:
             kwargs['bound'] = kwargs.pop('cl')
         if not np.isinf(param.prior.limits).any():
             kwargs.setdefault('bound', param.prior.limits)
-        x, chi2 = self.minuit.mnprofile(param.name, **kwargs)[:2]
+        x, chi2 = self.minuit.mnprofile(param.name, size=size, bound=bound, grid=grid)[:2]
         profiles.set(profile=ParameterValues([(x, chi2)], params=[param]))
 
         return profiles
 
-    def _contour_one(self, start, param1, param2, **contour):
+    def _contour_one(self, start, param1, param2, cl=None, size=100, interpolated=0):
         self._set_start(start)
         profiles = Profiles()
-        x1, x2 = self.minuit.mncontour(str(param1), str(param2), **contour)
+        x1, x2 = self.minuit.mncontour(str(param1), str(param2), cl=cl, size=size, interpolated=interpolated)
         profiles.set(profile=ParameterContours([(ParameterArray(x1, param1), ParameterArray(x2, param2))]))
         return profiles
 

@@ -3,13 +3,38 @@ class: MinuitProfiler
 info:
   version: 0.0.1
   date: 05/04/2022
-  author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
   description: Wrapper for minuit profiler
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  url: https://github.com/scikit-hep/iminuit
+  doi: [10.5281/zenodo.3949207, 10.1016/0010-4655(75)90039-9]
+  long_description: Used by the high-energy physics community for likelihood profiling
 
 init:
+
+maximize:
+interval:
+  # Confidence level for the confidence interval.
+  # If not set or None, a standard 68.3 % confidence interval is produced.
+  # If 0 < cl < 1, the value is interpreted as the confidence level (a probability).
+  # If cl >= 1, it is interpreted as number of standard deviations. For example, cl = 3 produces a 3 sigma interval.
+  # cl: None
+profile:
+  # Number of scanning points. Ignored if grid is set.
+  # size: 30
+  # If bound is tuple, (left, right) scanning bound. If bound is a number, it specifies an interval of N sigmas
+  # symmetrically around the minimum. Ignored if grid is set.
+  # bound: 2
+  # Parameter values on which to compute the profile. If grid is set, size and bound are ignored.
+  # grid: None
+contour:
+  # Confidence level for the confidence interval.
+  # If not set or None, a standard 68.3 % confidence interval is produced.
+  # If 0 < cl < 1, the value is interpreted as the confidence level (a probability).
+  # If cl >= 1, it is interpreted as number of standard deviations. For example, cl = 3 produces a 3 sigma interval.
+  # cl: None
+  # Number of points on the contour to find. Increasing this makes the contour smoother, but requires more computation time.
+  # size: 100
+  # Number of interpolated points on the contour. If you set this to a value larger than size,
+  # cubic spline interpolation is used to generate a smoother curve and the interpolated coordinates are returned.
+  # Values smaller than size are ignored. Good results can be obtained with size=20, interpolated=200.
+  # interpolated: 0

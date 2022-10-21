@@ -45,9 +45,9 @@ class ProfilerConfig(InstallableSectionConfig):
         save_fn = self.get('save', None)
 
         for name in ['maximize', 'interval', 'profile', 'contour']:
-            if name in self:
+            if name in self and (bool(self[name]) or isinstance(self[name], dict)):
                 tmp = self[name]
-                if tmp is None: tmp = {}
+                if not isinstance(tmp, dict): tmp = {}
                 getattr(profiler, name)(**tmp)
 
         return profiler

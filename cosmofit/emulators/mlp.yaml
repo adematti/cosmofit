@@ -3,13 +3,29 @@ class: MLPEmulator
 info:
   version: 0.0.1
   date: 05/04/2022
-  author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
   description: Wrapper for MLP emulator
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  url: https://github.com/sfschen/EmulateLSS
+  doi:
+  long_description: Based on Joe DeRose and Stephen Chen's EmulateLSS code
 
 init:
+  # Number of hidden layers
+  nhidden: [100, 100, 100]
+  # Transform to be applied to quantity to be emulated
+  # One can pass arcsinhoptimizer='adam', validation_frac=0.2, batch_sizes=(320, 640, 1280, 2560, 5120), epochs=1000, learning_rates=(1e-2, 1e-3, 1e-4, 1e-5, 1e-6), seed=None
+  ytransform: ''
+
+fit:
+  # Fraction of the training sample to use for validation
+  validation_frac: 0.2
+  # Tensorflow optimizer to use
+  optimizer: 'adam'
+  # Optimization batch sizes
+  batch_sizes: [320, 640, 1280, 2560, 5120]
+  # Number of optimization epochs or a list of such number for each batch
+  epochs: 1000
+  # Learning rate, a float or a list of such float for each batch
+  learning_rates: [1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+  # Random seed
+  seed: None

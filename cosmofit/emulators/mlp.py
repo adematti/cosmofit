@@ -44,7 +44,7 @@ class MLPEmulator(BaseEmulator):
         sampler.run(niterations=niterations)
         return sampler.samples
 
-    def fit(self, optimizer='adam', validation_frac=0.2, batch_sizes=(320, 640, 1280, 2560, 5120), epochs=1000, learning_rates=(1e-2, 1e-3, 1e-4, 1e-5, 1e-6), seed=None):
+    def fit(self, validation_frac=0.2, optimizer='adam', batch_sizes=(320, 640, 1280, 2560, 5120), epochs=1000, learning_rates=(1e-2, 1e-3, 1e-4, 1e-5, 1e-6), seed=None):
 
         optimizer = str(optimizer)
         validation_frac = float(validation_frac)

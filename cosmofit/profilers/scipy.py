@@ -8,13 +8,14 @@ from .base import BaseProfiler
 
 class ScipyProfiler(BaseProfiler):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, method=None, **kwargs):
         super(ScipyProfiler, self).__init__(*args, **kwargs)
+        self.method = method
 
-    def _maximize_one(self, start, tol=None, **kwargs):
+    def _maximize_one(self, start, max_iterations=int(1e5), tol=None, **kwargs):
         from scipy import optimize
         bounds = [tuple(None if np.isinf(lim) else lim for lim in param.prior.limits) for param in self.varied_params]
-        result = optimize.minimize(fun=self.chi2, x0=start, bounds=bounds, tol=tol, options=kwargs)
+        result = optimize.minimize(fun=self.chi2, x0=start, method=self.method, bounds=bounds, tol=tol, options={'maxiter': max_iterations, **kwargs})
         if not result.success and self.mpicomm.rank == 0:
             self.log_error('Finished unsuccessfully.')
         profiles = Profiles()
