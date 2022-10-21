@@ -764,7 +764,7 @@ class BasePipeline(BaseClass):
     def eval_params(self, params):
         toret = {}
         all_params = {**self._param_values, **params}
-        for param in params:
+        for param in all_params:
             try:
                 toret[param] = self.params[param].eval(**all_params)
             except KeyError:
@@ -785,6 +785,8 @@ class BasePipeline(BaseClass):
                     torun = calculator.runtime_info.torun = True  # set torun = True of all required_by instances
         if torun:
             self.derived = self._derived = ParameterValues()
+            for param in self.params:
+                if param.depends: self.derived[param] = params[param.name]
             for calculator in self.end_calculators:
                 calculator.runtime_info.run()
             for calculator in self.calculators:
