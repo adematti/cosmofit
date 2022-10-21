@@ -17,15 +17,14 @@ class FakePool(object):
         return func(values)
 
 
-class DynestySampler(BasePosteriorSampler):
+class BaseDynestySampler(BasePosteriorSampler):
 
     check = None
 
-    def __init__(self, *args, mode='static', nlive=500, bound='multi', sample='auto', update_interval=None, **kwargs):
-        self.mode = mode
+    def __init__(self, *args, nlive=500, bound='multi', sample='auto', update_interval=None, **kwargs):
         self.nlive = int(nlive)
         self.attrs = {'bound': bound, 'sample': sample, 'update_interval': update_interval}
-        super(DynestySampler, self).__init__(*args, **kwargs)
+        super(BaseDynestySampler, self).__init__(*args, **kwargs)
         if self.save_fn is None:
             raise ValueError('save_fn must be provided to save dynesty state')
         self.state_fn = [os.path.splitext(fn)[0] + '.dynesty.state' for fn in self.save_fn]
@@ -33,16 +32,17 @@ class DynestySampler(BasePosteriorSampler):
     def prior_transform(self, values):
         toret = np.empty_like(values)
         for iparam, (value, param) in enumerate(zip(values.T, self.varied_params)):
-            toret[..., iparam] = param.prior.ppf(value)
+            try:
+                toret[..., iparam] = param.prior.ppf(value)
+            except AttributeError as exc:
+                raise AttributeError('{} has no attribute ppf (maybe infinite prior?). Choose proper prior for nested sampling'.format(param.prior)) from exc
         return toret
 
     def _prepare(self):
         self.resume = self.mpicomm.bcast(any(chain is not None for chain in self.chains), root=0)
 
     def _run_one(self, start, min_iterations=0, max_iterations=sys.maxsize, check_every=300, check=None, **kwargs):
-        import dynesty
         from dynesty import utils
-
         if check is not None: kwargs.update(check)
 
         rstate = np.random.Generator(np.random.PCG64(self.rng.randint(0, high=0xffffffff)))
@@ -52,10 +52,7 @@ class DynestySampler(BasePosteriorSampler):
             ndim = len(self.varied_params)
             use_pool = {'prior_transform': True, 'loglikelihood': True, 'propose_point': False, 'update_bound': False}
             pool = FakePool(size=self.mpicomm.size)
-            if self.mode == 'dynamic':
-                self.sampler = dynesty.DynamicNestedSampler(self.loglikelihood, self.prior_transform, ndim, pool=pool, use_pool=use_pool, rstate=rstate, **self.attrs)
-            else:
-                self.sampler = dynesty.NestedSampler(self.loglikelihood, self.prior_transform, ndim, nlive=self.nlive, pool=pool, use_pool=use_pool, rstate=rstate, **self.attrs)
+            self._set_sampler(rstate, pool, use_pool)
 
         self.resume_derived, self.resume_chain = None, None
         if self.resume:
@@ -74,10 +71,7 @@ class DynestySampler(BasePosteriorSampler):
 
         def _run_one_batch(niterations):
             it = self.sampler.it
-            if self.mode == 'dynamic':
-                self.sampler.run_nested(nlive_init=self.nlive, maxiter=niterations + it, **kwargs)
-            else:
-                self.sampler.run_nested(maxiter=niterations, **kwargs)
+            self._run_nested(niterations, **kwargs)
             is_converged = self.sampler.it - it < niterations
             results = self.sampler.results
             chain = [results['samples'][..., iparam] for iparam, param in enumerate(self.varied_params)]
@@ -111,3 +105,22 @@ class DynestySampler(BasePosteriorSampler):
     @classmethod
     def install(cls, config):
         config.pip('dynesty')
+
+
+class StaticDynestySampler(BaseDynestySampler):
+
+    def _set_sampler(self, rstate, pool, use_pool):
+        import dynesty
+        self.sampler = dynesty.NestedSampler(self.loglikelihood, self.prior_transform, len(self.varied_params), nlive=self.nlive, pool=pool, use_pool=use_pool, rstate=rstate, **self.attrs)
+
+    def _run_nested(self, niterations, **kwargs):
+        self.sampler.run_nested(maxiter=niterations, **kwargs)
+
+class DynamicDynestySampler(BaseDynestySampler):
+
+    def _set_sampler(self, rstate, pool, use_pool):
+        import dynesty
+        self.sampler = dynesty.DynamicNestedSampler(self.loglikelihood, self.prior_transform, len(self.varied_params), pool=pool, use_pool=use_pool, rstate=rstate, **self.attrs)
+
+    def _run_nested(self, niterations, **kwargs):
+        self.sampler.run_nested(nlive_init=self.nlive, maxiter=niterations + self.sampler.it, **kwargs)

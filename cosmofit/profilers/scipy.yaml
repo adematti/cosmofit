@@ -3,13 +3,19 @@ class: ScipyProfiler
 info:
   version: 0.0.1
   date: 05/04/2022
-  author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
   description: Wrapper for scipy profiler
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  url: https://scipy.github.io/devdocs/reference/generated/scipy.optimize.minimize.html#scipy.optimize.minimize
+  long_description: Collection of scipy's samplers
 
 init:
+  # Type of solver. Should be one of ‘Nelder-Mead’, ‘Powell’, ‘CG', ‘BFGS’, ‘Newton-CG’, L-BFGS-B’, ‘TNC’,
+  # ‘COBYLA’, ‘SLSQP’ , ‘trust-constr’, ‘dogleg’, ‘trust-ncg’, ‘trust-exact’, ‘trust-krylov’
+  # If not given, chosen to be one of BFGS, L-BFGS-B, SLSQP, depending on whether or not the problem has constraints or bounds.
+  method: None
+
+maximize:
+  # Tolerance for termination. When tol is specified, the selected minimization algorithm sets some relevant solver-specific tolerance(s) equal to tol.
+  # For detailed control, use solver-specific options.
+  tol: None
+  # Specific solver options

@@ -3,13 +3,27 @@ class: BOBYQAProfiler
 info:
   version: 0.0.1
   date: 05/04/2022
-  author: Arnaud de Mattia
   maintainer: Arnaud de Mattia
   description: Wrapper for bobyqa profiler
-  url:
-  licence:
-  bibtex: []
-  requirements: []
-  long_description:
+  url: https://github.com/numericalalgorithmsgroup/pybobyqa
+  doi: [10.48550/arXiv.1804.00154, 10.48550/arXiv.1812.11343]
+  long_description: Designed for solving bound-constrained general objective minimization, without requiring derivatives of the objective.
 
 init:
+
+maximize:
+  # The number of interpolation points to use; default is 2 * ndim + 1.
+  # Py-BOBYQA requires ndim + 1 <= npt <= (ndim + 1)(ndim + 2)/2. Larger values are particularly useful for noisy problems.
+  # npt: None
+  # The initial value of the trust region radius default is 0.1 max(|x_0|_{\infty}, 1)`.
+  # rhobeg: None
+  # Minimum allowed value of trust region radius, which determines when a successful termination occurs.
+  # rhoend: 1e-8
+  # A flag to indicate whether to search for a global minimum, rather than a local minimum.
+  # This is used to set some sensible default parameters, all of which can be overridden by the values provided in user_params.
+  # If True, both upper and lower bounds must be set. Note that Py-BOBYQA only implements a heuristic method,
+  # so there are no guarantees it will find a global minimum. However, by using this flag,
+  # it is more likely to escape local minima if there are better values nearby.
+  # The method used is a multiple restart mechanism, where we repeatedly re-initialize Py-BOBYQA from the best point found so far,
+  # but where we use a larger trust reigon radius each time (note: this is different to more common multi-start approach to global optimization).
+  # seek_global_minimum: False

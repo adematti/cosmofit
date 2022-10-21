@@ -17,4 +17,4 @@ conda:
 python:
   version: 3.8
   install:
-    - requirements: docs/requirements.txt
+    - requirements: doc/requirements.txt
