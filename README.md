@@ -34,6 +34,6 @@ See [cosmofit docs](https://cosmofit.readthedocs.io/en/latest/user/building.html
 ## Acknowledgments
 
 - Inspiration from cobaya: https://github.com/CobayaSampler/cobaya
-- BAO models: https://github.com/Samreay/Barry
-- Taylor expansion emulator: https://github.com/sfschen/velocileptors_shapefit
-- MLP emulator: https://github.com/sfschen/EmulateLSS
+- BAO models (Sam Ray and Cullan Howlett): https://github.com/Samreay/Barry
+- Taylor expansion emulator (Stephen Chen): https://github.com/sfschen/velocileptors_shapefit
+- MLP emulator (Stephen Chen and Joe DeRose): https://github.com/sfschen/EmulateLSS

@@ -35,6 +35,7 @@ class Cosmoprimo(BasePrimordialCosmology):
     def __init__(self, fiducial=None, engine='class', params=None, extra_params=None):
         self.engine = engine
         self.extra_params = extra_params or {}
+        self.fiducial_input = bool(fiducial)
         if fiducial is not None:
             fiducial = get_cosmo(fiducial)
         else:
@@ -43,7 +44,7 @@ class Cosmoprimo(BasePrimordialCosmology):
         self.requires = {}
 
     def set_params(self, params):
-        if self.fiducial is not None:
+        if self.fiducial_input:
             for param in params:
                 if not param.get('drop', False):
                     param.value = get_from_cosmo(self.fiducial, param.basename)
@@ -51,7 +52,6 @@ class Cosmoprimo(BasePrimordialCosmology):
         return params
 
     def run(self, **params):
-        #print(params)
         self.cosmo = self.fiducial.clone(**params)
 
     def __getattr__(self, name):

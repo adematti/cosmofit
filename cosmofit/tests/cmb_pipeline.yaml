@@ -5,26 +5,26 @@ pipeline:
       clik_dir: /home/adematti/Bureau/DESI/NERSC/lib/
   theory:
     class: cosmofit.likelihoods.cmb.planck2018.base.ClTheory
-    #load: f'{output_dir}/cl_emulator.npy'
+    load: f'{output_dir}/cl_emulator.npy'
     emulator:
       save: f'{output_dir}/cl_emulator.npy'
   cosmo:
     class: cosmofit.theories.primordial_cosmology.Cosmoprimo
-    init:
-      fiducial: DESI
+    #init:
+    #  fiducial: DESI
     params:
-      .delete: 'omega_cdm'
-      Omega_m:
-        fixed: False
-        prior:
-          dist: uniform
-          limits: [0.05, 0.6]
-        latex: \Omega_{m}
+      #.delete: 'omega_cdm'
+      #Omega_m:
+      #  fixed: False
+      #  prior:
+      #    dist: uniform
+      #    limits: [0.05, 0.6]
+      #  latex: \Omega_{m}
 
 emulate:
   class: TaylorEmulator
   init:
-    order: 2
+    order: 1
 
 summarize:
    source: f'{output_dir}/profiles.npy'
@@ -35,5 +35,17 @@ profile:
   save: f'{output_dir}/profiles.npy'
   maximize:
     niterations: 2
+
+sample:
+  class: cosmofit.samplers.EmceeSampler
+  init:
+    #nwalkers: 40
+    chains: 1
+    max_tries: 10
+  run:
+    max_iterations: 10000
+    check_every: 100
+    check: True
+  save: f'{output_dir}/chain_*.npy'
 
 output_dir: _cmb

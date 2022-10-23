@@ -137,7 +137,7 @@ Below is an example configuration file.
   # Run the pipeline at a given point (here, mean of the chains)
   do:
     source: f'{output_dir}/chain_0.npy'
-    do: plotcosmofit.theories.galaxy_clustering.LPTPowerSpectrumMultipoles
+    do: plot
 
   # Any variable that you can use anywhere
   data_dir: _pk
