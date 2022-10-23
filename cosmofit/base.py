@@ -301,7 +301,7 @@ class RuntimeInfo(BaseClass):
     @property
     def param_values(self):
         if getattr(self, '_param_values', None) is None:
-            self._param_values = {param.basename: param.value for param in self.full_params if not param.drop and (not param.derived or param.solved)}
+            self._param_values = {param.basename: param.value for param in self.full_params if (not param.drop) and (param.depends or (not param.derived) or param.solved)}
         return self._param_values
 
     @param_values.setter
@@ -786,7 +786,8 @@ class BasePipeline(BaseClass):
         if torun:
             self.derived = self._derived = ParameterValues()
             for param in self.params:
-                if param.depends: self.derived[param] = params[param.name]
+                if param.depends:
+                    self.derived.set(ParameterArray(np.asarray(params[param.name]), param=param))
             for calculator in self.end_calculators:
                 calculator.runtime_info.run()
             for calculator in self.calculators:
