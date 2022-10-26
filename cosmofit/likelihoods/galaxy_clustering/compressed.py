@@ -1,11 +1,8 @@
 import numpy as np
-from scipy import constants
 
 from cosmofit.likelihoods.base import BaseGaussianLikelihood, BaseCalculator
 from cosmofit.samples import ParameterValues, SourceConfig
-from cosmofit.parameter import ParameterCollection
 from cosmofit.theories.galaxy_clustering import APEffect, BAOExtractor, ShapeFitPowerSpectrumExtractor, WiggleSplitPowerSpectrumExtractor, BandVelocityPowerSpectrumExtractor
-from cosmofit import utils
 
 
 class BaseParameterizationTheory(BaseCalculator):

@@ -16,7 +16,7 @@ import scipy as sp
 from mpytools import CurrentMPIComm
 
 try:
-    #raise ImportError
+    # raise ImportError
     import jax
     from jax.config import config; config.update('jax_enable_x64', True)
     import jax.numpy as jnp
@@ -311,7 +311,7 @@ class OrderedSet(collections.OrderedDict, collections.MutableSet):
 
         for s in args:
             for e in s:
-                 self.add(e)
+                self.add(e)
 
     def add(self, elem):
         self[elem] = None
@@ -675,6 +675,7 @@ class Monitor(BaseClass):
 # Taken from https://stackoverflow.com/questions/44313620/converting-to-and-from-numpys-np-random-randomstate-and-pythons-random-random
 PY_VERSION = 3
 NP_VERSION = 'MT19937'
+
 
 def numpy_to_python_random_state(npstate):
     """

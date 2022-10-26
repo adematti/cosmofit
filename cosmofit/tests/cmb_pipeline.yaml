@@ -48,4 +48,27 @@ sample:
     check: True
   save: f'{output_dir}/chain_*.npy'
 
+sample:
+  class: cosmofit.samplers.ZeusSampler
+  init:
+    #nwalkers: 40
+    chains: 1
+  run:
+    max_iterations: 10000
+    check_every: 100
+    check: True
+  save: f'{output_dir}/chain_*.npy'
+
+summarize:
+  source:
+    fn: f'{output_dir}/chain_0.npy'
+    burnin: 0.5
+  plot_triangle: f'{output_dir}/triangle.png'
+  plot_trace: f'{output_dir}/trace.png'
+  plot_autocorrelation_time: f'{output_dir}/autocorrelation_time.png'
+  plot_gelman_rubin:
+    fn: f'{output_dir}/gelman_rubin.png'
+    nsplits: 4
+  plot_geweke: f'{output_dir}/geweke.png'
+
 output_dir: _cmb
